@@ -1,0 +1,76 @@
+/* ============================================
+   NetOrch OS — Design System & Theme
+   Uses Tailwind v4 with custom dark theme tokens
+   matching the HPE/Aruba brand aesthetic.
+   ============================================ */
+
+@import "tailwindcss";
+
+/* --- Google Fonts --- */
+@import url('https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@300;400;500;600;700&family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap');
+
+/* --- Custom Theme Tokens --- */
+@theme {
+  --color-surface: #111316;
+  --color-surface-dim: #0c0e11;
+  --color-surface-container: #1a1c20;
+  --color-surface-container-low: #161819;
+  --color-surface-container-high: #282a2d;
+  --color-surface-container-highest: #333538;
+  --color-surface-bright: #3a3c40;
+
+  --color-primary: #3cd7ff;
+  --color-primary-container: #009ebe;
+  --color-primary-dim: #6fd4f0;
+  --color-on-primary: #003642;
+
+  --color-tertiary: #00e297;
+  --color-tertiary-container: #00311d;
+  --color-on-tertiary: #003822;
+
+  --color-on-surface: #e2e2e6;
+  --color-on-surface-variant: #c4c6cf;
+  --color-outline: #8b90a0;
+  --color-outline-variant: #414755;
+
+  --color-error: #ffb4ab;
+  --color-error-container: #93000a;
+
+  --font-headline: 'Space Grotesk', sans-serif;
+  --font-body: 'Inter', sans-serif;
+  --font-mono: 'JetBrains Mono', monospace;
+}
+
+/* --- Base Styles --- */
+html {
+  background-color: var(--color-surface);
+}
+
+body {
+  font-family: var(--font-body);
+  background-color: var(--color-surface);
+  color: var(--color-on-surface);
+  min-height: 100vh;
+}
+
+/* --- Page Transition Animations (Slide & Fade) --- */
+.page-enter {
+  animation: slideIn 0.35s cubic-bezier(0.1, 0.7, 0.6, 1) forwards;
+}
+
+@keyframes slideIn {
+  from { transform: translateX(16px); opacity: 0; }
+  to { transform: translateX(0); opacity: 1; }
+}
+
+/* --- Scrollbar Styling --- */
+::-webkit-scrollbar { width: 5px; height: 5px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: var(--color-outline-variant); border-radius: 4px; }
+
+/* --- Glass Card Utility --- */
+.glass-card {
+  backdrop-filter: blur(12px);
+  background: rgba(26, 28, 32, 0.7);
+  border: 1px solid rgba(65, 71, 85, 0.15);
+}
