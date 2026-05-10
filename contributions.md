@@ -33,8 +33,6 @@ This document lists the contributors and their core areas of contribution to the
   - `RAG_Workflow.jpg`: AI Retrieval-Augmented Generation pipeline.
   - `CPP_Project_Automated_Network_Design_and_Deployment_Latest.pdf`: Full project documentation and specifications.
 
-### Root Level (`/home/coe/Documents/project`)
-
 ### `main.py`
 
 - **3-Phase AI Workflow**: Implementation of the multi-agent workflow system using LlamaIndex AgentWorkflow.
@@ -67,6 +65,7 @@ This document lists the contributors and their core areas of contribution to the
 ## Technology Stack
 
 ### Backend
+
 - **Python 3.14+**
 - **LlamaIndex**: Agent workflow and RAG pipeline
 - **Ollama** (Gemma 4 31B): LLM for AI phases
@@ -74,4 +73,5 @@ This document lists the contributors and their core areas of contribution to the
 - **Qwen/Qwen3-Embedding-8B**: Embedding model
 - **FastAPI**: Web server with WebSocket support
 - **Docling**: PDF parsing
+
 ---
