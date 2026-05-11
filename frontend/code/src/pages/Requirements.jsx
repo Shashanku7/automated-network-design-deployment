@@ -10,7 +10,7 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useProject } from '../context/ProjectContext';
-import { submitRequirements } from '../services/api';
+// Workflow is triggered from ProposedDesign page via WebSocket
 
 /* --- Options specific to Campus --- */
 const campusSensitiveAreas = [
@@ -95,18 +95,13 @@ export default function Requirements() {
     setErrors(errs);
     if (Object.keys(errs).length > 0) {
       window.alert('All primary input fields are compulsory! Please fill them before proceeding.');
-      // Scroll to top so user sees the first error
       window.scrollTo({ top: 0, behavior: 'smooth' });
       return;
     }
     setSubmitting(true);
     dispatch({ type: 'UPDATE_REQUIREMENTS', payload: form });
-    try {
-      const design = await submitRequirements(form);
-      dispatch({ type: 'SET_PROPOSED_DESIGN', payload: design });
-      navigate('/design');
-    } catch (err) { console.error('Submit failed:', err); }
-    finally { setSubmitting(false); }
+    dispatch({ type: 'WORKFLOW_START' });
+    navigate('/design');
   }
 
   return (

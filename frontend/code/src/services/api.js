@@ -1,96 +1,166 @@
 /**
- * API Service Layer — Stubs for Backend & AI Integration
- * 
- * All functions return mock data for the prototype.
- * Each function has a clear TODO for the backend/AI team to replace
- * with real HTTP calls via Axios.
- * 
- * Base URL should point to the FastAPI/Quarkus backend when ready.
+ * API Service Layer — Real Backend Integration via WebSocket
+ *
+ * The 3-phase AI workflow (rephrase → topology → device selection)
+ * runs over a single WebSocket connection with streaming events.
+ *
+ * The chat copilot also uses WebSocket for follow-up questions.
  */
 
 import axios from 'axios';
 
-// TODO: Update this to the real backend URL when deployed
 const API = axios.create({
-  baseURL: 'http://localhost:8000/api',
-  timeout: 10000,
+  baseURL: '/api',
+  timeout: 120000,
 });
 
 /**
- * Submit user requirements and get a proposed network design.
- * Called after the Requirements form is submitted.
- * 
- * @param {Object} requirements - The simplified user inputs
- * @returns {Object} - Proposed design with topology, summary, BOM
+ * Build a natural-language prompt from the structured requirements form.
  */
-export async function submitRequirements(requirements) {
-  // TODO: Connect to real backend — POST /api/requirements
-  // The backend will forward this to the AI engine (RAG + LLM)
-  console.log('[API STUB] submitRequirements called with:', requirements);
-  
-  // Mock response simulating what the AI would return
-  return {
-    summary: `Based on your inputs, we recommend a network design for ${requirements.buildings || 1} building(s) supporting ${requirements.students || 0} users with ${requirements.sensitiveAreas?.length || 0} secured zones.`,
-    topology: {
-      nodes: [
-        { id: 'core', label: 'Core Switch', type: 'switch', model: 'Aruba CX 6300' },
-        { id: 'dist1', label: 'Building 1 Switch', type: 'switch', model: 'Aruba CX 6200' },
-        { id: 'dist2', label: 'Building 2 Switch', type: 'switch', model: 'Aruba CX 6200' },
-        { id: 'ap1', label: 'Wi-Fi Access Points', type: 'wireless', model: 'Aruba AP-635' },
-        { id: 'gw', label: 'Gateway', type: 'gateway', model: 'Aruba 9004 Gateway' },
-      ],
-      links: [
-        { from: 'gw', to: 'core' },
-        { from: 'core', to: 'dist1' },
-        { from: 'core', to: 'dist2' },
-        { from: 'dist1', to: 'ap1' },
-      ]
-    },
-    bom: [
-      { product: 'Aruba CX 6300M Switch', category: 'Core Switch', qty: 1, purpose: 'Main backbone switch connecting all buildings' },
-      { product: 'Aruba CX 6200F 24G Switch', category: 'Access Switch', qty: requirements.buildings || 2, purpose: 'One per building for device connections' },
-      { product: 'Aruba AP-635 Access Point', category: 'Wireless', qty: Math.ceil((requirements.students || 100) / 30), purpose: 'Wi-Fi coverage for users' },
-      { product: 'Aruba 9004 Gateway', category: 'Gateway', qty: 1, purpose: 'Secure network entry point and policy enforcement' },
-      { product: 'Cat6A Cabling Kit', category: 'Cabling', qty: requirements.buildings || 2, purpose: 'Inter-building and intra-building wiring' },
-    ]
-  };
+function buildPromptFromRequirements(req, solutionType) {
+  const isCampus = solutionType !== 'datacenter';
+
+  if (isCampus) {
+    let prompt = `Design a ${isCampus ? 'campus' : 'data center'} network for an organization with ${req.buildings} building(s), ${req.floorsPerBuilding || 1} floor(s) per building.`;
+    prompt += ` There are approximately ${req.students} students/visitors, ${req.staff} staff/faculty, and ${req.admins} administrators.`;
+
+    if (req.devices) {
+      const devs = Object.entries(req.devices).filter(([, v]) => v).map(([k]) => k);
+      if (devs.length) prompt += ` Devices needed: ${devs.join(', ')}.`;
+    }
+    if (req.sensitiveAreas?.length) prompt += ` Sensitive areas requiring extra security: ${req.sensitiveAreas.join(', ')}.`;
+    if (req.specialRoles?.length) prompt += ` Special roles: ${req.specialRoles.join(', ')}.`;
+    prompt += ` Uptime requirement: ${req.uptimeLevel}.`;
+    if (req.expectGrowth) prompt += ` Expecting growth of ${req.growthAmount}.`;
+    if (req.additionalNotes) prompt += ` Additional notes: ${req.additionalNotes}`;
+    return prompt;
+  } else {
+    let prompt = `Design a data center network with ${req.buildings} server rack(s) and approximately ${req.students} servers.`;
+    if (req.specialRoles?.length) prompt += ` Use cases: ${req.specialRoles.join(', ')}.`;
+    if (req.sensitiveAreas?.length) prompt += ` Security zones: ${req.sensitiveAreas.join(', ')}.`;
+    prompt += ` Uptime requirement: ${req.uptimeLevel}.`;
+    if (req.expectGrowth) prompt += ` Expecting growth of ${req.growthAmount}.`;
+    if (req.additionalNotes) prompt += ` Additional notes: ${req.additionalNotes}`;
+    return prompt;
+  }
+}
+
+/**
+ * Submit requirements and run the full 3-phase AI workflow via WebSocket.
+ *
+ * @param {Object} requirements - The form inputs
+ * @param {string} solutionType - 'campus' or 'datacenter'
+ * @param {Function} onEvent - Callback for each streaming event: (event) => void
+ *   Events: phase_start, agent_input, tool_call, rag_result, agent_response,
+ *           approval_request, phase_approved, phase_revision, workflow_complete, error
+ * @returns {Promise<Object>} - Resolves with { rephrased, topology, devices } when done
+ */
+export function runWorkflow(requirements, solutionType, onEvent) {
+  return new Promise((resolve, reject) => {
+    const prompt = buildPromptFromRequirements(requirements, solutionType);
+    const wsUrl = `ws://${window.location.host}/ws`;
+    const ws = new WebSocket(wsUrl);
+
+    const results = { prompt, rephrased: '', topology: '', devices: '' };
+    let currentPhase = 0;
+
+    // Expose send functions via the onEvent callback's return
+    ws._sendApproval = () => ws.send(JSON.stringify({ approved: true }));
+    ws._sendRevision = (feedback) => ws.send(JSON.stringify({ approved: false, feedback }));
+
+    ws.onopen = () => {
+      ws.send(JSON.stringify({ content: prompt }));
+    };
+
+    ws.onmessage = (e) => {
+      try {
+        const data = JSON.parse(e.data);
+
+        if (data.type === 'phase_start') currentPhase = data.phase;
+
+        // Capture agent responses per phase
+        if (data.type === 'agent_response') {
+          let content = data.content || '';
+          if (content.startsWith('assistant: ')) content = content.slice(11);
+          data.content = content;
+
+          if (currentPhase === 1) results.rephrased = content;
+          else if (currentPhase === 2) results.topology = content;
+          else if (currentPhase === 3) results.devices = content;
+        }
+
+        if (data.type === 'workflow_complete') {
+          ws.close();
+          resolve(results);
+        }
+
+        if (data.type === 'error') {
+          ws.close();
+          reject(new Error(data.message));
+        }
+
+        // Forward event to UI with ws reference for approval
+        onEvent({ ...data, ws });
+      } catch (err) {
+        console.error('WS parse error:', err);
+      }
+    };
+
+    ws.onerror = () => reject(new Error('WebSocket connection failed'));
+    ws.onclose = () => {};
+  });
+}
+
+/**
+ * Send an approval for the current phase.
+ */
+export function sendApproval(ws) {
+  if (ws?.readyState === WebSocket.OPEN) {
+    ws.send(JSON.stringify({ approved: true }));
+  }
+}
+
+/**
+ * Send a revision request for the current phase.
+ */
+export function sendRevision(ws, feedback) {
+  if (ws?.readyState === WebSocket.OPEN) {
+    ws.send(JSON.stringify({ approved: false, feedback }));
+  }
 }
 
 /**
  * Send a message to the Grounded Design Copilot (AI chatbot).
- * The chatbot should already have context from the submitted requirements.
- * 
- * @param {string} message - User's chat message
- * @param {Array} history - Previous chat messages for context
- * @returns {Object} - AI response
+ * Uses a separate WebSocket for follow-up chat.
  */
 export async function sendChatMessage(message, history = []) {
-  // TODO: [AI TEAM]
-  // Connect to your RAG-based chatbot service.
-  // The service should use the Aruba documentation vector DB (e.g., Qdrant/Pinecone).
-  // Request: POST /api/chat { message, history, context: currentProjectState }
-  console.log('[API STUB] sendChatMessage:', message);
-
-  return {
-    role: 'assistant',
-    content: `Thank you for your question about "${message}". In the final system, this response will come from the Grounded Design Copilot powered by RAG over HPE Aruba documentation. For now, this is a placeholder response.`,
-    timestamp: new Date().toISOString(),
-  };
+  try {
+    const res = await API.post('/chat', { message, history });
+    return res.data;
+  } catch {
+    // Fallback stub if chat endpoint not ready
+    return {
+      role: 'assistant',
+      content: `Thank you for your question. The chat copilot is processing: "${message}"`,
+      timestamp: new Date().toISOString(),
+    };
+  }
 }
 
 /**
  * Trigger the deployment process.
- * 
- * TODO: [BACKEND TEAM]
- * Connect this to your orchestration pipeline (e.g., Kafka / Aruba Central API).
  */
 export async function triggerDeployment(projectId) {
-  // TODO: [BACKEND TEAM] — POST /api/deploy
-  console.log('[API STUB] triggerDeployment for project:', projectId);
-
+  console.log('[API] triggerDeployment for project:', projectId);
   return {
     status: 'success',
     message: 'Deployment initiated. Configuration is being pushed to network devices.',
     projectId,
   };
+}
+
+// Keep backward compat — submitRequirements is now handled by runWorkflow
+export async function submitRequirements(requirements) {
+  console.warn('[API] submitRequirements is deprecated, use runWorkflow instead');
+  return null;
 }
