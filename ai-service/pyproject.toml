@@ -1,0 +1,18 @@
+[project]
+name = "project"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+requires-python = ">=3.14"
+dependencies = [
+    "fastapi>=0.136.1",
+    "llama-index>=0.14.21",
+    "llama-index-embeddings-huggingface>=0.7.0",
+    "llama-index-llms-mistralai>=0.10.1",
+    "llama-index-llms-ollama>=0.10.1",
+    "llama-index-node-parser-docling>=0.4.2",
+    "llama-index-readers-docling>=0.4.2",
+    "llama-index-vector-stores-qdrant>=0.10.0",
+    "python-dotenv>=1.2.2",
+    "uvicorn[standard]>=0.46.0",
+]
