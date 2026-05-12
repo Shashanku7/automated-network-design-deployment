@@ -66,21 +66,52 @@ export default function DetailedTopology() {
         ))}
       </div>
 
-      {/* Tab Content — Placeholders for AI team */}
+      {/* Tab Content */}
       <div className="bg-surface-container-low rounded-xl border border-outline-variant/15 p-8 min-h-[400px] flex items-center justify-center">
         {activeTab === 'logical' && (
-          <div className="text-center">
-            <span className="material-symbols-outlined text-6xl text-outline/30 mb-4">account_tree</span>
-            <h3 className="text-lg font-bold text-on-surface mb-2">Logical Topology</h3>
-            <p className="text-on-surface-variant text-sm max-w-md">
-              {simpleView
-                ? 'A visual map showing how your buildings and devices are connected.'
-                : 'Layer 2/3 topology with VLAN segmentation, OSPF areas, and inter-switch trunk links.'}
-            </p>
-            <p className="text-xs text-outline mt-4 italic">
-              // TODO: AI team — render the generated topology diagram here
-            </p>
-          </div>
+          state.diagramUrl ? (
+            <div className="w-full">
+              <div className="flex items-center justify-between mb-4">
+                <div className="flex items-center gap-2">
+                  <span className="material-symbols-outlined text-primary text-lg">schema</span>
+                  <h3 className="text-lg font-bold text-on-surface">
+                    {simpleView ? 'Network Map' : 'Logical Topology (PlantUML)'}
+                  </h3>
+                </div>
+                <a href={state.diagramUrl} download="network_topology.png"
+                  className="flex items-center gap-1.5 px-4 py-2 bg-primary/15 text-primary text-sm font-bold rounded-lg hover:bg-primary/25 transition-colors">
+                  <span className="material-symbols-outlined text-lg">download</span>
+                  Download Diagram
+                </a>
+              </div>
+              <div className="bg-white rounded-xl p-4 flex items-center justify-center overflow-auto max-h-[600px]">
+                <img src={state.diagramUrl} alt="Network Topology Diagram" className="max-w-full object-contain" />
+              </div>
+              {!simpleView && state.plantumlCode && (
+                <details className="mt-4">
+                  <summary className="text-xs text-on-surface-variant cursor-pointer hover:text-on-surface transition-colors font-medium">
+                    View PlantUML Source Code
+                  </summary>
+                  <pre className="mt-2 bg-surface-container rounded-lg p-4 text-xs text-on-surface-variant overflow-x-auto font-[family-name:var(--font-mono)] border border-outline-variant/15">
+                    {state.plantumlCode}
+                  </pre>
+                </details>
+              )}
+            </div>
+          ) : (
+            <div className="text-center">
+              <span className="material-symbols-outlined text-6xl text-outline/30 mb-4">account_tree</span>
+              <h3 className="text-lg font-bold text-on-surface mb-2">Logical Topology</h3>
+              <p className="text-on-surface-variant text-sm max-w-md">
+                {simpleView
+                  ? 'A visual map showing how your buildings and devices are connected.'
+                  : 'Layer 2/3 topology with VLAN segmentation, OSPF areas, and inter-switch trunk links.'}
+              </p>
+              <p className="text-xs text-outline mt-4 italic">
+                Generate a design to see the network topology diagram here.
+              </p>
+            </div>
+          )
         )}
         {activeTab === 'cabling' && (
           <div className="text-center">

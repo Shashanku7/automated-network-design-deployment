@@ -1,6 +1,6 @@
 """FastAPI webapp – Network Automation Multi-Agent Workflow with WebSocket streaming."""
 
-import asyncio, json, os, re
+import asyncio, json, os, re, urllib.request
 from datetime import datetime
 from pathlib import Path
 
@@ -43,7 +43,7 @@ OUTPUT_DIR.mkdir(exist_ok=True)
 # ── LLM ───────────────────────────────────────
 llm = Ollama(
     model=OLLAMA_MODEL, base_url=OLLAMA_BASE_URL,
-    request_timeout=120.0, context_window=131072,
+    request_timeout=400.0, context_window=131072,
     is_function_calling_model=True,
     headers={"Authorization": f"Bearer {OLLAMA_API_KEY}"},
 )
@@ -134,10 +134,36 @@ agent3 = FunctionAgent(
     ), llm=llm, tools=[rag_tool],
 )
 
+agent4 = FunctionAgent(
+    name="topology_diagrammer",
+    description="Generates PlantUML network diagrams from topology designs.",
+    system_prompt=(
+        "You are a Network Diagram Specialist.\n\n"
+        "Given a network topology design and device selection / BOM, generate a PlantUML "
+        "network diagram using the `nwdiag` syntax.\n\n"
+        "RULES:\n"
+        "1. Wrap everything inside @startuml / @enduml\n"
+        "2. Use `nwdiag { ... }` for the network diagram\n"
+        "3. For end-user device groups (students, staff, IoT, cameras, etc.) with many\n"
+        "   devices, show the IP range as: address = 'Start: x.x.x.x / End: y.y.y.y'\n"
+        "   Do NOT draw individual end-user devices.\n"
+        "4. Show all VLANs / subnets as separate `network` blocks with their subnet address\n"
+        "5. Show core, distribution, and access layer devices with individual IPs\n"
+        "6. Include server, management, and security network segments\n"
+        "7. Label each device with its role and model name if known from the BOM\n"
+        "8. Keep the diagram readable — group logically by building/floor if applicable\n\n"
+        "OUTPUT FORMAT:\n"
+        "Output ONLY a single ```plantuml code block containing the full diagram.\n"
+        "No explanations, no commentary outside the code block."
+    ),
+    llm=llm,
+)
+
 PHASES = [
     (1, "Prompt Rephrasing", agent1),
     (2, "Network Topology Design", agent2),
     (3, "Device Selection & BOM", agent3),
+    (4, "Topology Diagram", agent4),
 ]
 
 # ── Helpers ───────────────────────────────────
@@ -158,17 +184,45 @@ def _parse_chunks(raw):
         })
     return chunks
 
-def _save(prompt, rephrased, topology, devices):
+def _extract_plantuml(text):
+    """Extract PlantUML code from agent response (inside ```plantuml block or raw)."""
+    m = re.search(r'```(?:plantuml|puml|uml)?\s*\n(.*?)\n\s*```', text, re.DOTALL)
+    if m:
+        code = m.group(1).strip()
+        if '@start' in code:
+            return code
+    m = re.search(r'(@start\w+.*?@end\w+)', text, re.DOTALL)
+    if m:
+        return m.group(1).strip()
+    return None
+
+async def _render_plantuml(code: str) -> bytes:
+    """Render PlantUML code to PNG via kroki.io."""
+    def _do_render():
+        req = urllib.request.Request(
+            "https://kroki.io/plantuml/png",
+            data=code.encode("utf-8"),
+            headers={"Content-Type": "text/plain"},
+        )
+        with urllib.request.urlopen(req, timeout=60) as resp:
+            return resp.read()
+    return await asyncio.to_thread(_do_render)
+
+def _save(prompt, rephrased, topology, devices, plantuml_code=None, diagram_file=None):
     ts = datetime.now()
     fp = OUTPUT_DIR / f"{ts:%Y-%m-%d_%H-%M-%S}_run.md"
-    fp.write_text(
+    content = (
         f"# Network Automation Run\n\n**Date:** {ts:%Y-%m-%d %H:%M:%S}  \n"
         f"**Model:** {OLLAMA_MODEL}\n\n---\n\n## User Prompt\n\n{prompt}\n\n---\n\n"
         f"## Phase 1: Rephrased Prompt\n\n{_strip_ansi(rephrased)}\n\n---\n\n"
         f"## Phase 2: Network Topology\n\n{_strip_ansi(topology)}\n\n---\n\n"
-        f"## Phase 3: Device Selection & BOM\n\n{_strip_ansi(devices)}\n",
-        encoding="utf-8",
+        f"## Phase 3: Device Selection & BOM\n\n{_strip_ansi(devices)}\n"
     )
+    if plantuml_code:
+        content += f"\n---\n\n## Phase 4: Topology Diagram (PlantUML)\n\n```plantuml\n{plantuml_code}\n```\n"
+    if diagram_file:
+        content += f"\nRendered diagram: `{diagram_file}`\n"
+    fp.write_text(content, encoding="utf-8")
     return fp
 
 # ── FastAPI ───────────────────────────────────────
@@ -190,6 +244,16 @@ class ChatRequest(BaseModel):
 @app.get("/")
 async def index():
     return FileResponse(STATIC / "index.html")
+
+@app.get("/api/diagram/{filename}")
+async def get_diagram(filename: str):
+    """Serve a rendered PlantUML diagram PNG."""
+    path = OUTPUT_DIR / filename
+    if not path.exists() or not filename.endswith('.png'):
+        from fastapi.responses import JSONResponse
+        return JSONResponse({"error": "Diagram not found"}, status_code=404)
+    return FileResponse(path, media_type="image/png",
+                        headers={"Content-Disposition": f'inline; filename="{filename}"'})
 
 @app.post("/api/chat")
 async def chat_endpoint(req: ChatRequest):
@@ -215,7 +279,7 @@ async def _send(ws, **kw):
 
 async def _run_phase(ws, phase_num, phase_name, agent, initial_msg):
     """Run one agent phase with event streaming and HITL approval."""
-    wf = AgentWorkflow(agents=[agent], root_agent=agent.name)
+    wf = AgentWorkflow(agents=[agent], root_agent=agent.name, timeout=400.0)
     history: list[ChatMessage] = []
     msg = initial_msg
     iteration = 0
@@ -224,34 +288,49 @@ async def _run_phase(ws, phase_num, phase_name, agent, initial_msg):
         iteration += 1
         await _send(ws, type="phase_start", phase=phase_num, name=phase_name, iteration=iteration)
 
-        if history:
-            handler = wf.run(chat_history=history + [ChatMessage(role=MessageRole.USER, content=msg)])
-        else:
-            handler = wf.run(user_msg=msg)
-
+        # Retry up to 3 times on transient LLM errors (e.g. Ollama cloud 500s)
+        max_retries = 3
         response_text = ""
-        async for ev in handler.stream_events():
-            if isinstance(ev, AgentInput):
-                await _send(ws, type="agent_input", agent=ev.current_agent_name, model=OLLAMA_MODEL)
-            elif isinstance(ev, ToolCall):
-                await _send(ws, type="tool_call", tool_name=ev.tool_name, tool_kwargs=ev.tool_kwargs)
-            elif isinstance(ev, ToolCallResult):
-                out = str(ev.tool_output)
-                if ev.tool_name == "network_device_lookup":
-                    chunks = _parse_chunks(out)
-                    await _send(ws, type="rag_result", tool_name=ev.tool_name, chunks=chunks, total=len(chunks))
+        for attempt in range(1, max_retries + 1):
+            try:
+                if history:
+                    handler = wf.run(chat_history=history + [ChatMessage(role=MessageRole.USER, content=msg)])
                 else:
-                    await _send(ws, type="tool_result", tool_name=ev.tool_name, output=out[:2000])
-            elif isinstance(ev, AgentOutput):
-                response_text = str(ev.response)
-                if ev.tool_calls:
-                    for tc in ev.tool_calls:
-                        await _send(ws, type="tool_call", tool_name=tc.tool_name, tool_kwargs=tc.tool_kwargs)
-                else:
-                    await _send(ws, type="agent_response", agent=ev.current_agent_name, content=response_text)
+                    handler = wf.run(user_msg=msg)
 
-        resp = await handler
-        response_text = str(resp)
+                async for ev in handler.stream_events():
+                    if isinstance(ev, AgentInput):
+                        await _send(ws, type="agent_input", agent=ev.current_agent_name, model=OLLAMA_MODEL)
+                    elif isinstance(ev, ToolCall):
+                        await _send(ws, type="tool_call", tool_name=ev.tool_name, tool_kwargs=ev.tool_kwargs)
+                    elif isinstance(ev, ToolCallResult):
+                        out = str(ev.tool_output)
+                        if ev.tool_name == "network_device_lookup":
+                            chunks = _parse_chunks(out)
+                            await _send(ws, type="rag_result", tool_name=ev.tool_name, chunks=chunks, total=len(chunks))
+                        else:
+                            await _send(ws, type="tool_result", tool_name=ev.tool_name, output=out[:2000])
+                    elif isinstance(ev, AgentOutput):
+                        response_text = str(ev.response)
+                        if ev.tool_calls:
+                            for tc in ev.tool_calls:
+                                await _send(ws, type="tool_call", tool_name=tc.tool_name, tool_kwargs=tc.tool_kwargs)
+                        else:
+                            await _send(ws, type="agent_response", agent=ev.current_agent_name, content=response_text)
+
+                resp = await handler
+                response_text = str(resp)
+                break  # Success — exit retry loop
+            except Exception as llm_err:
+                import traceback
+                traceback.print_exc()
+                if attempt < max_retries:
+                    await _send(ws, type="agent_response", agent=agent.name,
+                                content=f"⚠️ LLM error (attempt {attempt}/{max_retries}): {str(llm_err)[:200]}. Retrying in 5s…")
+                    await asyncio.sleep(5)
+                else:
+                    await _send(ws, type="agent_response", agent=agent.name,
+                                content=f"❌ LLM failed after {max_retries} attempts: {str(llm_err)[:300]}. Approving with partial result.")
         history.append(ChatMessage(role=MessageRole.USER, content=msg))
         history.append(ChatMessage(role=MessageRole.ASSISTANT, content=response_text))
 
@@ -278,8 +357,32 @@ async def ws_endpoint(ws: WebSocket):
         ctx = f"## Original Requirements\n{prompt}\n\n## Approved Topology\n{topology}"
         devices = await _run_phase(ws, 3, "Device Selection & BOM", agent3, ctx)
 
-        fp = _save(prompt, rephrased, topology, devices)
-        await _send(ws, type="workflow_complete", saved_to=str(fp))
+        # Phase 4: Topology Diagram
+        diagram_ctx = (
+            f"## Network Topology Design\n{topology}\n\n"
+            f"## Device Selection & BOM\n{devices}"
+        )
+        diagram_result = await _run_phase(ws, 4, "Topology Diagram", agent4, diagram_ctx)
+
+        # Extract PlantUML code and render to PNG
+        plantuml_code = _extract_plantuml(diagram_result)
+        diagram_filename = None
+        if plantuml_code:
+            try:
+                png_data = await _render_plantuml(plantuml_code)
+                diagram_filename = f"{datetime.now():%Y-%m-%d_%H-%M-%S}_topology.png"
+                (OUTPUT_DIR / diagram_filename).write_bytes(png_data)
+                await _send(ws, type="diagram_ready",
+                            url=f"/api/diagram/{diagram_filename}",
+                            filename=diagram_filename,
+                            plantuml_code=plantuml_code)
+            except Exception as render_err:
+                await _send(ws, type="diagram_error",
+                            message=f"Failed to render diagram: {str(render_err)}")
+
+        fp = _save(prompt, rephrased, topology, devices, plantuml_code, diagram_filename)
+        await _send(ws, type="workflow_complete", saved_to=str(fp),
+                    diagram_url=f"/api/diagram/{diagram_filename}" if diagram_filename else None)
     except WebSocketDisconnect:
         pass
     except Exception as e:

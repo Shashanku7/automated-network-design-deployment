@@ -78,6 +78,9 @@ export default function ProposedDesign() {
         dispatch({ type: 'SET_REPHRASED', payload: results.rephrased });
         dispatch({ type: 'SET_TOPOLOGY', payload: results.topology });
         dispatch({ type: 'SET_DEVICES', payload: results.devices });
+        if (results.diagramUrl) {
+          dispatch({ type: 'SET_DIAGRAM', payload: { url: results.diagramUrl, code: results.plantumlCode } });
+        }
         dispatch({ type: 'WORKFLOW_COMPLETE' });
         // Build legacy proposedDesign for BOM page
         dispatch({
@@ -179,7 +182,7 @@ export default function ProposedDesign() {
 
         {/* Phase progress bar */}
         <div className="px-6 py-4 flex gap-2">
-          {['Prompt Rephrasing', 'Topology Design', 'Device Selection'].map((name, i) => (
+          {['Prompt Rephrasing', 'Topology Design', 'Device Selection', 'Topology Diagram'].map((name, i) => (
             <div key={i} className={`flex-1 h-1.5 rounded-full transition-all duration-500 ${
               currentPhase > i + 1 ? 'bg-tertiary' : currentPhase === i + 1 ? 'bg-primary animate-pulse' : 'bg-surface-container-high'
             }`} title={name} />
@@ -412,6 +415,35 @@ function EventCard({ event }) {
       return (
         <div className="bg-error/10 border border-error/30 rounded-xl px-4 py-3 text-sm text-error">
           ❌ {ev.message}
+        </div>
+      );
+
+    case 'diagram_ready':
+      return (
+        <div className="border border-tertiary/30 bg-tertiary/5 rounded-xl overflow-hidden">
+          <div className="flex items-center justify-between px-5 py-3 border-b border-tertiary/15">
+            <div className="flex items-center gap-2">
+              <span className="material-symbols-outlined text-tertiary text-lg">schema</span>
+              <span className="text-sm font-bold text-on-surface">Network Topology Diagram</span>
+              <span className="text-[10px] px-2 py-0.5 rounded-full bg-tertiary/20 text-tertiary font-medium">PlantUML</span>
+            </div>
+            <a href={ev.url} download={ev.filename || 'topology.png'}
+              className="flex items-center gap-1.5 px-3 py-1.5 bg-tertiary/15 text-tertiary text-xs font-bold rounded-lg hover:bg-tertiary/25 transition-colors">
+              <span className="material-symbols-outlined text-sm">download</span>
+              Download PNG
+            </a>
+          </div>
+          <div className="p-4 bg-white rounded-b-xl flex items-center justify-center">
+            <img src={ev.url} alt="Network Topology Diagram" className="max-w-full max-h-[600px] object-contain" />
+          </div>
+        </div>
+      );
+
+    case 'diagram_error':
+      return (
+        <div className="bg-error/10 border border-error/30 rounded-xl px-4 py-3 text-sm text-error flex items-center gap-2">
+          <span className="material-symbols-outlined text-sm">warning</span>
+          Diagram rendering failed: {ev.message}
         </div>
       );
 
