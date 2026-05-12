@@ -21,11 +21,14 @@ const initialState = {
 
   // Step 2: User requirements (all in plain, non-technical terms)
   requirements: {
-    buildings: '',
-    floorsPerBuilding: '1',
-    students: '',
-    staff: '',
-    admins: '',
+    // Campus
+    buildingCount: '',
+    buildings: [], // Array of { id, name, floorCount, floors: [...] }
+    
+    // Data Center
+    dcRacks: '',
+    dcServers: '',
+
     specialRoles: [],         // e.g. ['Principal', 'Exam Controller', 'Finance Head']
     devices: {
       laptops: false,

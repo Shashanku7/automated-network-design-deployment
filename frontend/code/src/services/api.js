@@ -25,12 +25,26 @@ const API = axios.create({
  */
 export async function submitRequirements(requirements) {
   // TODO: Connect to real backend — POST /api/requirements
-  // The backend will forward this to the AI engine (RAG + LLM)
   console.log('[API STUB] submitRequirements called with:', requirements);
+
+  // Helper to get totals for Campus structure
+  const isCampus = !!requirements.buildings && Array.isArray(requirements.buildings);
+  const totalBuildings = isCampus ? requirements.buildings.length : (Number(requirements.dcRacks) || 1);
+  
+  let totalUsers = 0;
+  if (isCampus) {
+    requirements.buildings.forEach(b => {
+      b.floors.forEach(f => {
+        totalUsers += (Number(f.students) || 0) + (Number(f.staff) || 0) + (Number(f.admins) || 0);
+      });
+    });
+  } else {
+    totalUsers = Number(requirements.dcServers) || 0;
+  }
   
   // Mock response simulating what the AI would return
   return {
-    summary: `Based on your inputs, we recommend a network design for ${requirements.buildings || 1} building(s) supporting ${requirements.students || 0} users with ${requirements.sensitiveAreas?.length || 0} secured zones.`,
+    summary: `Based on your inputs, we recommend a network design for ${totalBuildings} building(s) supporting ${totalUsers} users with ${requirements.sensitiveAreas?.length || 0} secured zones.`,
     topology: {
       nodes: [
         { id: 'core', label: 'Core Switch', type: 'switch', model: 'Aruba CX 6300' },
@@ -48,10 +62,10 @@ export async function submitRequirements(requirements) {
     },
     bom: [
       { product: 'Aruba CX 6300M Switch', category: 'Core Switch', qty: 1, purpose: 'Main backbone switch connecting all buildings' },
-      { product: 'Aruba CX 6200F 24G Switch', category: 'Access Switch', qty: requirements.buildings || 2, purpose: 'One per building for device connections' },
-      { product: 'Aruba AP-635 Access Point', category: 'Wireless', qty: Math.ceil((requirements.students || 100) / 30), purpose: 'Wi-Fi coverage for users' },
+      { product: 'Aruba CX 6200F 24G Switch', category: 'Access Switch', qty: totalBuildings, purpose: 'One per building for device connections' },
+      { product: 'Aruba AP-635 Access Point', category: 'Wireless', qty: Math.ceil((totalUsers || 100) / 30), purpose: 'Wi-Fi coverage for users' },
       { product: 'Aruba 9004 Gateway', category: 'Gateway', qty: 1, purpose: 'Secure network entry point and policy enforcement' },
-      { product: 'Cat6A Cabling Kit', category: 'Cabling', qty: requirements.buildings || 2, purpose: 'Inter-building and intra-building wiring' },
+      { product: 'Cat6A Cabling Kit', category: 'Cabling', qty: totalBuildings, purpose: 'Inter-building and intra-building wiring' },
     ]
   };
 }
