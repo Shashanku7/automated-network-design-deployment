@@ -34,17 +34,36 @@ function buildPromptFromRequirements(req, solutionType) {
     });
 
     let prompt = `Design a campus network for an organization with ${totalBuildings} building(s).`;
-    prompt += ` Across all buildings, there are approximately ${totalStudents} students/visitors, ${totalStaff} staff/faculty, and ${totalAdmins} administrators distributed across multiple floors.`;
+    prompt += ` Across all buildings, there are approximately ${totalStudents} students/visitors, ${totalStaff} staff/faculty, and ${totalAdmins} administrators.\n\n`;
 
+    // Per-building, per-floor breakdown
+    prompt += `## Building & Floor Breakdown\n`;
+    req.buildings?.forEach((b, bIdx) => {
+      prompt += `\n### Building ${bIdx + 1}: ${b.name || 'Unnamed'} (${b.floorCount || 0} floors)\n`;
+      if (b.floors?.length) {
+        prompt += `| Floor | Department / Name | Students | Staff | Admins |\n`;
+        prompt += `|-------|-------------------|----------|-------|--------|\n`;
+        b.floors.forEach((f, fIdx) => {
+          const floorLabel = f.name || (fIdx === 0 ? 'Ground Floor' : `Floor ${fIdx}`);
+          prompt += `| ${fIdx + 1} | ${floorLabel} | ${f.students || 0} | ${f.staff || 0} | ${f.admins || 0} |\n`;
+        });
+        const bStudents = b.floors.reduce((s, f) => s + (Number(f.students) || 0), 0);
+        const bStaff = b.floors.reduce((s, f) => s + (Number(f.staff) || 0), 0);
+        const bAdmins = b.floors.reduce((s, f) => s + (Number(f.admins) || 0), 0);
+        prompt += `| **Total** | | **${bStudents}** | **${bStaff}** | **${bAdmins}** |\n`;
+      }
+    });
+
+    prompt += `\n`;
     if (req.devices) {
       const devs = Object.entries(req.devices).filter(([, v]) => v).map(([k]) => k);
-      if (devs.length) prompt += ` Devices needed: ${devs.join(', ')}.`;
+      if (devs.length) prompt += `Devices needed: ${devs.join(', ')}.\n`;
     }
-    if (req.sensitiveAreas?.length) prompt += ` Sensitive areas requiring extra security: ${req.sensitiveAreas.join(', ')}.`;
-    if (req.specialRoles?.length) prompt += ` Special roles to consider: ${req.specialRoles.join(', ')}.`;
-    prompt += ` Uptime requirement: ${req.uptimeLevel}.`;
-    if (req.expectGrowth) prompt += ` Expecting growth of ${req.growthAmount}.`;
-    if (req.additionalNotes) prompt += ` Additional notes: ${req.additionalNotes}`;
+    if (req.sensitiveAreas?.length) prompt += `Sensitive areas requiring extra security: ${req.sensitiveAreas.join(', ')}.\n`;
+    if (req.specialRoles?.length) prompt += `Special roles to consider: ${req.specialRoles.join(', ')}.\n`;
+    prompt += `Uptime requirement: ${req.uptimeLevel}.\n`;
+    if (req.expectGrowth) prompt += `Expecting growth of ${req.growthAmount}.\n`;
+    if (req.additionalNotes) prompt += `Additional notes: ${req.additionalNotes}\n`;
     return prompt;
   } else {
     // Data Center path

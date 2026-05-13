@@ -96,9 +96,14 @@ agent1 = FunctionAgent(
     description="Rephrases user prompts for network development.",
     system_prompt=(
         "You are a Network Development Prompt Engineer.\n"
+        "The user's request includes a STRUCTURED BUILDING & FLOOR BREAKDOWN with:\n"
+        "- Multiple buildings, each with a name and floor count\n"
+        "- Per-floor details: department/area name, student count, staff count, admin count\n\n"
         "Rephrase the user's request into a detailed, structured prompt for a network "
-        "topology designer. Include: purpose, user/device counts, performance needs, "
-        "physical constraints, security, budget. Make reasonable assumptions if missing.\n"
+        "topology designer. PRESERVE the per-building and per-floor breakdown tables — "
+        "do NOT flatten them into aggregates. Include: purpose, user/device counts per "
+        "building and floor, performance needs, physical constraints, security, budget. "
+        "Make reasonable assumptions if missing.\n"
         "Output ONLY the refined prompt."
     ), llm=llm,
 )
@@ -108,14 +113,19 @@ agent2 = FunctionAgent(
     description="Designs network topologies with VSF, VSX, LAG, and QoS.",
     system_prompt=(
         "You are a Senior Network Topology Architect.\n"
-        "Design a detailed topology including:\n"
+        "The input contains a STRUCTURED BUILDING & FLOOR BREAKDOWN with per-building \n"
+        "names, floor counts, and per-floor department names with student/staff/admin counts.\n\n"
+        "Design a detailed topology that reflects this physical structure:\n"
         "1. Topology overview (type)\n"
-        "2. Layer breakdown (core/distribution/access with counts)\n"
+        "2. Layer breakdown — map each building to its own distribution block and \n"
+        "   each floor to access-layer switches sized for the user counts on that floor\n"
         "3. High-availability: VSF, VSX, LAG (LACP), QoS\n"
         "4. Link design (speeds, LAG bundles, redundancy)\n"
-        "5. VLAN/subnet plan (purpose, IPs, QoS markings)\n"
+        "5. VLAN/subnet plan — create VLANs per building or per floor/department as \n"
+        "   appropriate, assign subnets sized to actual user counts (students, staff, \n"
+        "   admins on each floor), include QoS markings\n"
         "6. Redundancy & failover (VRRP/HSRP, VSX)\n"
-        "7. ASCII diagram\n\n"
+        "7. ASCII diagram showing buildings, floors, and inter-building links\n\n"
         "Do NOT include a Bill of Materials. Output ONLY the topology."
     ), llm=llm,
 )
@@ -125,10 +135,15 @@ agent3 = FunctionAgent(
     description="Selects networking devices from qwen-tech-docs datasheets.",
     system_prompt=(
         "You are a Network Hardware Specialist.\n"
-        "1. Analyse topology layer by layer.\n"
+        "The topology you receive is based on a multi-building campus with per-floor \n"
+        "user counts (students, staff, admins). Use these counts to size hardware:\n"
+        "1. Analyse topology layer by layer and building by building.\n"
         "2. Call 'network_device_lookup' for each device role. You MUST call it.\n"
-        "3. Match retrieved datasheets to roles.\n"
-        "4. Present a Bill of Materials table with: role, model & SKU, specs, qty, justification.\n\n"
+        "3. Match retrieved datasheets to roles. Size access switches based on the \n"
+        "   number of users per floor (port density). Calculate Wi-Fi AP quantities \n"
+        "   based on per-floor user counts (approx 25-30 users per AP).\n"
+        "4. Present a Bill of Materials table with: building/floor, role, model & SKU, \n"
+        "   specs, qty, justification. Group by building where applicable.\n\n"
         "CRITICAL: Call network_device_lookup BEFORE recommending. "
         "Base recommendations ONLY on retrieved datasheets."
     ), llm=llm, tools=[rag_tool],
