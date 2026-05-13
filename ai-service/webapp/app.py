@@ -1,6 +1,6 @@
 """FastAPI webapp – Network Automation Multi-Agent Workflow with WebSocket streaming."""
 
-import asyncio, json, os, re, urllib.request
+import asyncio, json, os, re
 from datetime import datetime
 from pathlib import Path
 
@@ -39,6 +39,7 @@ OLLAMA_BASE_URL = "https://api.ollama.com"
 TOP_K = 25
 OUTPUT_DIR = Path(__file__).resolve().parent.parent / "output"
 OUTPUT_DIR.mkdir(exist_ok=True)
+IMAGE_SERVICE_URL = os.getenv("IMAGE_SERVICE_URL", "http://localhost:8001")
 
 # ── LLM ───────────────────────────────────────
 llm = Ollama(
@@ -149,36 +150,10 @@ agent3 = FunctionAgent(
     ), llm=llm, tools=[rag_tool],
 )
 
-agent4 = FunctionAgent(
-    name="topology_diagrammer",
-    description="Generates PlantUML network diagrams from topology designs.",
-    system_prompt=(
-        "You are a Network Diagram Specialist.\n\n"
-        "Given a network topology design and device selection / BOM, generate a PlantUML "
-        "network diagram using the `nwdiag` syntax.\n\n"
-        "RULES:\n"
-        "1. Wrap everything inside @startuml / @enduml\n"
-        "2. Use `nwdiag { ... }` for the network diagram\n"
-        "3. For end-user device groups (students, staff, IoT, cameras, etc.) with many\n"
-        "   devices, show the IP range as: address = 'Start: x.x.x.x / End: y.y.y.y'\n"
-        "   Do NOT draw individual end-user devices.\n"
-        "4. Show all VLANs / subnets as separate `network` blocks with their subnet address\n"
-        "5. Show core, distribution, and access layer devices with individual IPs\n"
-        "6. Include server, management, and security network segments\n"
-        "7. Label each device with its role and model name if known from the BOM\n"
-        "8. Keep the diagram readable — group logically by building/floor if applicable\n\n"
-        "OUTPUT FORMAT:\n"
-        "Output ONLY a single ```plantuml code block containing the full diagram.\n"
-        "No explanations, no commentary outside the code block."
-    ),
-    llm=llm,
-)
-
 PHASES = [
     (1, "Prompt Rephrasing", agent1),
     (2, "Network Topology Design", agent2),
     (3, "Device Selection & BOM", agent3),
-    (4, "Topology Diagram", agent4),
 ]
 
 # ── Helpers ───────────────────────────────────
@@ -199,31 +174,18 @@ def _parse_chunks(raw):
         })
     return chunks
 
-def _extract_plantuml(text):
-    """Extract PlantUML code from agent response (inside ```plantuml block or raw)."""
-    m = re.search(r'```(?:plantuml|puml|uml)?\s*\n(.*?)\n\s*```', text, re.DOTALL)
-    if m:
-        code = m.group(1).strip()
-        if '@start' in code:
-            return code
-    m = re.search(r'(@start\w+.*?@end\w+)', text, re.DOTALL)
-    if m:
-        return m.group(1).strip()
-    return None
-
-async def _render_plantuml(code: str) -> bytes:
-    """Render PlantUML code to PNG via kroki.io."""
-    def _do_render():
-        req = urllib.request.Request(
-            "https://kroki.io/plantuml/png",
-            data=code.encode("utf-8"),
-            headers={"Content-Type": "text/plain"},
+async def _generate_diagram_via_service(topology: str, bom: str) -> dict:
+    """Call the Image Generation Service to create a topology diagram PNG."""
+    import httpx
+    async with httpx.AsyncClient(timeout=90.0) as client:
+        resp = await client.post(
+            f"{IMAGE_SERVICE_URL}/api/generate-diagram",
+            json={"topology": topology, "bom": bom},
         )
-        with urllib.request.urlopen(req, timeout=60) as resp:
-            return resp.read()
-    return await asyncio.to_thread(_do_render)
+        resp.raise_for_status()
+        return resp.json()
 
-def _save(prompt, rephrased, topology, devices, plantuml_code=None, diagram_file=None):
+def _save(prompt, rephrased, topology, devices, diagram_url=None):
     ts = datetime.now()
     fp = OUTPUT_DIR / f"{ts:%Y-%m-%d_%H-%M-%S}_run.md"
     content = (
@@ -233,10 +195,8 @@ def _save(prompt, rephrased, topology, devices, plantuml_code=None, diagram_file
         f"## Phase 2: Network Topology\n\n{_strip_ansi(topology)}\n\n---\n\n"
         f"## Phase 3: Device Selection & BOM\n\n{_strip_ansi(devices)}\n"
     )
-    if plantuml_code:
-        content += f"\n---\n\n## Phase 4: Topology Diagram (PlantUML)\n\n```plantuml\n{plantuml_code}\n```\n"
-    if diagram_file:
-        content += f"\nRendered diagram: `{diagram_file}`\n"
+    if diagram_url:
+        content += f"\n---\n\n## Topology Diagram\n\nGenerated diagram: `{diagram_url}`\n"
     fp.write_text(content, encoding="utf-8")
     return fp
 
@@ -259,16 +219,6 @@ class ChatRequest(BaseModel):
 @app.get("/")
 async def index():
     return FileResponse(STATIC / "index.html")
-
-@app.get("/api/diagram/{filename}")
-async def get_diagram(filename: str):
-    """Serve a rendered PlantUML diagram PNG."""
-    path = OUTPUT_DIR / filename
-    if not path.exists() or not filename.endswith('.png'):
-        from fastapi.responses import JSONResponse
-        return JSONResponse({"error": "Diagram not found"}, status_code=404)
-    return FileResponse(path, media_type="image/png",
-                        headers={"Content-Disposition": f'inline; filename="{filename}"'})
 
 @app.post("/api/chat")
 async def chat_endpoint(req: ChatRequest):
@@ -372,32 +322,27 @@ async def ws_endpoint(ws: WebSocket):
         ctx = f"## Original Requirements\n{prompt}\n\n## Approved Topology\n{topology}"
         devices = await _run_phase(ws, 3, "Device Selection & BOM", agent3, ctx)
 
-        # Phase 4: Topology Diagram
-        diagram_ctx = (
-            f"## Network Topology Design\n{topology}\n\n"
-            f"## Device Selection & BOM\n{devices}"
-        )
-        diagram_result = await _run_phase(ws, 4, "Topology Diagram", agent4, diagram_ctx)
-
-        # Extract PlantUML code and render to PNG
-        plantuml_code = _extract_plantuml(diagram_result)
-        diagram_filename = None
-        if plantuml_code:
-            try:
-                png_data = await _render_plantuml(plantuml_code)
-                diagram_filename = f"{datetime.now():%Y-%m-%d_%H-%M-%S}_topology.png"
-                (OUTPUT_DIR / diagram_filename).write_bytes(png_data)
+        # Generate topology diagram via Image Generation Service
+        diagram_url = None
+        await _send(ws, type="phase_start", phase=4, name="Topology Diagram", iteration=1)
+        try:
+            result = await _generate_diagram_via_service(topology, devices)
+            if result.get("success"):
+                diagram_url = f"{IMAGE_SERVICE_URL}{result['url']}"
                 await _send(ws, type="diagram_ready",
-                            url=f"/api/diagram/{diagram_filename}",
-                            filename=diagram_filename,
-                            plantuml_code=plantuml_code)
-            except Exception as render_err:
+                            url=diagram_url,
+                            filename=result.get("filename", ""),
+                            download_url=f"{IMAGE_SERVICE_URL}{result['url']}/download")
+            else:
                 await _send(ws, type="diagram_error",
-                            message=f"Failed to render diagram: {str(render_err)}")
+                            message=result.get("error", "Unknown error from image service"))
+        except Exception as img_err:
+            await _send(ws, type="diagram_error",
+                        message=f"Image service unavailable: {str(img_err)}")
 
-        fp = _save(prompt, rephrased, topology, devices, plantuml_code, diagram_filename)
+        fp = _save(prompt, rephrased, topology, devices, diagram_url)
         await _send(ws, type="workflow_complete", saved_to=str(fp),
-                    diagram_url=f"/api/diagram/{diagram_filename}" if diagram_filename else None)
+                    diagram_url=diagram_url)
     except WebSocketDisconnect:
         pass
     except Exception as e:

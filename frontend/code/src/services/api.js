@@ -93,7 +93,7 @@ export function runWorkflow(requirements, solutionType, onEvent) {
     const wsUrl = `ws://${window.location.host}/ws`;
     const ws = new WebSocket(wsUrl);
 
-    const results = { prompt, rephrased: '', topology: '', devices: '', diagramUrl: '', plantumlCode: '' };
+    const results = { prompt, rephrased: '', topology: '', devices: '', diagramUrl: '', diagramDownloadUrl: '' };
     let currentPhase = 0;
 
     // Expose send functions via the onEvent callback's return
@@ -123,7 +123,7 @@ export function runWorkflow(requirements, solutionType, onEvent) {
 
         if (data.type === 'diagram_ready') {
           results.diagramUrl = data.url || '';
-          results.plantumlCode = data.plantuml_code || '';
+          results.diagramDownloadUrl = data.download_url || '';
         }
 
         if (data.type === 'workflow_complete') {

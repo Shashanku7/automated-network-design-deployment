@@ -75,10 +75,10 @@ export default function DetailedTopology() {
                 <div className="flex items-center gap-2">
                   <span className="material-symbols-outlined text-primary text-lg">schema</span>
                   <h3 className="text-lg font-bold text-on-surface">
-                    {simpleView ? 'Network Map' : 'Logical Topology (PlantUML)'}
+                    {simpleView ? 'Network Map' : 'Logical Topology'}
                   </h3>
                 </div>
-                <a href={state.diagramUrl} download="network_topology.png"
+                <a href={state.diagramDownloadUrl || state.diagramUrl} download="network_topology.svg"
                   className="flex items-center gap-1.5 px-4 py-2 bg-primary/15 text-primary text-sm font-bold rounded-lg hover:bg-primary/25 transition-colors">
                   <span className="material-symbols-outlined text-lg">download</span>
                   Download Diagram
@@ -87,16 +87,6 @@ export default function DetailedTopology() {
               <div className="bg-white rounded-xl p-4 flex items-center justify-center overflow-auto max-h-[600px]">
                 <img src={state.diagramUrl} alt="Network Topology Diagram" className="max-w-full object-contain" />
               </div>
-              {!simpleView && state.plantumlCode && (
-                <details className="mt-4">
-                  <summary className="text-xs text-on-surface-variant cursor-pointer hover:text-on-surface transition-colors font-medium">
-                    View PlantUML Source Code
-                  </summary>
-                  <pre className="mt-2 bg-surface-container rounded-lg p-4 text-xs text-on-surface-variant overflow-x-auto font-[family-name:var(--font-mono)] border border-outline-variant/15">
-                    {state.plantumlCode}
-                  </pre>
-                </details>
-              )}
             </div>
           ) : (
             <div className="text-center">

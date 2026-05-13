@@ -79,7 +79,7 @@ export default function ProposedDesign() {
         dispatch({ type: 'SET_TOPOLOGY', payload: results.topology });
         dispatch({ type: 'SET_DEVICES', payload: results.devices });
         if (results.diagramUrl) {
-          dispatch({ type: 'SET_DIAGRAM', payload: { url: results.diagramUrl, code: results.plantumlCode } });
+          dispatch({ type: 'SET_DIAGRAM', payload: { url: results.diagramUrl, downloadUrl: results.diagramDownloadUrl } });
         }
         dispatch({ type: 'WORKFLOW_COMPLETE' });
         // Build legacy proposedDesign for BOM page
@@ -425,12 +425,12 @@ function EventCard({ event }) {
             <div className="flex items-center gap-2">
               <span className="material-symbols-outlined text-tertiary text-lg">schema</span>
               <span className="text-sm font-bold text-on-surface">Network Topology Diagram</span>
-              <span className="text-[10px] px-2 py-0.5 rounded-full bg-tertiary/20 text-tertiary font-medium">PlantUML</span>
+              <span className="text-[10px] px-2 py-0.5 rounded-full bg-tertiary/20 text-tertiary font-medium">SVG</span>
             </div>
-            <a href={ev.url} download={ev.filename || 'topology.png'}
+            <a href={ev.download_url || ev.url} download={ev.filename || 'topology.svg'}
               className="flex items-center gap-1.5 px-3 py-1.5 bg-tertiary/15 text-tertiary text-xs font-bold rounded-lg hover:bg-tertiary/25 transition-colors">
               <span className="material-symbols-outlined text-sm">download</span>
-              Download PNG
+              Download SVG
             </a>
           </div>
           <div className="p-4 bg-white rounded-b-xl flex items-center justify-center">

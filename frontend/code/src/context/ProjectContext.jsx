@@ -48,7 +48,7 @@ const initialState = {
   topologyDesign: null,
   deviceSelection: null,
   diagramUrl: null,
-  plantumlCode: null,
+  diagramDownloadUrl: null,
 
   // Legacy compat
   proposedDesign: null,
@@ -87,7 +87,7 @@ function projectReducer(state, action) {
         topologyDesign: null,
         deviceSelection: null,
         diagramUrl: null,
-        plantumlCode: null,
+        diagramDownloadUrl: null,
       };
 
     case 'WORKFLOW_EVENT':
@@ -117,7 +117,7 @@ function projectReducer(state, action) {
       return { ...state, workflowStatus: 'awaiting_approval', wsRef: action.payload.ws };
 
     case 'SET_DIAGRAM':
-      return { ...state, diagramUrl: action.payload.url, plantumlCode: action.payload.code };
+      return { ...state, diagramUrl: action.payload.url, diagramDownloadUrl: action.payload.downloadUrl };
 
     case 'WORKFLOW_COMPLETE':
       return { ...state, workflowStatus: 'complete', wsRef: null };

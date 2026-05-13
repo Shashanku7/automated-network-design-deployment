@@ -1,0 +1,4 @@
+generated_diagrams/
+__pycache__/
+*.pyc
+.env
