@@ -15,6 +15,7 @@ import asyncio
 import json
 import os
 import re
+import ipaddress
 from datetime import datetime
 from pathlib import Path
 
@@ -88,9 +89,20 @@ def _build_d2_from_topology(topology: str, bom: str = "") -> str:
     buildings = _extract_buildings(topology)
     has_core = bool(re.search(r"core", topology, re.IGNORECASE))
 
+    # Extract subnet data and BoM data
+    subnets_by_floor = _extract_subnets(topology)
+    bom_data = _extract_bom_devices(bom)
+
     # ── Core Layer ──
+    core_model = "VSX Pair"
+    if "Global" in bom_data:
+        for dev in bom_data["Global"]:
+            if "Core" in dev["role"]:
+                core_model = dev["model"]
+                break
+
     if has_core:
-        lines.append("core: Core Layer (VSX Pair) {")
+        lines.append(f"core: Core Layer ({core_model}) {{")
         lines.append("  style: {")
         lines.append("    fill: \"#1a1a2e\"")
         lines.append("    stroke: \"#e94560\"")
@@ -138,9 +150,18 @@ def _build_d2_from_topology(topology: str, bom: str = "") -> str:
             lines.append("  }")
             lines.append("")
 
-            # Distribution switch inside building
+            # Find Dist switch model
+            dist_model = "Distribution Switch"
+            b_search_key = b_name.replace("Building ", "").strip()
+            for key, devs in bom_data.items():
+                if "PG Block" in key or b_search_key in key or key == "Global": # fallback
+                    for dev in devs:
+                        if "Dist" in dev["role"]:
+                            dist_model = f"Distribution: {dev['model']}"
+                            break
+
             dist_id = "dist_switch"
-            lines.append(f"  {dist_id}: Distribution Switch {{")
+            lines.append(f"  {dist_id}: {dist_model} {{")
             lines.append("    style: {")
             lines.append("      fill: \"#16213e\"")
             lines.append("      stroke: \"#0f3460\"")
@@ -175,48 +196,95 @@ def _build_d2_from_topology(topology: str, bom: str = "") -> str:
                 lines.append("")
 
                 # Access switch
-                lines.append(f"    access: Access Switch {{")
+                acc_model = "Access Switch"
+                ap_model = "Wi-Fi AP"
+                for key, devs in bom_data.items():
+                    if str(f_idx + 1) in key:  # matches "Floor 1", etc.
+                        for dev in devs:
+                            if "Access" in dev["role"]:
+                                acc_model = f"Access: {dev['model']}"
+                            if "AP" in dev["role"] or "Wi-Fi" in dev["role"]:
+                                ap_model = dev["model"]
+
+                lines.append(f"    access: {acc_model} {{")
                 lines.append("      style: {")
                 lines.append("        fill: \"#533483\"")
                 lines.append("        stroke: \"#e94560\"")
                 lines.append("        font-color: \"#ffffff\"")
                 lines.append("        border-radius: 4")
                 lines.append("      }")
+                lines.append("      icon: \"switch\"")
                 lines.append("    }")
                 lines.append("")
 
-                # User groups
-                user_parts = []
-                if int(students) if str(students).isdigit() else 0:
-                    user_parts.append(f"{students} Students")
-                if int(staff) if str(staff).isdigit() else 0:
-                    user_parts.append(f"{staff} Staff")
-                if int(admins) if str(admins).isdigit() else 0:
-                    user_parts.append(f"{admins} Admins")
+                # Match subnets for this floor
+                floor_subnets = []
+                for s_key, sub_list in subnets_by_floor.items():
+                    if f_name.lower() in s_key.lower() or s_key.lower() in f_name.lower() or str(f_idx + 1) in s_key:
+                        floor_subnets.extend(sub_list)
 
-                if user_parts:
-                    user_label = " | ".join(user_parts)
-                    lines.append(f"    users: {user_label} {{")
-                    lines.append("      style: {")
-                    lines.append("        fill: \"#e94560\"")
-                    lines.append("        stroke: \"#ff6b6b\"")
-                    lines.append("        font-color: \"#ffffff\"")
-                    lines.append("        border-radius: 4")
-                    lines.append("      }")
-                    lines.append("    }")
-                    lines.append("")
-                    lines.append(f"    access -> users: Endpoints")
+                if floor_subnets:
+                    for s_idx, subnet in enumerate(floor_subnets):
+                        sub_id = f"users_{s_idx}"
+                        lines.append(f"    {sub_id}: {{")
+                        lines.append("      label: |")
+                        lines.append("        End Device Group")
+                        lines.append(f"        Role: {subnet['role']}")
+                        lines.append(f"        VLAN: {subnet['vlan']}")
+                        lines.append(f"        Network: {subnet['subnet']}")
+                        lines.append(f"        Start IP: {subnet['start_ip']}")
+                        lines.append(f"        End IP: {subnet['end_ip']}")
+                        lines.append(f"        Count: {subnet['count']} devices")
+                        lines.append("      |")
+                        lines.append("      style: {")
+                        lines.append("        fill: \"#e94560\"")
+                        lines.append("        stroke: \"#ff6b6b\"")
+                        lines.append("        font-color: \"#ffffff\"")
+                        lines.append("        border-radius: 4")
+                        lines.append("      }")
+                        lines.append("      icon: \"computer\"")
+                        lines.append("    }")
+                        lines.append(f"    access -> {sub_id}: Access Port")
+                        lines.append("")
+                else:
+                    # Fallback if no subnets found
+                    user_parts = []
+                    if int(students) if str(students).isdigit() else 0:
+                        user_parts.append(f"{students} Students")
+                    if int(staff) if str(staff).isdigit() else 0:
+                        user_parts.append(f"{staff} Staff")
+                    if int(admins) if str(admins).isdigit() else 0:
+                        user_parts.append(f"{admins} Admins")
+
+                    if user_parts:
+                        user_label = " | ".join(user_parts)
+                        lines.append(f"    users: {{")
+                        lines.append("      label: |")
+                        lines.append("        End Devices")
+                        lines.append(f"        Roles: {user_label}")
+                        lines.append("      |")
+                        lines.append("      style: {")
+                        lines.append("        fill: \"#e94560\"")
+                        lines.append("        stroke: \"#ff6b6b\"")
+                        lines.append("        font-color: \"#ffffff\"")
+                        lines.append("        border-radius: 4")
+                        lines.append("      }")
+                        lines.append("      icon: \"computer\"")
+                        lines.append("    }")
+                        lines.append("")
+                        lines.append(f"    access -> users: Endpoints")
 
                 # Wi-Fi AP count
                 if total_users > 0:
                     ap_count = max(1, total_users // 25)
-                    lines.append(f"    wifi: {ap_count} Wi-Fi APs {{")
+                    lines.append(f"    wifi: {ap_count}x {ap_model} {{")
                     lines.append("      style: {")
                     lines.append("        fill: \"#4ecca3\"")
                     lines.append("        stroke: \"#36b37e\"")
                     lines.append("        font-color: \"#1a1a2e\"")
                     lines.append("        border-radius: 4")
                     lines.append("      }")
+                    lines.append("      icon: \"wifi\"")
                     lines.append("    }")
                     lines.append(f"    access -> wifi: PoE")
 
@@ -234,7 +302,7 @@ def _build_d2_from_topology(topology: str, bom: str = "") -> str:
 
             # Connect core → building distribution
             if has_core:
-                lines.append(f"core -> {b_id}.{dist_id}: 10G Fiber {{")
+                lines.append(f"core -> {b_id}.{dist_id}: 10G/40G Fiber {{")
                 lines.append("  style.stroke: \"#e94560\"")
                 lines.append("}")
                 lines.append("")
@@ -330,6 +398,70 @@ def _extract_sensitive_areas(text: str) -> list:
         if re.search(kw, text, re.IGNORECASE):
             areas.append(kw.title())
     return areas
+
+def _extract_subnets(text: str) -> dict:
+    """Extract subnets mapped by floor/department."""
+    subnets = {}
+    # Matches markdown table rows like:
+    # | PG Block | 1 - Office | 10 | Admin/Staff | 10.10.10.0/24 | 254 | Platinum (Critical) |
+    pattern = r"\|\s*([^|]+?)\s*\|\s*([^|]+?)\s*\|\s*(\d+)\s*\|\s*([^|]+?)\s*\|\s*([0-9\.]+/\d+)\s*\|\s*(\d+)\s*\|"
+    for m in re.finditer(pattern, text, re.IGNORECASE):
+        bldg = m.group(1).strip()
+        if "Building" in bldg or "Floor" in bldg or "VLAN" in bldg or "Global" in bldg:
+            if "Global" not in bldg:
+                continue
+        
+        dept = m.group(2).strip()
+        vlan = m.group(3).strip()
+        role = m.group(4).strip()
+        subnet = m.group(5).strip()
+        capacity = m.group(6).strip()
+        
+        try:
+            net = ipaddress.IPv4Network(subnet, strict=False)
+            hosts = list(net.hosts())
+            if hosts:
+                start_ip = str(hosts[0])
+                end_ip = str(hosts[-1])
+            else:
+                start_ip = str(net.network_address)
+                end_ip = str(net.broadcast_address)
+            count = len(hosts) if hosts else 0
+        except Exception:
+            start_ip = "Unknown"
+            end_ip = "Unknown"
+            count = capacity
+            
+        if dept not in subnets:
+            subnets[dept] = []
+        subnets[dept].append({
+            "vlan": vlan,
+            "role": role,
+            "subnet": subnet,
+            "start_ip": start_ip,
+            "end_ip": end_ip,
+            "count": count
+        })
+    return subnets
+
+def _extract_bom_devices(bom: str) -> dict:
+    """Extract BoM devices by location."""
+    devices = {}
+    if not bom:
+        return devices
+    # Matches markdown table rows like:
+    # | **Floor 1** | Access Switch | **Aruba CX 6100** (JL675A) | ...
+    pattern = r"\|\s*\**([^|]+?)\**\s*\|\s*([^|]+?)\s*\|\s*\**([^|]+?)\**\s*\|"
+    for m in re.finditer(pattern, bom, re.IGNORECASE):
+        loc = m.group(1).strip().replace('*', '')
+        if loc == "Building/Floor" or "---" in loc:
+            continue
+        role = m.group(2).strip()
+        model = m.group(3).strip().replace('*', '')
+        if loc not in devices:
+            devices[loc] = []
+        devices[loc].append({"role": role, "model": model})
+    return devices
 
 
 def _build_generic_d2(topology: str) -> list:
