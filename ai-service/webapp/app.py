@@ -34,8 +34,8 @@ QDRANT_URL = os.getenv("QDRANT_URL")
 QDRANT_API_KEY = os.getenv("QDRANT_API_KEY")
 HF_TOKEN = os.getenv("HUGGINGFACE_TOKEN")
 OLLAMA_API_KEY = os.getenv("OLLAMA_API_KEY")
-OLLAMA_MODEL = "gemma4:31b-cloud"
-OLLAMA_BASE_URL = "https://api.ollama.com"
+OLLAMA_MODEL = os.getenv("OLLAMA_MODEL")
+OLLAMA_BASE_URL = os.getenv("OLLAMA_BASE_URL")
 TOP_K = 25
 OUTPUT_DIR = Path(__file__).resolve().parent.parent / "output"
 OUTPUT_DIR.mkdir(exist_ok=True)
@@ -52,11 +52,11 @@ llm = Ollama(
 # ── Embedding ─────────────────────────────────
 embed_model = HuggingFaceEmbedding(
     model_name=QWEN_EMBEDDING_MODEL, trust_remote_code=True,
-    token=HF_TOKEN, device=os.getenv("EMBEDDING_DEVICE", "cpu"),
+    token=HF_TOKEN, device=os.getenv("EMBEDDING_DEVICE", "cpu"), # Fallback to cpu if cuda is unavailable
 )
 
 # ── Qdrant retriever ──────────────────────────
-SPARSE_K = 100
+SPARSE_K = 30 # retrieve the top 30 chunks
 
 def _sparse(text, top_k=SPARSE_K):
     emb = np.array(embed_model.get_text_embedding(text))
@@ -78,7 +78,7 @@ _retriever = _build_retriever()
 
 # ── RAG tool ──────────────────────────────────
 def search_network_device_datasheets(query: str) -> str:
-    """Search qwen-tech-docs for networking component datasheets. Returns top 25 chunks."""
+    """Search qwen-tech-docs for networking component datasheets. Returns top 30 chunks."""
     nodes = _retriever.retrieve(query)
     parts = []
     for i, n in enumerate(nodes, 1):
@@ -88,7 +88,7 @@ def search_network_device_datasheets(query: str) -> str:
 
 rag_tool = FunctionTool.from_defaults(
     fn=search_network_device_datasheets, name="network_device_lookup",
-    description="Searches qwen-tech-docs datasheets for networking components. Returns top 25 chunks.",
+    description="Searches qwen-tech-docs datasheets for networking components datasheets. Returns top 30 chunks.",
 )
 
 # ── Agents ────────────────────────────────────
@@ -99,7 +99,7 @@ agent1 = FunctionAgent(
         "You are a Network Development Prompt Engineer.\n"
         "The user's request includes a STRUCTURED BUILDING & FLOOR BREAKDOWN with:\n"
         "- Multiple buildings, each with a name and floor count\n"
-        "- Per-floor details: department/area name, student count, staff count, admin count\n\n"
+        "- Per-floor details: department/area name, student count, staff count, admin count, VOIP device count, IPTV count.\n\n"
         "Rephrase the user's request into a detailed, structured prompt for a network "
         "topology designer. PRESERVE the per-building and per-floor breakdown tables — "
         "do NOT flatten them into aggregates. Include: purpose, user/device counts per "
@@ -115,29 +115,28 @@ agent2 = FunctionAgent(
     system_prompt=(
         "You are a Senior Network Topology Architect.\n"
         "The input contains a STRUCTURED BUILDING & FLOOR BREAKDOWN with per-building \n"
-        "names, floor counts, and per-floor department names with student/staff/admin counts.\n\n"
+        "names, floor counts, and per-floor department names with student, staff, admin, VOIP phone, IPTV  counts.\n\n"
         "Design a detailed topology that reflects this physical structure:\n"
         "1. Topology overview (type)\n"
         "2. Layer breakdown — map each building to its own distribution block and \n"
         "   each floor to access-layer switches sized for the user counts on that floor\n"
         "3. High-availability: VSF, VSX, LAG (LACP), QoS\n"
         "4. Link design (speeds, LAG bundles, redundancy)\n"
+        "5. Create VLAN. Keep every department isolated using VLAN.\n"
         "5. VLAN/subnet plan — create VLANs per building or per floor/department as \n"
-        "   appropriate, assign subnets sized to actual user counts (students, staff, \n"
-        "   admins on each floor), include QoS markings\n"
+        "assign subnets sized to actual user counts (students, staffs, admins, VOIP phones, IPTV), include QoS markings as per HPE networking gears.\n"
         "6. Redundancy & failover (VRRP/HSRP, VSX)\n"
-        "7. ASCII diagram showing buildings, floors, and inter-building links\n\n"
-        "Do NOT include a Bill of Materials. Output ONLY the topology."
+        "Do NOT include a Bill of Materials."
     ), llm=llm,
 )
 
 agent3 = FunctionAgent(
     name="device_selector",
-    description="Selects networking devices from qwen-tech-docs datasheets.",
+    description="Selects networking devices from qwen-tech-docs datasheets using the tool provided to you",
     system_prompt=(
         "You are a Network Hardware Specialist.\n"
         "The topology you receive is based on a multi-building campus with per-floor \n"
-        "user counts (students, staff, admins). Use these counts to size hardware:\n"
+        "user counts (students, staff, admins, VOIP phones, IPTV). Use these counts to select hardware:\n"
         "1. Analyse topology layer by layer and building by building.\n"
         "2. Call 'network_device_lookup' for each device role. You MUST call it.\n"
         "3. Match retrieved datasheets to roles. Size access switches based on the \n"
@@ -147,13 +146,52 @@ agent3 = FunctionAgent(
         "   specs, qty, justification. Group by building where applicable.\n\n"
         "CRITICAL: Call network_device_lookup BEFORE recommending. "
         "Base recommendations ONLY on retrieved datasheets."
+        "NOTE: Try to keep it cost effective without sacrificing in the quality and performance"
     ), llm=llm, tools=[rag_tool],
+)
+
+agent4 = FunctionAgent(
+    name="d2_diagram_generator",
+    description="Generates D2 diagram code for network topology visualization.",
+    system_prompt=(
+        "You are a D2 Diagram Specialist.\n"
+        "Given a network topology design and Bill of Materials (BOM), generate "
+        "valid D2 diagram code that visualizes the topology.\n\n"
+        "D2 RULES:\n"
+        "- Use `direction: down` for top-to-bottom layout\n"
+        "- In D2, containers are IMPLICIT — just nest children inside `{}`. Do NOT use `shape: container` (it is invalid and will cause errors)\n"
+        "- Use `style` blocks with fill, stroke, font-color, border-radius\n"
+        "- Use arrows (->) for connections, label them inline\n"
+        "- Do NOT use `icon:` — D2 does not support custom icons and they cause errors\n"
+        "- Use descriptive labels instead (e.g., label: \"Access Switch\\nCX 6200F\")\n\n"
+        "STRUCTURE:\n"
+        "1. Core Layer (top container with VSX pair)\n"
+        "2. Server/Management block (if present), connected to core\n"
+        "3. Each building as a container with its distribution switch\n"
+        "4. Each floor as a sub-container with access switch, end devices, Wi-Fi APs\n"
+        "5. Connections: core -> building_dist, building_dist -> floor_access, "
+        "access -> devices, access -> wifi\n"
+        "6. Security zones (if sensitive areas mentioned)\n\n"
+        "COLOR SCHEME:\n"
+        "- Core: fill \"#1a1a2e\", stroke \"#e94560\"\n"
+        "- Building: fill \"#0f3460\", stroke \"#533483\"\n"
+        "- Dist switch: fill \"#16213e\", stroke \"#0f3460\"\n"
+        "- Floor: fill \"#1a1a40\", stroke \"#533483\"\n"
+        "- Access switch: fill \"#533483\", stroke \"#e94560\"\n"
+        "- End devices: fill \"#e94560\", stroke \"#ff6b6b\"\n"
+        "- Wi-Fi AP: fill \"#4ecca3\", stroke \"#36b37e\"\n"
+        "- Server: fill \"#2d4059\", stroke \"#ea5455\"\n"
+        "- Security: fill \"#800020\", stroke \"#ff4444\"\n\n"
+        "Include VLAN info and subnet details inside end-device labels.\n"
+        "Output ONLY the D2 code — no explanations, no markdown fences."
+    ), llm=llm,
 )
 
 PHASES = [
     (1, "Prompt Rephrasing", agent1),
     (2, "Network Topology Design", agent2),
     (3, "Device Selection & BOM", agent3),
+    (4, "D2 Diagram Generation", agent4),
 ]
 
 # ── Helpers ───────────────────────────────────
@@ -174,18 +212,18 @@ def _parse_chunks(raw):
         })
     return chunks
 
-async def _generate_diagram_via_service(topology: str, bom: str) -> dict:
-    """Call the Image Generation Service to create a topology diagram PNG."""
+async def _generate_diagram_via_service(diagram_code: str) -> dict:
+    """Send D2 diagram code to the Image Generation Service for rendering."""
     import httpx
     async with httpx.AsyncClient(timeout=90.0) as client:
         resp = await client.post(
             f"{IMAGE_SERVICE_URL}/api/generate-diagram",
-            json={"topology": topology, "bom": bom},
+            json={"diagram_code": diagram_code},
         )
         resp.raise_for_status()
         return resp.json()
 
-def _save(prompt, rephrased, topology, devices, diagram_url=None):
+def _save(prompt, rephrased, topology, devices, diagram_code="", diagram_url=None):
     ts = datetime.now()
     fp = OUTPUT_DIR / f"{ts:%Y-%m-%d_%H-%M-%S}_run.md"
     content = (
@@ -193,7 +231,8 @@ def _save(prompt, rephrased, topology, devices, diagram_url=None):
         f"**Model:** {OLLAMA_MODEL}\n\n---\n\n## User Prompt\n\n{prompt}\n\n---\n\n"
         f"## Phase 1: Rephrased Prompt\n\n{_strip_ansi(rephrased)}\n\n---\n\n"
         f"## Phase 2: Network Topology\n\n{_strip_ansi(topology)}\n\n---\n\n"
-        f"## Phase 3: Device Selection & BOM\n\n{_strip_ansi(devices)}\n"
+        f"## Phase 3: Device Selection & BOM\n\n{_strip_ansi(devices)}\n\n---\n\n"
+        f"## Phase 4: D2 Diagram Code\n\n```d2\n{_strip_ansi(diagram_code)}\n```\n"
     )
     if diagram_url:
         content += f"\n---\n\n## Topology Diagram\n\nGenerated diagram: `{diagram_url}`\n"
@@ -224,8 +263,8 @@ async def index():
 async def chat_endpoint(req: ChatRequest):
     """Simple LLM chat endpoint for the copilot sidebar."""
     messages = [ChatMessage(role=MessageRole.SYSTEM, content=(
-        "You are a Network Design Copilot. Answer questions about network design, "
-        "HPE Aruba products, VLANs, QoS, VSF, VSX, LAG, and general networking. "
+        "You are a Network Design AI Assistant. Answer questions about network design, "
+        "HPE Aruba - CX products, VLANs, QoS, VSF, VSX, LAG, and general networking. "
         "Be concise and technical."
     ))]
     for h in req.history[-10:]:
@@ -322,11 +361,15 @@ async def ws_endpoint(ws: WebSocket):
         ctx = f"## Original Requirements\n{prompt}\n\n## Approved Topology\n{topology}"
         devices = await _run_phase(ws, 3, "Device Selection & BOM", agent3, ctx)
 
-        # Generate topology diagram via Image Generation Service
+        # Phase 4: D2 Diagram Generation
+        d2_ctx = f"## Approved Topology\n{topology}\n\n## Bill of Materials\n{devices}"
+        diagram_code = await _run_phase(ws, 4, "D2 Diagram Generation", agent4, d2_ctx)
+
+        # Render D2 code via Image Generation Service
         diagram_url = None
-        await _send(ws, type="phase_start", phase=4, name="Topology Diagram", iteration=1)
+        await _send(ws, type="phase_start", phase=5, name="Topology Diagram", iteration=1)
         try:
-            result = await _generate_diagram_via_service(topology, devices)
+            result = await _generate_diagram_via_service(diagram_code)
             if result.get("success"):
                 diagram_url = f"{IMAGE_SERVICE_URL}{result['url']}"
                 await _send(ws, type="diagram_ready",
@@ -340,7 +383,7 @@ async def ws_endpoint(ws: WebSocket):
             await _send(ws, type="diagram_error",
                         message=f"Image service unavailable: {str(img_err)}")
 
-        fp = _save(prompt, rephrased, topology, devices, diagram_url)
+        fp = _save(prompt, rephrased, topology, devices, diagram_code, diagram_url)
         await _send(ws, type="workflow_complete", saved_to=str(fp),
                     diagram_url=diagram_url)
     except WebSocketDisconnect:
