@@ -1,0 +1,24 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "Agent Task",
+  "description": "Task sent from Gateway to specific Agent worker",
+  "type": "object",
+  "properties": {
+    "project_id": { "type": "string", "format": "uuid" },
+    "phase": { "type": "integer" },
+    "agent_target": { "type": "string" },
+    "input_context": { "type": "string" },
+    "history": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "role": { "type": "string", "enum": ["user", "assistant", "system"] },
+          "content": { "type": "string" }
+        },
+        "required": ["role", "content"]
+      }
+    }
+  },
+  "required": ["project_id", "agent_target", "input_context"]
+}

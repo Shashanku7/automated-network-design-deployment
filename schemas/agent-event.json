@@ -1,0 +1,18 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "Agent Event",
+  "description": "Real-time updates from Agent worker to Gateway",
+  "type": "object",
+  "properties": {
+    "project_id": { "type": "string", "format": "uuid" },
+    "agent_name": { "type": "string" },
+    "event_type": {
+      "type": "string",
+      "enum": ["token", "tool_call", "tool_result", "final_answer", "error"]
+    },
+    "data": { "type": "string" },
+    "payload": { "type": "object" },
+    "is_final": { "type": "boolean" }
+  },
+  "required": ["project_id", "agent_name", "event_type"]
+}
