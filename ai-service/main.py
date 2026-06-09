@@ -15,9 +15,6 @@ import re
 from datetime import datetime
 from pathlib import Path
 
-import numpy as np
-from dotenv import load_dotenv
-
 from llama_index.llms.ollama import Ollama
 from llama_index.core.agent.workflow import (
     AgentWorkflow,
@@ -29,11 +26,19 @@ from llama_index.core.agent.workflow import (
 )
 from llama_index.core.tools import FunctionTool
 from llama_index.core.llms import ChatMessage, MessageRole
-from llama_index.core import VectorStoreIndex
-from llama_index.embeddings.huggingface import HuggingFaceEmbedding
-from llama_index.vector_stores.qdrant import QdrantVectorStore
-from qdrant_client import QdrantClient
-from qdrant_client.models import SparseVector
+
+from config import (
+    QDRANT_COLLECTION,
+    OLLAMA_API_KEY,
+    OLLAMA_MODEL,
+    OLLAMA_BASE_URL,
+    RETRIEVAL_TOP_K,
+    MIN_SCORE_THRESHOLD,
+    get_embedding_model,
+    create_qdrant_client,
+    extract_product_model,
+)
+from search import create_vector_store, create_vector_index
 
 
 # ──────────────────────────────────────────────
@@ -59,22 +64,8 @@ def _kv(key, value, indent=4):
 
 
 # ──────────────────────────────────────────────
-# Configuration
+# Configuration  (from shared config module)
 # ──────────────────────────────────────────────
-dotenv_path = Path(__file__).resolve().parent / ".env"
-load_dotenv(dotenv_path=dotenv_path)
-
-QWEN_EMBEDDING_MODEL = os.getenv("QWEN_EMBEDDING_MODEL", "Qwen/Qwen3-Embedding-8B")
-QDRANT_COLLECTION_NAME = os.getenv("QDRANT_COLLECTION", "qwen-tech-docs")
-QDRANT_URL = os.getenv("QDRANT_URL")
-QDRANT_API_KEY = os.getenv("QDRANT_API_KEY")
-HUGGINGFACE_TOKEN = os.getenv("HUGGINGFACE_TOKEN")
-OLLAMA_API_KEY = os.getenv("OLLAMA_API_KEY")
-
-OLLAMA_MODEL = "gemma4:31b-cloud"
-OLLAMA_BASE_URL = "https://api.ollama.com"
-RETRIEVAL_TOP_K = 25
-
 OUTPUT_DIR = Path(__file__).resolve().parent / "output"
 OUTPUT_DIR.mkdir(exist_ok=True)
 
@@ -90,106 +81,179 @@ llm = Ollama(
     headers={"Authorization": f"Bearer {OLLAMA_API_KEY}"},
 )
 
-# ──────────────────────────────────────────────
-# Embedding model
-# ──────────────────────────────────────────────
-embedding_model = HuggingFaceEmbedding(
-    model_name=QWEN_EMBEDDING_MODEL,
-    trust_remote_code=True,
-    token=HUGGINGFACE_TOKEN,
-    device=os.getenv("EMBEDDING_DEVICE", "cpu"),
+llm_plain = Ollama(
+    model=OLLAMA_MODEL,
+    base_url=OLLAMA_BASE_URL,
+    request_timeout=120.0,
+    context_window=131072,
+    is_function_calling_model=False,
+    headers={"Authorization": f"Bearer {OLLAMA_API_KEY}"},
 )
 
 # ──────────────────────────────────────────────
-# Qdrant hybrid retriever  (mirrors search.py)
+# Qdrant hybrid retriever  (uses BM25 sparse from search module)
 # ──────────────────────────────────────────────
-SPARSE_TOP_K = 100
-
-
-def _encode_sparse(text: str, top_k: int = SPARSE_TOP_K) -> SparseVector:
-    """Build a sparse vector from the dense embedding (mirrors ingest.py)."""
-    embedding = embedding_model.get_text_embedding(text)
-    arr = np.array(embedding)
-    top_indices = np.argsort(np.abs(arr))[-top_k:]
-    top_values = arr[top_indices]
-    normalised = top_values / (np.linalg.norm(top_values) + 1e-8)
-    return SparseVector(indices=top_indices.tolist(), values=normalised.tolist())
-
-
 def _build_retriever():
     """Create a hybrid Qdrant retriever against the qwen-tech-docs collection."""
-    client = QdrantClient(url=QDRANT_URL, api_key=QDRANT_API_KEY)
-    vector_store = QdrantVectorStore(
-        collection_name=QDRANT_COLLECTION_NAME,
-        client=client,
-        enable_hybrid=True,
-        sparse_doc_fn=_encode_sparse,
-        sparse_query_fn=_encode_sparse,
-        dense_vector_name="dense",
-        sparse_vector_name="sparse",
-    )
-    index = VectorStoreIndex.from_vector_store(
-        vector_store, embed_model=embedding_model,
-    )
-    return index.as_retriever(similarity_top_k=RETRIEVAL_TOP_K)
+    _client = create_qdrant_client()
+    vector_store = create_vector_store(_client)
+    index = create_vector_index(vector_store)
+    return _client, index.as_retriever(similarity_top_k=RETRIEVAL_TOP_K)
 
 
-_retriever = _build_retriever()
+_qdrant_client, _retriever = _build_retriever()
 
 
 # ──────────────────────────────────────────────
-# RAG Tool  (for Phase 3)
+# RAG Tools  (multi-query strategy for Phase 3)
 # ──────────────────────────────────────────────
-def search_network_device_datasheets(query: str) -> str:
-    """Search the qwen-tech-docs knowledge base for networking component datasheets.
 
-    This tool searches an indexed collection of networking equipment datasheets
-    (switches, routers, access points, modules, transceivers) using hybrid
-    dense+sparse retrieval.  It returns the top 25 most relevant chunks with
-    their source documents and similarity scores.
+def list_available_products() -> str:
+    """List all available product families in the knowledge base.
+    Call this FIRST to discover what products are available before searching."""
+    results = _qdrant_client.scroll(
+        collection_name=QDRANT_COLLECTION,
+        limit=1000,
+        with_payload=["product_model", "source"],
+        with_vectors=False,
+    )
+    catalog = {}
+    for point in results[0]:
+        pm = point.payload.get("product_model", "Unknown")
+        src = os.path.basename(point.payload.get("source", ""))
+        if pm not in catalog:
+            catalog[pm] = {"count": 0, "source": src}
+        catalog[pm]["count"] += 1
+
+    _section("PRODUCT CATALOG", MAGENTA)
+    lines = ["Available HPE Aruba Networking Switch Families:\n"]
+    for model in sorted(catalog.keys()):
+        info = catalog[model]
+        line = f"  - {model}: {info['count']} datasheet chunks (source: {info['source']})"
+        lines.append(line)
+        print(f"    {MAGENTA}{line}{RESET}")
+    lines.append(f"\nTotal: {sum(v['count'] for v in catalog.values())} chunks across {len(catalog)} product families")
+    lines.append("\nUse 'search_product_specs' with a specific product_model to get detailed specs.")
+    print()
+    return "\n".join(lines)
+
+
+def search_product_specs(query: str, product_model: str) -> str:
+    """Search for specific technical specs WITHIN a single product family.
 
     Args:
-        query: A natural-language question or description of the networking
-               components you are looking for.
-
-    Returns:
-        A formatted string containing the top 25 retrieved datasheet chunks,
-        each with its rank, source PDF, relevance score, and full text content.
+        query: What you're looking for (e.g. 'PoE power budget', 'stacking',
+               'port density', 'switching capacity')
+        product_model: The product family to search in (e.g. 'CX 6200',
+                       'CX 6300', 'CX 4100i'). Must match a value from
+                       list_available_products.
     """
+    _section(f"PRODUCT SEARCH — {product_model}: {query}", MAGENTA)
+
+    # ── 1. Dedicated retriever with large pool so the specific product ──
+    #    chunks are likely to be in the top results  (hybrid: dense + BM25)
+    TOP_K = 150
+    MAX_RESULTS = 30
+    try:
+        vs = create_vector_store(_qdrant_client)
+        idx = create_vector_index(vs)
+        retriever = idx.as_retriever(similarity_top_k=TOP_K)
+        nodes = retriever.retrieve(f"{product_model} {query}")
+        matched_nodes = [
+            n for n in nodes
+            if n.metadata.get("product_model") == product_model
+            or extract_product_model(n.metadata.get("source", "")) == product_model
+        ]
+    except Exception as exc:
+        # Retriever error – gracefully fall back to scroll
+        print(f"    {RED} Retriever error: {exc}{RESET}")
+        matched_nodes = []
+
+    if matched_nodes:
+        parts = []
+        for i, n in enumerate(matched_nodes[:MAX_RESULTS], 1):
+            src = os.path.basename(n.metadata.get("source", "unknown"))
+            print(f"    {MAGENTA}[{product_model} Chunk {i:>2}/{len(matched_nodes)}]{RESET}  "
+                  f"score={n.score:.4f}  source={src}")
+            preview = n.text[:120].replace("\n", " ")
+            print(f"        {DIM}{preview}…{RESET}")
+            parts.append(f"--- {product_model} Chunk {i} (score: {n.score:.4f}) ---\nSource: {src}\n{n.text}\n")
+        print()
+        return "\n".join(parts)
+
+    # ── 2. Fallback: brute-force scroll + Python-side filter ──
+    #    (proven to work because list_available_products uses the same unfiltered scroll)
+    _section("FALLBACK — Using Qdrant scroll", YELLOW)
+    raw = _qdrant_client.scroll(
+        collection_name=QDRANT_COLLECTION,
+        limit=1000,
+        with_payload=True,
+        with_vectors=False,
+    )[0]
+
+    product_chunks = [
+        pt for pt in raw
+        if pt.payload.get("product_model") == product_model
+    ]
+
+    if not product_chunks:
+        return f"No data found for product model '{product_model}'. Check list_available_products for valid names."
+
+    parts = []
+    for i, point in enumerate(product_chunks[:MAX_RESULTS], 1):
+        src = os.path.basename(point.payload.get("source", "unknown"))
+        text = point.payload.get("text", "")
+        print(f"    {MAGENTA}[{product_model} Chunk {i}]{RESET}  (unranked)")
+        parts.append(f"--- {product_model} Chunk {i} ---\nSource: {src}\n{text}\n")
+    print()
+    return "\n".join(parts)
+
+
+def search_across_products(query: str) -> str:
+    """Search across ALL product families for a general networking query.
+
+    Args:
+        query: A natural-language question about networking equipment specs.
+    """
+    _section(f"CROSS-PRODUCT SEARCH — {query}", MAGENTA)
     nodes = _retriever.retrieve(query)
+    nodes = [n for n in nodes if n.score >= MIN_SCORE_THRESHOLD]
 
-    _section(f"RAG RETRIEVAL — {len(nodes)} chunks retrieved", MAGENTA)
-    _kv("Query", query)
-    print()
-
-    chunks: list[str] = []
-    for i, nws in enumerate(nodes, 1):
-        source = nws.metadata.get("source", "unknown")
-        score = nws.score
-        text = nws.text
-
-        print(f"    {MAGENTA}[Chunk {i:>2}/{len(nodes)}]{RESET}  "
-              f"score={score:.4f}  source={os.path.basename(source)}")
-        preview = text[:150].replace("\n", " ")
-        print(f"        {DIM}{preview}…{RESET}")
-
-        chunks.append(
-            f"--- Chunk {i} (score: {score:.4f}) ---\n"
-            f"Source: {os.path.basename(source)}\n{text}\n"
-        )
+    parts = []
+    for i, n in enumerate(nodes, 1):
+        src = n.metadata.get("source", "unknown")
+        pm = extract_product_model(src)
+        src_base = os.path.basename(src)
+        print(f"    {MAGENTA}[Chunk {i:>2}/{len(nodes)} — {pm}]{RESET}  "
+              f"score={n.score:.4f}  source={src_base}")
+        parts.append(f"--- Chunk {i} [{pm}] (score: {n.score:.4f}) ---\nSource: {src_base}\n{n.text}\n")
 
     print()
-    return "\n".join(chunks)
+    return "\n".join(parts)
 
 
-network_device_lookup_tool = FunctionTool.from_defaults(
-    fn=search_network_device_datasheets,
-    name="network_device_lookup",
+catalog_tool = FunctionTool.from_defaults(
+    fn=list_available_products, name="list_available_products",
     description=(
-        "Searches the qwen-tech-docs knowledge base containing datasheets "
-        "and specifications of networking components (switches, routers, "
-        "access points, modules, transceivers, etc.).  Returns the top 25 "
-        "most relevant datasheet chunks."
+        "Lists all available HPE Aruba Networking product families in the knowledge base. "
+        "Call this FIRST to discover what switch series are available before doing detailed searches."
+    ),
+)
+
+product_search_tool = FunctionTool.from_defaults(
+    fn=search_product_specs, name="search_product_specs",
+    description=(
+        "Search for detailed specs WITHIN a specific product family (e.g., 'CX 6200', 'CX 6300'). "
+        "Use this to get port counts, PoE budgets, stacking options, switching capacity, etc. "
+        "for a single product line. Requires product_model from list_available_products."
+    ),
+)
+
+broad_search_tool = FunctionTool.from_defaults(
+    fn=search_across_products, name="search_across_products",
+    description=(
+        "Search across ALL product families for broad queries like 'which switches support VSX' "
+        "or 'compare PoE budgets'. Use for cross-product comparisons."
     ),
 )
 
@@ -216,17 +280,27 @@ prompt_rephraser_agent = FunctionAgent(
         "professional enterprise network and state them explicitly.\n\n"
         "Output ONLY the refined prompt."
     ),
-    llm=llm,
+    llm=llm_plain,
 )
-
-topology_designer_agent = FunctionAgent(
     name="topology_designer",
     description="Designs network topologies with VSF, VSX, LAG, and QoS.",
     system_prompt=(
         "You are a Senior Network Topology Architect.\n\n"
-        "Given a refined network development prompt, design a detailed "
-        "network topology.  Your output MUST include:\n"
-        "  1. **Topology overview** – type (star, spine-leaf, 3-tier, etc.)\n"
+        "Given a refined network development prompt, first intelligently select the appropriate "
+        "architectural tier model, then design a detailed network topology.\n\n"
+        "TIER SELECTION CRITERIA:\n"
+        "  - **2-Tier (Collapsed Core + Access):**\n"
+        "    • Best for single-building campuses or small networks with < 500 total endpoints.\n"
+        "    • Chosen when budget is constrained and simplicity is prioritized.\n"
+        "    • Core switches also perform distribution duties, reducing device count and latency.\n\n"
+        "  - **3-Tier (Core, Distribution, Access):**\n"
+        "    • Best for multi-building campuses or networks with >= 500 total endpoints.\n"
+        "    • Chosen when high performance, scalability, and clear traffic separation are needed.\n"
+        "    • The dedicated distribution layer aggregates access switches and enforces policies.\n\n"
+        "  **Provide a clear 2-3 sentence justification for your choice, referencing total user count, "
+        "  number of buildings/floors, and performance requirements.**\n\n"
+        "Your output MUST include:\n"
+        "  1. **Topology overview** – chosen tier (2-tier vs 3-tier) with justification\n"
         "  2. **Layer breakdown** – core, distribution, access with device counts\n"
         "  3. **High-availability design** – incorporate these technologies:\n"
         "       • VSF (Virtual Switching Framework) – stacking\n"
@@ -245,32 +319,36 @@ topology_designer_agent = FunctionAgent(
 
 device_selector_agent = FunctionAgent(
     name="device_selector",
-    description="Selects networking devices from qwen-tech-docs datasheets.",
+    description="Selects networking devices from qwen-tech-docs datasheets using multiple search tools.",
     system_prompt=(
-        "You are a Network Hardware Specialist.\n\n"
-        "You receive a network topology design and the original user\n"
-        "requirements.  Your task is to:\n\n"
-        "  STEP 1:  Analyse the topology layer by layer (core, distribution,\n"
-        "           access, wireless, edge/security).\n"
-        "  STEP 2:  For EACH device role, call the 'network_device_lookup'\n"
-        "           tool with a specific search query describing the needs\n"
-        "           (e.g. '48-port PoE+ access switch with 10G uplinks and\n"
-        "           VSF stacking support').\n"
-        "           You MUST call this tool AT LEAST ONCE.\n"
-        "  STEP 3:  Review ALL retrieved datasheet chunks and match devices\n"
-        "           to each topology role.\n"
-        "  STEP 4:  For EACH role recommend: model name & series, key specs,\n"
-        "           quantity, and brief justification from the datasheet.\n"
-        "  STEP 5:  Present a **Bill of Materials (BOM)** as a structured\n"
-        "           table grouped by topology layer.  The BOM MUST include:\n"
-        "           • Device role  • Recommended model & SKU\n"
-        "           • Key specs (ports, PoE, throughput, VSF/VSX)\n"
-        "           • Quantity  • Unit justification\n\n"
-        "CRITICAL: You MUST call network_device_lookup BEFORE recommending.\n"
-        "Base recommendations ONLY on retrieved datasheets — do NOT hallucinate."
+        "You are a Network Hardware Specialist with access to HPE Aruba Networking datasheets.\n\n"
+        "MANDATORY WORKFLOW — follow these steps IN ORDER:\n\n"
+        "STEP 1: Call 'list_available_products' to discover all available switch families.\n\n"
+        "STEP 2: MANDATORY — Call 'list_available_products' to get the catalog, then call "
+        "'search_product_specs' for EVERY single family in that catalog. You must query ALL of them: "
+        "CX 4100i, CX 5420, CX 6000, CX 6100, CX 6200, CX 6300, CX 6300L, CX 6400. "
+        "Do NOT skip any family, even if you think it is not suitable. "
+        "Do NOT make any recommendations until you have queried EVERY family.\n\n"
+        "STEP 3: Use 'search_across_products' for cross-cutting questions like:\n"
+        "  - 'Which switches support VSF stacking?'\n"
+        "  - 'Which switches have 10G/25G uplinks?'\n\n"
+        "STEP 4: Compare specs across product families for each role and select the best fit based on:\n"
+        "  - Port density vs. user counts per floor\n"
+        "  - PoE budget vs. PoE device count (phones, APs, IPTV)\n"
+        "  - Uplink speed requirements\n"
+        "  - Stacking/redundancy capabilities (VSF, VSX)\n"
+        "  - Cost effectiveness\n\n"
+        "STEP 5: Present a **Bill of Materials** table with columns:\n"
+        "  Device Role | Model & SKU | Key Specs | Qty | Justification\n"
+        "  Group rows by topology layer.\n\n"
+        "RULES:\n"
+        "- You MUST call the search tools BEFORE recommending any device.\n"
+        "- You MUST search MULTIPLE product families per role (not just one).\n"
+        "- Base recommendations ONLY on retrieved datasheet specs.\n"
+        "- Prioritize cost-effectiveness without sacrificing quality and performance.\n"
     ),
     llm=llm,
-    tools=[network_device_lookup_tool],
+    tools=[catalog_tool, product_search_tool, broad_search_tool],
 )
 
 
@@ -417,7 +495,7 @@ def _save_run_output(
 
 **Date:** {ts.strftime("%Y-%m-%d %H:%M:%S")}  
 **Model:** {OLLAMA_MODEL}  
-**Qdrant Collection:** {QDRANT_COLLECTION_NAME}  
+**Qdrant Collection:** {QDRANT_COLLECTION}  
 **Retrieval Top-K:** {RETRIEVAL_TOP_K}  
 
 ---
@@ -455,7 +533,7 @@ async def run(user_prompt: str) -> str:
     _kv("User prompt", user_prompt, indent=2)
     _kv("LLM", f"{OLLAMA_MODEL} via {OLLAMA_BASE_URL}", indent=2)
     _kv("Retrieval top-k", str(RETRIEVAL_TOP_K), indent=2)
-    _kv("Qdrant collection", QDRANT_COLLECTION_NAME, indent=2)
+    _kv("Qdrant collection", QDRANT_COLLECTION, indent=2)
 
     # ── Phase 1: Rephrase ────────────────────
     rephrased = await _run_phase(

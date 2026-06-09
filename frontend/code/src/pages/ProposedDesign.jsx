@@ -343,13 +343,18 @@ function EventCard({ event }) {
         </div>
       );
 
-    case 'rag_result':
+    case 'rag_result': {
+      const toolLabel = ev.tool_name === 'search_product_specs'
+        ? 'Product Search'
+        : ev.tool_name === 'search_across_products'
+          ? 'Cross-Product Search'
+          : 'RAG Search';
       return (
         <div className="border border-purple-400/20 bg-purple-500/5 rounded-xl overflow-hidden">
           <button onClick={() => setOpen(!open)}
             className="w-full flex items-center gap-2 px-4 py-2.5 text-sm text-left hover:bg-purple-500/5 transition-colors">
             <span className="material-symbols-outlined text-purple-400 text-lg">library_books</span>
-            <span className="font-medium text-on-surface flex-1">RAG: {ev.total} chunks retrieved</span>
+            <span className="font-medium text-on-surface flex-1">{toolLabel}: {ev.total} chunks retrieved</span>
             <span className="text-[10px] px-2 py-0.5 rounded-full bg-purple-500/20 text-purple-400 font-medium">retrieval</span>
             <span className="text-outline text-sm">{open ? '▾' : '▸'}</span>
           </button>
@@ -369,14 +374,32 @@ function EventCard({ event }) {
           )}
         </div>
       );
+    }
 
-    case 'tool_result':
+    case 'tool_result': {
+      const isCatalog = ev.tool_name === 'list_available_products';
       return (
-        <div className="flex items-center gap-2 text-xs text-on-surface-variant py-1">
-          <span className="material-symbols-outlined text-yellow-400 text-sm">output</span>
-          Tool result: {ev.tool_name} ({ev.output?.length || 0} chars)
+        <div className={`border rounded-xl overflow-hidden ${isCatalog ? 'border-cyan-500/20 bg-cyan-500/5' : 'border-outline-variant/10'}`}>
+          <button onClick={() => setOpen(!open)}
+            className="w-full flex items-center gap-2 px-4 py-2 text-xs text-left hover:bg-surface-container-high/30 transition-colors">
+            <span className="material-symbols-outlined text-yellow-400 text-sm">
+              {isCatalog ? 'inventory_2' : 'output'}
+            </span>
+            <span className="text-on-surface-variant flex-1">
+              {isCatalog ? '📦 Product Catalog' : `Tool result: ${ev.tool_name}`} ({ev.output?.length || 0} chars)
+            </span>
+            <span className="text-outline text-sm">{open ? '▾' : '▸'}</span>
+          </button>
+          {open && (
+            <div className="px-4 pb-3 text-xs text-on-surface-variant">
+              <pre className="bg-surface-container rounded-lg p-3 overflow-x-auto font-[family-name:var(--font-mono)] whitespace-pre-wrap">
+                {ev.output}
+              </pre>
+            </div>
+          )}
         </div>
       );
+    }
 
     case 'agent_response':
       return (
