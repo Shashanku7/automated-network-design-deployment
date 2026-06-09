@@ -24,6 +24,9 @@ dist-ssr/
 *.sln
 *.sw?
 
+# Pycache
+__pycache__/
+
 # System Files
 Thumbs.db
 desktop.ini
