@@ -23,34 +23,38 @@ function buildPromptFromRequirements(req, solutionType) {
   if (isCampus) {
     // Calculate totals from our new structured building list
     const totalBuildings = req.buildings?.length || 0;
-    let totalStudents = 0, totalStaff = 0, totalAdmins = 0;
+    let totalStudents = 0, totalStaff = 0, totalAdmins = 0, totalVoip = 0, totalIptv = 0;
     
     req.buildings?.forEach(b => {
       b.floors.forEach(f => {
         totalStudents += (Number(f.students) || 0);
         totalStaff += (Number(f.staff) || 0);
         totalAdmins += (Number(f.admins) || 0);
+        totalVoip += (Number(f.voip) || 0);
+        totalIptv += (Number(f.iptv) || 0);
       });
     });
 
     let prompt = `Design a campus network for an organization with ${totalBuildings} building(s).`;
-    prompt += ` Across all buildings, there are approximately ${totalStudents} students/visitors, ${totalStaff} staff/faculty, and ${totalAdmins} administrators.\n\n`;
+    prompt += ` Across all buildings, there are approximately ${totalStudents} students/visitors, ${totalStaff} staff/faculty, ${totalAdmins} administrators, ${totalVoip} VoIP phones, and ${totalIptv} IPTVs.\n\n`;
 
     // Per-building, per-floor breakdown
     prompt += `## Building & Floor Breakdown\n`;
     req.buildings?.forEach((b, bIdx) => {
       prompt += `\n### Building ${bIdx + 1}: ${b.name || 'Unnamed'} (${b.floorCount || 0} floors)\n`;
       if (b.floors?.length) {
-        prompt += `| Floor | Department / Name | Students | Staff | Admins |\n`;
-        prompt += `|-------|-------------------|----------|-------|--------|\n`;
+        prompt += `| Floor | Department / Name | Students | Staff | Admins | VoIP Phones | IPTVs |\n`;
+        prompt += `|-------|-------------------|----------|-------|--------|-------------|-------|\n`;
         b.floors.forEach((f, fIdx) => {
           const floorLabel = f.name || (fIdx === 0 ? 'Ground Floor' : `Floor ${fIdx}`);
-          prompt += `| ${fIdx + 1} | ${floorLabel} | ${f.students || 0} | ${f.staff || 0} | ${f.admins || 0} |\n`;
+          prompt += `| ${fIdx + 1} | ${floorLabel} | ${f.students || 0} | ${f.staff || 0} | ${f.admins || 0} | ${f.voip || 0} | ${f.iptv || 0} |\n`;
         });
         const bStudents = b.floors.reduce((s, f) => s + (Number(f.students) || 0), 0);
         const bStaff = b.floors.reduce((s, f) => s + (Number(f.staff) || 0), 0);
         const bAdmins = b.floors.reduce((s, f) => s + (Number(f.admins) || 0), 0);
-        prompt += `| **Total** | | **${bStudents}** | **${bStaff}** | **${bAdmins}** |\n`;
+        const bVoip = b.floors.reduce((s, f) => s + (Number(f.voip) || 0), 0);
+        const bIptv = b.floors.reduce((s, f) => s + (Number(f.iptv) || 0), 0);
+        prompt += `| **Total** | | **${bStudents}** | **${bStaff}** | **${bAdmins}** | **${bVoip}** | **${bIptv}** |\n`;
       }
     });
 
@@ -62,7 +66,7 @@ function buildPromptFromRequirements(req, solutionType) {
     if (req.sensitiveAreas?.length) prompt += `Sensitive areas requiring extra security: ${req.sensitiveAreas.join(', ')}.\n`;
     if (req.specialRoles?.length) prompt += `Special roles to consider: ${req.specialRoles.join(', ')}.\n`;
     prompt += `Uptime requirement: ${req.uptimeLevel}.\n`;
-    if (req.expectGrowth) prompt += `Expecting growth of ${req.growthAmount}.\n`;
+    if (req.expectGrowth) prompt += `Expecting growth of ${req.growthAmount} additional users/people.\n`;
     if (req.additionalNotes) prompt += `Additional notes: ${req.additionalNotes}\n`;
     return prompt;
   } else {
@@ -71,7 +75,7 @@ function buildPromptFromRequirements(req, solutionType) {
     if (req.specialRoles?.length) prompt += ` Use cases: ${req.specialRoles.join(', ')}.`;
     if (req.sensitiveAreas?.length) prompt += ` Security zones: ${req.sensitiveAreas.join(', ')}.`;
     prompt += ` Uptime requirement: ${req.uptimeLevel}.`;
-    if (req.expectGrowth) prompt += ` Expecting growth of ${req.growthAmount}.`;
+    if (req.expectGrowth) prompt += ` Expecting growth of ${req.growthAmount} additional server racks.`;
     if (req.additionalNotes) prompt += ` Additional notes: ${req.additionalNotes}`;
     return prompt;
   }

@@ -50,9 +50,9 @@ app.add_middleware(
 # ── Models ────────────────────────────────────────
 class DiagramRequest(BaseModel):
     """Request body for diagram generation."""
-    topology: str          # The approved topology design text (Phase 2 output)
+    topology: str = ""     # The approved topology design text (Phase 2 output)
     bom: str = ""          # The device selection / BOM text (Phase 3 output)
-
+    diagram_code: str = "" # Direct D2 code (Phase 4 output)
 
 class DiagramResponse(BaseModel):
     """Response with diagram URL and metadata."""
@@ -547,7 +547,14 @@ async def generate_diagram(req: DiagramRequest):
     """
     try:
         # Step 1: Generate D2 diagram code
-        diagram_code = _build_d2_from_topology(req.topology, req.bom)
+        if req.diagram_code:
+            diagram_code = req.diagram_code
+            # Optionally strip markdown fences if the LLM leaked them
+            if diagram_code.startswith("```"):
+                diagram_code = re.sub(r"^```[a-zA-Z0-9]*\n", "", diagram_code)
+                diagram_code = re.sub(r"\n```$", "", diagram_code)
+        else:
+            diagram_code = _build_d2_from_topology(req.topology, req.bom)
 
         # Step 2: Render to SVG via kroki
         svg_data = await _render_via_kroki(diagram_code, "d2")
