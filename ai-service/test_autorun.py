@@ -89,15 +89,34 @@ async def autorun(ws_url: str, prompt: str):
 
                 elif event_type == "tool_call":
                     tool = data.get("tool_name", "")
+                    tool_input = data.get("input", {})
                     print(f"    {R}🔧 Tool call: {tool}{RST}")
-
-                elif event_type == "rag_result":
-                    total = data.get("total", 0)
-                    print(f"    {M}📚 RAG: {total} chunks retrieved{RST}")
+                    if tool_input and tool_input != {".no_value.": ""}:
+                        try:
+                            input_str = json.dumps(tool_input, indent=4)
+                            # Indent each line to align under the tool call line
+                            indented = "\n".join(f"      {line}" for line in input_str.splitlines())
+                            print(f"    {D}Input:{RST}\n{indented}")
+                        except Exception:
+                            pass
 
                 elif event_type == "tool_result":
                     tool = data.get("tool_name", "")
+                    result_data = data.get("result", "")
+                    output_data = data.get("output", "")
+                    # Try both fields (result and output)
+                    full_result = result_data if result_data else output_data
                     print(f"    {R}📋 Tool result: {tool}{RST}")
+                    try:
+                        if isinstance(full_result, (dict, list)):
+                            result_str = json.dumps(full_result, indent=4)
+                        else:
+                            result_str = str(full_result)
+                        result_str = result_str.replace("\\n", "\n").replace("\\t", "\t")
+                        for line in result_str.splitlines():
+                            print(f"      {line}")
+                    except Exception as e:
+                        print(f"      Error printing result: {e}")
 
                 elif event_type == "agent_response":
                     agent = data.get("agent", "")
@@ -125,7 +144,15 @@ async def autorun(ws_url: str, prompt: str):
 
                 elif event_type == "diagram_error":
                     msg = data.get("message", "")
-                    print(f"\n    {R}⚠️  Diagram warning: {msg}{RST}")
+                    d2 = data.get("diagram_code", "")
+                    print(f"\n    {R}⚠️  Diagram error: {msg}{RST}")
+                    if d2:
+                        print(f"\n    {Y}Raw D2 code sent to kroki:{RST}")
+                        print(f"    {Y}{'─' * 60}{RST}")
+                        for line in d2.splitlines():
+                            print(f"    {D}{line}{RST}")
+                        print(f"    {Y}{'─' * 60}{RST}")
+                        print(f"    {Y}Paste into https://play.d2lang.com/ to debug{RST}")
 
                 elif event_type == "workflow_complete":
                     saved = data.get("saved_to", "")
