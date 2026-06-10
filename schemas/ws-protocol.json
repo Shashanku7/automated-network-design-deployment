@@ -9,6 +9,7 @@
       "enum": ["USER_INPUT", "AGENT_EVENT", "APPROVAL_REQ", "APPROVAL_RES", "ERROR"]
     },
     "project_id": { "type": "string", "format": "uuid" },
+    "task_id": { "type": "string", "format": "uuid" },
     "agent_name": { "type": "string" },
     "event_type": { "type": "string", "enum": ["chunk", "tool_call", "tool_result", "result"] },
     "content": { "type": "string" },

@@ -5,6 +5,7 @@
   "type": "object",
   "properties": {
     "project_id": { "type": "string", "format": "uuid" },
+    "task_id": { "type": "string", "format": "uuid" },
     "phase": { "type": "integer" },
     "agent_target": { "type": "string" },
     "input_context": { "type": "string" },
