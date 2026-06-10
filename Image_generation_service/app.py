@@ -513,7 +513,7 @@ def _build_generic_d2(topology: str) -> list:
 async def _render_via_kroki(code: str, diagram_type: str = "d2") -> bytes:
     """Render D2 diagram code to SVG via kroki.io."""
     url = f"{KROKI_URL}/{diagram_type}/svg"
-    async with httpx.AsyncClient(timeout=90.0) as client:
+    async with httpx.AsyncClient(timeout=120.0) as client:
         resp = await client.post(
             url,
             content=code.encode("utf-8"),
@@ -576,6 +576,7 @@ async def generate_diagram(req: DiagramRequest):
         return DiagramResponse(
             success=False,
             error=f"Diagram generation failed: {str(e)}",
+            diagram_code=req.diagram_code,
         )
 
 

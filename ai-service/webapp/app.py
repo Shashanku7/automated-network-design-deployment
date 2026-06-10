@@ -40,15 +40,15 @@ OUTPUT_DIR.mkdir(exist_ok=True)
 # ── LLM ─────────────────────────────────────────
 llm = Ollama(
     model=OLLAMA_MODEL, base_url=OLLAMA_BASE_URL,
-    request_timeout=400.0, context_window=131072,
+    request_timeout=400.0, context_window=262144,
     is_function_calling_model=True,
     headers={"Authorization": f"Bearer {OLLAMA_API_KEY}"},
 )
 
-llm_plain = Ollama(
-    model=OLLAMA_MODEL, base_url=OLLAMA_BASE_URL,
-    request_timeout=400.0, context_window=131072,
-    is_function_calling_model=False,
+llm_qwen_coder= Ollama(
+    model="qwen3-coder:480b-cloud", base_url=OLLAMA_BASE_URL,
+    request_timeout=400.0, context_window=262144,
+    is_function_calling_model=True,
     headers={"Authorization": f"Bearer {OLLAMA_API_KEY}"},
 )
 
@@ -62,7 +62,95 @@ def _build_retriever():
 
 _retriever = _build_retriever()
 
+# ── Firecrawl self-hosted search tool ─────────────────────
+
+# Default to the self-hosted instance on port 3002
+_FIRECRAWL_BASE_URL = os.getenv("FIRECRAWL_BASE_URL", "http://localhost:3002")
+
+# Lazy-initialised Firecrawl client so we don't crash on import if the
+# container hasn't started yet.
+_firecrawl_app = None
+
+def _get_firecrawl_app():
+    """Return a cached FirecrawlApp pointing at the self-hosted instance."""
+    global _firecrawl_app
+    if _firecrawl_app is None:
+        from firecrawl import FirecrawlApp
+        _firecrawl_app = FirecrawlApp(api_key="local", api_url=_FIRECRAWL_BASE_URL)
+    return _firecrawl_app
+
+
+def firecrawl_search(query: str, limit: int = 5) -> str:
+    """
+    Web search using a self-hosted Firecrawl instance.
+
+    Use this tool when you need up-to-date or external information that is not
+    contained in the local RAG knowledge base — e.g. latest HPE Aruba product
+    releases, competitor comparisons, pricing, white-papers, or technical
+    blog posts.
+
+    Each result includes the full scraped page content (markdown) so you
+    can read the actual article / datasheet without additional calls.
+
+    Args:
+        query: The search query (natural language).
+        limit: Maximum number of results to return (default 5, max 10).
+    """
+    limit = min(limit, 10)
+    try:
+        app = _get_firecrawl_app()
+        from firecrawl.v2.types import ScrapeOptions
+        opts = ScrapeOptions(formats=["markdown"])
+        result = app.search(query=query, limit=limit, scrape_options=opts)
+    except Exception as exc:
+        return f"[firecrawl_search error] {type(exc).__name__}: {exc}"
+
+    # When scrape_options is passed the results are Document objects with metadata + markdown.
+    # Without scrape_options they'd be SearchResultWeb items.
+    items = getattr(result, "web", None) or getattr(result, "data", None) or []
+    if not items:
+        return f"[firecrawl_search] No results found for: {query}"
+
+    lines: list[str] = [f"Firecrawl search results for query: '{query}'\n"]
+    for i, item in enumerate(items, start=1):
+        # Extract metadata — item could be Document (has .metadata) or SearchResultWeb (has direct attrs)
+        metadata = getattr(item, "metadata", item)
+        title = getattr(metadata, "title", getattr(item, "title", "")) or ""
+        url = getattr(metadata, "url", getattr(item, "url", "")) or ""
+        desc = getattr(metadata, "description", getattr(item, "description", "")) or ""
+
+        lines.append(f"--- Result {i} ---")
+        lines.append(f"Title: {title}")
+        lines.append(f"URL: {url}")
+        if desc:
+            lines.append(f"Summary: {desc}")
+
+        # Full page markdown content (available when scrape_options is passed)
+        md = getattr(item, "markdown", None)
+        if md:
+            lines.append(f"Content ({len(md)} chars):")
+            # Truncate very long pages to avoid blowing the context window
+            lines.append(md[:4000])
+        lines.append("")
+
+    # Brief summary of what was found
+    total_chars = sum(len(getattr(i, "markdown", "") or "") for i in items)
+    lines.append(f"[Retrieved {len(items)} pages, {total_chars} total chars of content]")
+    return "\n".join(lines)
+
+
+firecrawl_search_tool = FunctionTool.from_defaults(
+    fn=firecrawl_search,
+    name="firecrawl_search",
+    description=(
+        "Search the web using a self-hosted Firecrawl instance. "
+        "Use this for up-to-date or external information not in the local RAG knowledge base, "
+        "such as latest HPE Aruba product releases, pricing, or technical blogs."
+    ),
+)
+
 # ── RAG Tools (multi-query strategy) ─────────────
+
 
 def list_available_products() -> str:
     """List all available product families in the knowledge base with their chunk counts.
@@ -220,6 +308,9 @@ agent2 = FunctionAgent(
         "You are a Senior Network Topology Architect.\n"
         "The input contains a STRUCTURED BUILDING & FLOOR BREAKDOWN with per-building \n"
         "names, floor counts, and per-floor department names with student, staff, admin, VOIP phone, IPTV counts.\n\n"
+        "MANDATORY: You MUST use the 'firecrawl_search' tool BEFORE designing the topology to verify the latest standards, "
+        "best practices, and any new HPE Aruba models or technologies. This is NON-NEGOTIABLE to ensure your design matches the latest data. "
+        "You MUST search for: latest HPE Aruba campus design best practices, current VSF/VSX recommendations, and any new switch series or features.\n\n"
         "First, intelligently select the appropriate architectural tier model based on the following criteria:\n\n"
         "  - **2-Tier (Collapsed Core + Access):**\n"
         "     • Best for single-building campuses or small networks with < 500 total endpoints.\n"
@@ -243,7 +334,7 @@ agent2 = FunctionAgent(
         "   assign subnets sized to actual user counts (students, staffs, admins, VOIP phones, IPTV), include QoS markings\n"
         "6. Redundancy & failover — If using VSX at the Core/Distribution layer, utilize VSX Active-Gateway for default gateways. Do NOT combine VRRP with VSX Active-Gateway on the same segment.\n"
         "Do NOT include a Bill of Materials."
-    ), llm=llm,
+    ), llm=llm, tools=[firecrawl_search_tool],
 )
 
 agent3 = FunctionAgent(
@@ -261,6 +352,9 @@ agent3 = FunctionAgent(
         "STEP 3: Use 'search_across_products' for cross-cutting questions like:\n"
         "  - 'Which switches support VSF stacking?'\n"
         "  - 'Which switches have Multi-Gigabit (Smart Rate) ports or 10G/25G uplinks?'\n\n"
+        "STEP 3b: MANDATORY — Use 'firecrawl_search' to search the web for the latest HPE Aruba product information, "
+        "pricing, and any new product releases or updates. This is NON-NEGOTIABLE to ensure your recommendations match the latest data. "
+        "You MUST perform this search BEFORE making any final recommendations, even if you think the local datasheets are sufficient.\n\n"
         "STEP 4: Compare specs across product families for each role and select the best fit based on:\n"
         "  - Physical Port Density: Ensure the total physical ports provided by the switches on a floor mathematically EXCEED the total estimated endpoints plus growth margins provided by the topology designer.\n"
         "  - PoE budget vs. PoE device count (phones, APs, IPTV)\n"
@@ -277,7 +371,7 @@ agent3 = FunctionAgent(
         "- Base recommendations ONLY on retrieved datasheet specs.\n"
         "- Calculate Wi-Fi AP quantities: approx 25-30 users per AP. Add these APs to the total floor port count requirement.\n"
         "- Prioritize cost-effectiveness without sacrificing quality and performance.\n"
-    ), llm=llm, tools=[catalog_tool, product_search_tool, broad_search_tool],
+    ), llm=llm, tools=[catalog_tool, product_search_tool, broad_search_tool, firecrawl_search_tool],
 )
 
 agent4 = FunctionAgent(
@@ -287,20 +381,29 @@ agent4 = FunctionAgent(
         "You are a D2 Diagram Specialist.\n"
         "Given a network topology design and Bill of Materials (BOM), generate "
         "valid D2 diagram code that visualizes the topology.\n\n"
-        "D2 RULES:\n"
-        "- Use `direction: down` for top-to-bottom layout\n"
-        "- In D2, containers are IMPLICIT — just nest children inside `{}`. Do NOT use `shape: container` (it is invalid and will cause errors)\n"
-        "- Use `style` blocks with fill, stroke, font-color, border-radius\n"
+        "IMPORTANT — Keep the diagram SIMPLE. Kroki.io has a complexity limit. "
+        "Do NOT create individual nodes for each device. Use AGGREGATED labels.\n\n"
+        "CRITICAL D2 RULES:\n"
+        "- First line MUST be exactly: `direction: down` on its own line\n"
+        "- `style` blocks are ONLY allowed INSIDE a container — NEVER at the document root\n"
+        "- Every `style` block MUST be inside `{ }` of a named node\n"
+        "- In D2, containers are IMPLICIT — just nest children inside `{}`. Do NOT use `shape: container`\n"
         "- Use arrows (->) for connections, label them inline\n"
-        "- Do NOT use `icon:` — D2 does not support custom icons and they cause errors\n"
-        "- Use descriptive labels instead (e.g., label: \"Access Switch\\nCX 6200F\")\n\n"
+        "- Do NOT use `icon:` — D2 does not support custom icons\n"
+        "- ALL labels with special characters (spaces, slashes, commas) MUST use double quotes\n\n"
+        "AGGREGATION RULES (to keep diagram small):\n"
+        "- PER FLOOR: create exactly ONE access-switch node, ONE end-device group node, ONE Wi-Fi AP node\n"
+        "  → Bad: individual devices like \"Admin Device\\n10.1.10.10\"\n"
+        "  → Good: aggregated label like \"End Devices\\nVLAN 10\\n20 Users\"\n"
+        "- Do NOT create per-device connections. Just connect access -> aggregate_end_devices\n"
+        "- Limit total nodes to at most ~30 across the entire diagram\n"
+        "- Skip per-switch VSX pairs in connections — a single label on the container is enough\n\n"
         "STRUCTURE:\n"
-        "1. Core Layer (top container with VSX pair)\n"
-        "2. Server/Management block (if present), connected to core\n"
-        "3. Each building as a container with its distribution switch\n"
-        "4. Each floor as a sub-container with access switch, end devices, Wi-Fi APs\n"
-        "5. Connections: core -> building_dist, building_dist -> floor_access, "
-        "access -> devices, access -> wifi\n"
+        "1. Core Layer (single container node with VSX label)\n"
+        "2. Server/Management block (if present, one node), connected to core\n"
+        "3. Each building as a container with one distribution switch node\n"
+        "4. Each floor as a sub-container with ONE access switch, ONE aggregated end-device group, ONE Wi-Fi AP node\n"
+        "5. Connections: core -> building_dist, building_dist -> floor_access, access -> devices, access -> wifi\n"
         "6. Security zones (if sensitive areas mentioned)\n\n"
         "COLOR SCHEME:\n"
         "- Core: fill \"#1a1a2e\", stroke \"#e94560\"\n"
@@ -312,9 +415,58 @@ agent4 = FunctionAgent(
         "- Wi-Fi AP: fill \"#4ecca3\", stroke \"#36b37e\"\n"
         "- Server: fill \"#2d4059\", stroke \"#ea5455\"\n"
         "- Security: fill \"#800020\", stroke \"#ff4444\"\n\n"
-        "Include VLAN info and subnet details inside end-device labels.\n"
-        "Output ONLY the D2 code — no explanations, no markdown fences."
-    ), llm=llm,
+        "Output ONLY the D2 code — no explanations, no markdown fences.\n\n"
+        "EXAMPLE of valid MINIMAL D2:\n"
+        "direction: down\n"
+        "\n"
+        "core: \"Core Layer (VSX Pair)\" {\n"
+        "  style: {\n"
+        "    fill: \"#1a1a2e\"\n"
+        "    stroke: \"#e94560\"\n"
+        "  }\n"
+        "}\n"
+        "\n"
+        "b1: \"Building 1\" {\n"
+        "  style: {\n"
+        "    fill: \"#0f3460\"\n"
+        "    stroke: \"#533483\"\n"
+        "  }\n"
+        "  dist: \"Distribution CX 6405\" {\n"
+        "    style: {\n"
+        "      fill: \"#16213e\"\n"
+        "      stroke: \"#0f3460\"\n"
+        "    }\n"
+        "  }\n"
+        "  f1: \"Floor 1\" {\n"
+        "    style: {\n"
+        "      fill: \"#1a1a40\"\n"
+        "      stroke: \"#533483\"\n"
+        "    }\n"
+        "    acc: \"Access CX 6200F\" {\n"
+        "      style: {\n"
+        "        fill: \"#533483\"\n"
+        "        stroke: \"#e94560\"\n"
+        "      }\n"
+        "    }\n"
+        "    devices: \"End Devices\\nVLAN 10\\n20 Users\" {\n"
+        "      style: {\n"
+        "        fill: \"#e94560\"\n"
+        "        stroke: \"#ff6b6b\"\n"
+        "      }\n"
+        "    }\n"
+        "    wifi: \"Wi-Fi AP\\n2x AP\" {\n"
+        "      style: {\n"
+        "        fill: \"#4ecca3\"\n"
+        "        stroke: \"#36b37e\"\n"
+        "      }\n"
+        "    }\n"
+        "    acc -> devices: Access\n"
+        "    acc -> wifi: PoE\n"
+        "  }\n"
+        "  dist -> f1.acc: 10G\n"
+        "}\n"
+        "core -> b1.dist: 10G Fiber"
+    ), llm=llm_qwen_coder,
 )
 
 
@@ -431,7 +583,7 @@ async def chat_endpoint(req: ChatRequest):
 async def _send(ws, **kw):
     await ws.send_text(json.dumps(kw))
 
-async def _run_phase(ws, phase_num, phase_name, agent, initial_msg):
+async def _run_phase(ws, phase_num, phase_name, agent, initial_msg, model_name=""):
     """Run one agent phase with event streaming and HITL approval."""
     wf = AgentWorkflow(agents=[agent], root_agent=agent.name, timeout=400.0)
     history: list[ChatMessage] = []
@@ -454,7 +606,7 @@ async def _run_phase(ws, phase_num, phase_name, agent, initial_msg):
 
                 async for ev in handler.stream_events():
                     if isinstance(ev, AgentInput):
-                        await _send(ws, type="agent_input", agent=ev.current_agent_name, model=OLLAMA_MODEL)
+                        await _send(ws, type="agent_input", agent=ev.current_agent_name, model=model_name)
                     elif isinstance(ev, ToolCall):
                         await _send(ws, type="tool_call", tool_name=ev.tool_name, tool_kwargs=ev.tool_kwargs)
                     elif isinstance(ev, ToolCallResult):
@@ -463,7 +615,7 @@ async def _run_phase(ws, phase_num, phase_name, agent, initial_msg):
                             chunks = _parse_chunks(out)
                             await _send(ws, type="rag_result", tool_name=ev.tool_name, chunks=chunks, total=len(chunks))
                         else:
-                            await _send(ws, type="tool_result", tool_name=ev.tool_name, output=out[:2000])
+                            await _send(ws, type="tool_result", tool_name=ev.tool_name, output=out)
                     elif isinstance(ev, AgentOutput):
                         response_text = str(ev.response)
                         if ev.tool_calls:
@@ -506,14 +658,14 @@ async def ws_endpoint(ws: WebSocket):
         prompt = data["content"]
         await _send(ws, type="user_echo", content=prompt)
 
-        rephrased = await _run_phase(ws, 1, "Prompt Rephrasing", agent1, prompt)
-        topology = await _run_phase(ws, 2, "Network Topology Design", agent2, rephrased)
+        rephrased = await _run_phase(ws, 1, "Prompt Rephrasing", agent1, prompt, model_name=OLLAMA_MODEL)
+        topology = await _run_phase(ws, 2, "Network Topology Design", agent2, rephrased, model_name=OLLAMA_MODEL)
         ctx = f"## Original Requirements\n{prompt}\n\n## Approved Topology\n{topology}"
-        devices = await _run_phase(ws, 3, "Device Selection & BOM", agent3, ctx)
+        devices = await _run_phase(ws, 3, "Device Selection & BOM", agent3, ctx, model_name=OLLAMA_MODEL)
 
         # Phase 4: D2 Diagram Generation
         d2_ctx = f"## Approved Topology\n{topology}\n\n## Bill of Materials\n{devices}"
-        diagram_code = await _run_phase(ws, 4, "D2 Diagram Generation", agent4, d2_ctx)
+        diagram_code = await _run_phase(ws, 4, "D2 Diagram Generation", agent4, d2_ctx, model_name="qwen3-coder:480b-cloud")
 
         # Render D2 code via Image Generation Service
         diagram_url = None
@@ -528,7 +680,8 @@ async def ws_endpoint(ws: WebSocket):
                             download_url=f"{IMAGE_SERVICE_URL}{result['url']}/download")
             else:
                 await _send(ws, type="diagram_error",
-                            message=result.get("error", "Unknown error from image service"))
+                            message=result.get("error", "Unknown error from image service"),
+                            diagram_code=result.get("diagram_code", ""))
         except Exception as img_err:
             await _send(ws, type="diagram_error",
                         message=f"Image service unavailable: {str(img_err)}")
