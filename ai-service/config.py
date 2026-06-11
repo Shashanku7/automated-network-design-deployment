@@ -36,8 +36,8 @@ IMAGE_SERVICE_URL = os.getenv("IMAGE_SERVICE_URL", "http://localhost:8001")
 # ──────────────────────────────────────────────
 # RAG constants
 # ──────────────────────────────────────────────
-EMBEDDING_MAX_TOKENS = 1024
-CHUNK_MAX_TOKENS = 768          # HybridChunker target (fits within embedding limit)
+EMBEDDING_MAX_TOKENS = 1536
+CHUNK_MAX_TOKENS = 1024         # HybridChunker target (fits within embedding limit)
 RETRIEVAL_TOP_K = 25            # Consistent across all retrieval paths
 MIN_SCORE_THRESHOLD = 0.25      # Drop chunks below this relevance score
 MIN_CHUNK_LENGTH = 50           # Drop chunks shorter than this (chars)
