@@ -29,7 +29,7 @@ from pydantic import BaseModel
 OUTPUT_DIR = Path(__file__).resolve().parent / "generated_diagrams"
 OUTPUT_DIR.mkdir(exist_ok=True)
 
-KROKI_URL = os.getenv("KROKI_URL", "https://kroki.io")
+KROKI_URL = os.getenv("KROKI_URL", "http://localhost:8003")
 
 # ── FastAPI App ───────────────────────────────────
 app = FastAPI(
