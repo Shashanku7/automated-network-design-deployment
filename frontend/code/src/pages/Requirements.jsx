@@ -83,14 +83,15 @@ export default function Requirements() {
       } else {
         form.buildings.forEach((b, bIdx) => {
           if (!b.name) errs[`b_${bIdx}_name`] = true;
-          if (!b.floorCount || Number(b.floorCount) < 1) errs[`b_${bIdx}_fc`] = true;
+          if (!b.departmentCount || Number(b.departmentCount) < 1) errs[`b_${bIdx}_dc`] = true;
 
-          b.floors.forEach((f, fIdx) => {
-            if (!f.students || Number(f.students) < 0) errs[`b_${bIdx}_f_${fIdx}_s`] = true;
-            if (!f.staff || Number(f.staff) < 0) errs[`b_${bIdx}_f_${fIdx}_st`] = true;
-            if (!f.admins || Number(f.admins) < 0) errs[`b_${bIdx}_f_${fIdx}_a`] = true;
-            if (!f.voip || Number(f.voip) < 0) errs[`b_${bIdx}_f_${fIdx}_v`] = true;
-            if (!f.iptv || Number(f.iptv) < 0) errs[`b_${bIdx}_f_${fIdx}_i`] = true;
+          b.departments.forEach((d, dIdx) => {
+            if (!d.department) errs[`b_${bIdx}_d_${dIdx}_dept`] = true;
+            if (!d.students || Number(d.students) < 0) errs[`b_${bIdx}_d_${dIdx}_s`] = true;
+            if (!d.staff || Number(d.staff) < 0) errs[`b_${bIdx}_d_${dIdx}_st`] = true;
+            if (!d.admins || Number(d.admins) < 0) errs[`b_${bIdx}_d_${dIdx}_a`] = true;
+            if (!d.voip || Number(d.voip) < 0) errs[`b_${bIdx}_d_${dIdx}_v`] = true;
+            if (!d.printers || Number(d.printers) < 0) errs[`b_${bIdx}_d_${dIdx}_pr`] = true;
           });
         });
       }
@@ -111,8 +112,8 @@ export default function Requirements() {
         buildings.push({
           id: crypto.randomUUID(),
           name: '',
-          floorCount: '',
-          floors: []
+          departmentCount: '',
+          departments: []
         });
       }
       return { ...prev, buildingCount: count, buildings: buildings.slice(0, n) };
@@ -124,24 +125,24 @@ export default function Requirements() {
       const buildings = [...prev.buildings];
       buildings[bIdx][field] = val;
 
-      // If floor count changed, sync the floors array
-      if (field === 'floorCount') {
+      // If department count changed, sync the departments array
+      if (field === 'departmentCount') {
         const fn = Math.max(0, Math.min(50, parseInt(val) || 0));
-        const floors = [...buildings[bIdx].floors];
-        while (floors.length < fn) {
-          floors.push({ name: '', students: '', staff: '', admins: '', voip: '', iptv: '' });
+        const departments = [...buildings[bIdx].departments];
+        while (departments.length < fn) {
+          departments.push({ name: '', department: '', floorNo: '', students: '', staff: '', admins: '', voip: '', iptv: '', printers: '' });
         }
-        buildings[bIdx].floors = floors.slice(0, fn);
+        buildings[bIdx].departments = departments.slice(0, fn);
       }
 
       return { ...prev, buildings };
     });
   }
 
-  function updateFloor(bIdx, fIdx, field, val) {
+  function updateDept(bIdx, dIdx, field, val) {
     setForm(prev => {
       const buildings = [...prev.buildings];
-      buildings[bIdx].floors[fIdx][field] = val;
+      buildings[bIdx].departments[dIdx][field] = val;
       return { ...prev, buildings };
     });
   }
@@ -211,7 +212,7 @@ export default function Requirements() {
 
             {Number(form.buildingCount) > 0 && (
               <Section title="Building Details" icon="edit_square">
-                <p className="text-on-surface-variant text-sm mb-6">Tell us the name and number of floors for each building.</p>
+                <p className="text-on-surface-variant text-sm mb-6">Tell us the name and number of departments for each building.</p>
                 <div className="space-y-4">
                   {form.buildings.map((b, i) => (
                     <div key={b.id} className="grid grid-cols-1 md:grid-cols-3 gap-4 bg-surface-container-low p-4 rounded-xl border border-outline-variant/20 items-end">
@@ -227,13 +228,13 @@ export default function Requirements() {
                         />
                       </div>
                       <div className="space-y-2">
-                        <label className="text-xs font-bold text-primary uppercase">Number of Floors</label>
+                        <label className="text-xs font-bold text-primary uppercase">Number of Departments</label>
                         <input
                           type="number"
                           min="1"
                           placeholder="e.g. 3"
-                          value={b.floorCount}
-                          onChange={(e) => updateBuildingMeta(i, 'floorCount', e.target.value)}
+                          value={b.departmentCount}
+                          onChange={(e) => updateBuildingMeta(i, 'departmentCount', e.target.value)}
                           className={`w-full bg-surface-container-highest border rounded-lg px-4 py-2 text-on-surface focus:ring-1 focus:ring-primary outline-none transition-all ${errors[`b_${i}_fc`] ? 'border-error' : 'border-outline-variant/30'
                             }`}
                         />
@@ -244,12 +245,12 @@ export default function Requirements() {
               </Section>
             )}
 
-            {form.buildings.some(b => b.name && Number(b.floorCount) > 0) && (
+            {form.buildings.some(b => b.name && Number(b.departmentCount) > 0) && (
               <Section title="Who will use the network?" icon="group">
-                <p className="text-on-surface-variant text-sm mb-6">Enter the user counts for each floor. All fields are mandatory.</p>
+                <p className="text-on-surface-variant text-sm mb-6">Enter the user counts for each department. All fields are mandatory.</p>
 
                 <div className="space-y-12">
-                  {form.buildings.filter(b => b.name && Number(b.floorCount) > 0).map((building) => {
+                  {form.buildings.filter(b => b.name && Number(b.departmentCount) > 0).map((building) => {
                     const bIdx = form.buildings.findIndex(b => b.id === building.id);
                     return (
                       <div key={building.id} className="space-y-4">
@@ -257,7 +258,7 @@ export default function Requirements() {
                           <span className="material-symbols-outlined">domain</span>
                           <h3 className="font-bold text-lg">{building.name}</h3>
                           <span className="text-xs text-on-surface-variant bg-surface-container px-2 py-0.5 rounded ml-2">
-                            {building.floorCount} Floors
+                            {building.departmentCount} Departments
                           </span>
                         </div>
 
@@ -265,36 +266,48 @@ export default function Requirements() {
                           <table className="w-full text-sm">
                             <thead className="bg-surface-container text-on-surface-variant">
                               <tr>
-                                <th className="px-4 py-3 text-left font-medium w-48">Floor Name</th>
+                                <th className="px-4 py-3 text-left font-medium">Department Name*</th>
+                                <th className="px-4 py-3 text-left font-medium w-20">Floor No.*</th>
                                 <th className="px-4 py-3 text-left font-medium">Students*</th>
                                 <th className="px-4 py-3 text-left font-medium">Staff*</th>
-                                <th className="px-4 py-3 text-left font-medium">Admins*</th>
+                                <th className="px-4 py-3 text-left font-medium">Admin*</th>
                                 <th className="px-4 py-3 text-left font-medium">VoIP*</th>
                                 <th className="px-4 py-3 text-left font-medium">IPTV*</th>
+                                <th className="px-4 py-3 text-left font-medium">Printers*</th>
                               </tr>
                             </thead>
                             <tbody className="divide-y divide-outline-variant/10">
-                              {building.floors.map((floor, fIdx) => {
-                                const rowError = errors[`b_${bIdx}_f_${fIdx}_s`] || errors[`b_${bIdx}_f_${fIdx}_st`] || errors[`b_${bIdx}_f_${fIdx}_a`] || errors[`b_${bIdx}_f_${fIdx}_v`] || errors[`b_${bIdx}_f_${fIdx}_i`];
+                              {building.departments.map((dept, dIdx) => {
+                                const rowError = errors[`b_${bIdx}_d_${dIdx}_s`] || errors[`b_${bIdx}_d_${dIdx}_st`] || errors[`b_${bIdx}_d_${dIdx}_a`] || errors[`b_${bIdx}_d_${dIdx}_v`] || errors[`b_${bIdx}_d_${dIdx}_i`] || errors[`b_${bIdx}_d_${dIdx}_pr`];
                                 return (
-                                  <tr key={fIdx} className={`transition-colors ${rowError ? 'bg-error/5' : ''}`}>
+                                  <tr key={dIdx} className={`transition-colors ${rowError ? 'bg-error/5' : ''}`}>
                                     <td className="px-4 py-2">
                                       <input
                                         type="text"
-                                        placeholder={fIdx === 0 ? 'Ground Floor' : `Floor ${fIdx}`}
-                                        value={floor.name}
-                                        onChange={(e) => updateFloor(bIdx, fIdx, 'name', e.target.value)}
+                                        placeholder="e.g. CSE, Library, Admin"
+                                        value={dept.department}
+                                        onChange={(e) => updateDept(bIdx, dIdx, 'department', e.target.value)}
                                         className="w-full bg-transparent border-b border-transparent focus:border-primary px-1 py-1 outline-none"
                                       />
                                     </td>
                                     <td className="px-4 py-2">
                                       <input
                                         type="number"
+                                        min="1"
+                                        placeholder={dIdx + 1}
+                                        value={dept.floorNo}
+                                        onChange={(e) => updateDept(bIdx, dIdx, 'floorNo', e.target.value)}
+                                        className="w-full bg-surface-container-highest rounded-md px-3 py-2 border border-outline-variant/20 focus:border-primary text-center transition-all"
+                                      />
+                                    </td>
+                                    <td className="px-4 py-2">
+                                      <input
+                                        type="number"
                                         min="0"
                                         placeholder="0"
-                                        value={floor.students}
-                                        onChange={(e) => updateFloor(bIdx, fIdx, 'students', e.target.value)}
-                                        className={`w-full bg-surface-container-highest rounded-md px-3 py-2 border transition-all ${errors[`b_${bIdx}_f_${fIdx}_s`] ? 'border-error ring-1 ring-error/20' : 'border-outline-variant/20 focus:border-primary'
+                                        value={dept.students}
+                                        onChange={(e) => updateDept(bIdx, dIdx, 'students', e.target.value)}
+                                        className={`w-full bg-surface-container-highest rounded-md px-3 py-2 border transition-all ${errors[`b_${bIdx}_d_${dIdx}_s`] ? 'border-error ring-1 ring-error/20' : 'border-outline-variant/20 focus:border-primary'
                                           }`}
                                       />
                                     </td>
@@ -303,9 +316,9 @@ export default function Requirements() {
                                         type="number"
                                         min="0"
                                         placeholder="0"
-                                        value={floor.staff}
-                                        onChange={(e) => updateFloor(bIdx, fIdx, 'staff', e.target.value)}
-                                        className={`w-full bg-surface-container-highest rounded-md px-3 py-2 border transition-all ${errors[`b_${bIdx}_f_${fIdx}_st`] ? 'border-error ring-1 ring-error/20' : 'border-outline-variant/20 focus:border-primary'
+                                        value={dept.staff}
+                                        onChange={(e) => updateDept(bIdx, dIdx, 'staff', e.target.value)}
+                                        className={`w-full bg-surface-container-highest rounded-md px-3 py-2 border transition-all ${errors[`b_${bIdx}_d_${dIdx}_st`] ? 'border-error ring-1 ring-error/20' : 'border-outline-variant/20 focus:border-primary'
                                           }`}
                                       />
                                     </td>
@@ -314,9 +327,9 @@ export default function Requirements() {
                                         type="number"
                                         min="0"
                                         placeholder="0"
-                                        value={floor.admins}
-                                        onChange={(e) => updateFloor(bIdx, fIdx, 'admins', e.target.value)}
-                                        className={`w-full bg-surface-container-highest rounded-md px-3 py-2 border transition-all ${errors[`b_${bIdx}_f_${fIdx}_a`] ? 'border-error ring-1 ring-error/20' : 'border-outline-variant/20 focus:border-primary'
+                                        value={dept.admins}
+                                        onChange={(e) => updateDept(bIdx, dIdx, 'admins', e.target.value)}
+                                        className={`w-full bg-surface-container-highest rounded-md px-3 py-2 border transition-all ${errors[`b_${bIdx}_d_${dIdx}_a`] ? 'border-error ring-1 ring-error/20' : 'border-outline-variant/20 focus:border-primary'
                                           }`}
                                       />
                                     </td>
@@ -325,9 +338,9 @@ export default function Requirements() {
                                         type="number"
                                         min="0"
                                         placeholder="0"
-                                        value={floor.voip}
-                                        onChange={(e) => updateFloor(bIdx, fIdx, 'voip', e.target.value)}
-                                        className={`w-full bg-surface-container-highest rounded-md px-3 py-2 border transition-all ${errors[`b_${bIdx}_f_${fIdx}_v`] ? 'border-error ring-1 ring-error/20' : 'border-outline-variant/20 focus:border-primary'
+                                        value={dept.voip}
+                                        onChange={(e) => updateDept(bIdx, dIdx, 'voip', e.target.value)}
+                                        className={`w-full bg-surface-container-highest rounded-md px-3 py-2 border transition-all ${errors[`b_${bIdx}_d_${dIdx}_v`] ? 'border-error ring-1 ring-error/20' : 'border-outline-variant/20 focus:border-primary'
                                           }`}
                                       />
                                     </td>
@@ -336,9 +349,20 @@ export default function Requirements() {
                                         type="number"
                                         min="0"
                                         placeholder="0"
-                                        value={floor.iptv}
-                                        onChange={(e) => updateFloor(bIdx, fIdx, 'iptv', e.target.value)}
-                                        className={`w-full bg-surface-container-highest rounded-md px-3 py-2 border transition-all ${errors[`b_${bIdx}_f_${fIdx}_i`] ? 'border-error ring-1 ring-error/20' : 'border-outline-variant/20 focus:border-primary'
+                                        value={dept.iptv}
+                                        onChange={(e) => updateDept(bIdx, dIdx, 'iptv', e.target.value)}
+                                        className={`w-full bg-surface-container-highest rounded-md px-3 py-2 border transition-all ${errors[`b_${bIdx}_d_${dIdx}_i`] ? 'border-error ring-1 ring-error/20' : 'border-outline-variant/20 focus:border-primary'
+                                          }`}
+                                      />
+                                    </td>
+                                    <td className="px-4 py-2">
+                                      <input
+                                        type="number"
+                                        min="0"
+                                        placeholder="0"
+                                        value={dept.printers}
+                                        onChange={(e) => updateDept(bIdx, dIdx, 'printers', e.target.value)}
+                                        className={`w-full bg-surface-container-highest rounded-md px-3 py-2 border transition-all ${errors[`b_${bIdx}_d_${dIdx}_pr`] ? 'border-error ring-1 ring-error/20' : 'border-outline-variant/20 focus:border-primary'
                                           }`}
                                       />
                                     </td>
@@ -348,12 +372,14 @@ export default function Requirements() {
                             </tbody>
                             <tfoot className="bg-surface-container/50">
                               <tr className="font-bold text-primary">
+                                <td className="px-4 py-3 text-xs uppercase tracking-wider text-on-surface-variant"></td>
                                 <td className="px-4 py-3 text-xs uppercase tracking-wider text-on-surface-variant">Building Total</td>
-                                <td className="px-4 py-3">{building.floors.reduce((s, f) => s + (Number(f.students) || 0), 0)}</td>
-                                <td className="px-4 py-3">{building.floors.reduce((s, f) => s + (Number(f.staff) || 0), 0)}</td>
-                                <td className="px-4 py-3">{building.floors.reduce((s, f) => s + (Number(f.admins) || 0), 0)}</td>
-                                <td className="px-4 py-3">{building.floors.reduce((s, f) => s + (Number(f.voip) || 0), 0)}</td>
-                                <td className="px-4 py-3">{building.floors.reduce((s, f) => s + (Number(f.iptv) || 0), 0)}</td>
+                                <td className="px-4 py-3">{building.departments.reduce((s, d) => s + (Number(d.students) || 0), 0)}</td>
+                                <td className="px-4 py-3">{building.departments.reduce((s, d) => s + (Number(d.staff) || 0), 0)}</td>
+                                <td className="px-4 py-3">{building.departments.reduce((s, d) => s + (Number(d.admins) || 0), 0)}</td>
+                                <td className="px-4 py-3">{building.departments.reduce((s, d) => s + (Number(d.voip) || 0), 0)}</td>
+                                <td className="px-4 py-3">{building.departments.reduce((s, d) => s + (Number(d.iptv) || 0), 0)}</td>
+                                <td className="px-4 py-3">{building.departments.reduce((s, d) => s + (Number(d.printers) || 0), 0)}</td>
                               </tr>
                             </tfoot>
                           </table>
@@ -365,34 +391,6 @@ export default function Requirements() {
               </Section>
             )}
 
-            <Section title="What devices do you have?" icon="devices">
-              <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
-                {campusDevices.map(d => (
-                  <DeviceToggle key={d.key} {...d} active={form.devices[d.key]} onClick={() => toggleDevice(d.key)} />
-                ))}
-              </div>
-            </Section>
-
-            <Section title="Special Roles & Areas" icon="security">
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
-                <div>
-                  <label className="text-sm font-medium text-on-surface-variant mb-4 block">Key Personnel Roles</label>
-                  <div className="flex flex-wrap gap-2">
-                    {campusRoles.map(role => (
-                      <ChipToggle key={role} label={role} active={form.specialRoles.includes(role)} onClick={() => toggleRole(role)} />
-                    ))}
-                  </div>
-                </div>
-                <div>
-                  <label className="text-sm font-medium text-on-surface-variant mb-4 block">Sensitive Areas (High Security)</label>
-                  <div className="grid grid-cols-2 gap-3">
-                    {campusSensitiveAreas.map(area => (
-                      <AreaToggle key={area.id} {...area} active={form.sensitiveAreas.includes(area.id)} onClick={() => toggleArea(area.id)} />
-                    ))}
-                  </div>
-                </div>
-              </div>
-            </Section>
           </>
         )}
 

@@ -31,7 +31,7 @@ from config import (
     create_qdrant_client,
     extract_product_model,
 )
-from search import create_vector_store, create_vector_index
+from search import hybrid_search
 
 # ── Config ────────────────────────────────────────
 OUTPUT_DIR = Path(__file__).resolve().parent.parent / "output"
@@ -43,6 +43,7 @@ llm = Ollama(
     request_timeout=400.0, context_window=262144,
     is_function_calling_model=True,
     headers={"Authorization": f"Bearer {OLLAMA_API_KEY}"},
+    temperature=0.3,
 )
 
 llm_qwen_coder= Ollama(
@@ -52,15 +53,8 @@ llm_qwen_coder= Ollama(
     headers={"Authorization": f"Bearer {OLLAMA_API_KEY}"},
 )
 
-# ── Qdrant client + retriever ─────────────────────
+# ── Qdrant client ─────────────────────────────────
 _qdrant_client = create_qdrant_client()
-
-def _build_retriever():
-    vs = create_vector_store(_qdrant_client)
-    idx = create_vector_index(vs)
-    return idx.as_retriever(similarity_top_k=RETRIEVAL_TOP_K)
-
-_retriever = _build_retriever()
 
 # ── Firecrawl self-hosted search tool ─────────────────────
 
@@ -129,8 +123,7 @@ def firecrawl_search(query: str, limit: int = 5) -> str:
         md = getattr(item, "markdown", None)
         if md:
             lines.append(f"Content ({len(md)} chars):")
-            # Truncate very long pages to avoid blowing the context window
-            lines.append(md[:4000])
+            lines.append(md)
         lines.append("")
 
     # Brief summary of what was found
@@ -188,33 +181,39 @@ def search_product_specs(query: str, product_model: str) -> str:
                        'CX 6300', 'CX 4100i'). Must match a value from
                        list_available_products.
     """
+    from qdrant_client import models as qmodels
 
-    # ── 1. Dedicated retriever with large pool so the specific product ──
-    #    chunks are likely to be in the top results  (hybrid: dense + BM25)
     TOP_K = 150
     MAX_RESULTS = 30
-    try:
-        vs = create_vector_store(_qdrant_client)
-        idx = create_vector_index(vs)
-        retriever = idx.as_retriever(similarity_top_k=TOP_K)
-        nodes = retriever.retrieve(f"{product_model} {query}")
-        matched = [
-            n for n in nodes
-            if n.metadata.get("product_model") == product_model
-            or extract_product_model(n.metadata.get("source", "")) == product_model
+    filter_cond = qmodels.Filter(
+        must=[
+            qmodels.FieldCondition(
+                key="product_model",
+                match=qmodels.MatchValue(value=product_model),
+            )
         ]
-    except Exception:
-        matched = []
+    )
 
-    if matched:
+    try:
+        results = hybrid_search(
+            _qdrant_client, f"{product_model} {query}",
+            top_k=TOP_K, dense_limit=TOP_K * 2, sparse_limit=TOP_K * 2,
+            filter_condition=filter_cond,
+        )
+    except Exception:
+        results = []
+
+    if results:
         parts = []
-        for i, n in enumerate(matched[:MAX_RESULTS], 1):
-            src = os.path.basename(n.metadata.get("source", "unknown"))
-            parts.append(f"--- {product_model} Chunk {i} (score: {n.score:.4f}) ---\nSource: {src}\n{n.text}\n")
+        for i, r in enumerate(results[:MAX_RESULTS], 1):
+            src = os.path.basename(r["source"])
+            parts.append(
+                f"--- {product_model} Chunk {i} (score: {r['score']:.4f}) ---\n"
+                f"Source: {src}\n{r['text']}\n"
+            )
         return "\n".join(parts)
 
-    # ── 2. Fallback: brute-force scroll + Python-side filter ──
-    #    (proven to work because list_available_products uses the same unfiltered scroll)
+    # ── Fallback: brute-force scroll + Python-side filter ──
     raw = _qdrant_client.scroll(
         collection_name=QDRANT_COLLECTION,
         limit=1000,
@@ -246,15 +245,13 @@ def search_across_products(query: str) -> str:
     Args:
         query: A natural-language question about networking equipment specs.
     """
-    nodes = _retriever.retrieve(query)
-    nodes = [n for n in nodes if n.score >= MIN_SCORE_THRESHOLD]
+    results = hybrid_search(_qdrant_client, query, top_k=RETRIEVAL_TOP_K)
+    results = [r for r in results if r["score"] >= MIN_SCORE_THRESHOLD]
     parts = []
-    for i, n in enumerate(nodes, 1):
-        src = n.metadata.get("source", "unknown")
-        # Derive product_model from source filename since retriever metadata lacks it
-        pm = extract_product_model(src)
-        src_base = os.path.basename(src)
-        parts.append(f"--- Chunk {i} [{pm}] (score: {n.score:.4f}) ---\nSource: {src_base}\n{n.text}\n")
+    for i, r in enumerate(results, 1):
+        pm = extract_product_model(r["source"])
+        src_base = os.path.basename(r["source"])
+        parts.append(f"--- Chunk {i} [{pm}] (score: {r['score']:.4f}) ---\nSource: {src_base}\n{r['text']}\n")
     return "\n".join(parts)
 
 
@@ -290,12 +287,12 @@ agent1 = FunctionAgent(
     system_prompt=(
         "You are a Network Development Prompt Engineer.\n"
         "The user's request includes a STRUCTURED BUILDING & FLOOR BREAKDOWN with:\n"
-        "- Multiple buildings, each with a name and floor count\n"
-        "- Per-floor details: department/area name, student count, staff count, admin count, VOIP device count, IPTV count.\n\n"
+        "- Multiple buildings, each with a name and department count\n"
+        "- Per-department details: department/area name, student count, staff count, admin count, VOIP device count, IPTV count, printer count.\n\n"
         "Rephrase the user's request into a detailed, structured prompt for a network "
-        "topology designer. PRESERVE the per-building and per-floor breakdown tables — "
+        "topology designer. PRESERVE the per-building and per-department breakdown tables — "
         "do NOT flatten them into aggregates. Include: purpose, user/device counts per "
-        "building and floor, performance needs, physical constraints, security, budget. "
+        "building and department, performance needs, physical constraints, security, budget. "
         "Make reasonable assumptions if missing.\n"
         "Output ONLY the refined prompt."
     ), llm=llm,
@@ -307,7 +304,7 @@ agent2 = FunctionAgent(
     system_prompt=(
         "You are a Senior Network Topology Architect.\n"
         "The input contains a STRUCTURED BUILDING & FLOOR BREAKDOWN with per-building \n"
-        "names, floor counts, and per-floor department names with student, staff, admin, VOIP phone, IPTV counts.\n\n"
+        "names, department counts, and per-department details with student, staff, admin, VOIP phone, IPTV, and printer counts.\n\n"
         "MANDATORY: You MUST use the 'firecrawl_search' tool BEFORE designing the topology to verify the latest standards, "
         "best practices, and any new HPE Aruba models or technologies. This is NON-NEGOTIABLE to ensure your design matches the latest data. "
         "You MUST search for: latest HPE Aruba campus design best practices, current VSF/VSX recommendations, and any new switch series or features.\n\n"
@@ -325,13 +322,13 @@ agent2 = FunctionAgent(
         "Then, design a detailed topology that reflects this physical structure:\n"
         "1. **Topology overview** — the chosen tier (2-tier or 3-tier) and your justification\n"
         "2. Layer breakdown — map each building to its own distribution block (if 3-tier). "
-        "   For each floor, calculate total endpoints (Users + VoIP + IPTV + 1 AP per 25 users). "
+        "   For each department, calculate total endpoints (Users + VoIP + IPTV + Printers + 1 AP per 25 users). "
         "   To ensure physical density and a 20% growth margin, calculate required access ports as: "
         "   Required Ports = (Total Endpoints * 1.2). Specify how many 24-port or 48-port switches are needed based on this total.\n"
         "3. High-availability: VSF, VSX, LAG (LACP), QoS\n"
         "4. Link design (speeds, LAG bundles, redundancy). Explicitly state if high-density student areas require Multi-Gigabit (Smart Rate) access links for Wi-Fi 6/6E APs.\n"
-        "5. VLAN plan — keep every department isolated using VLAN, create VLANs per building or per floor/department, "
-        "   assign subnets sized to actual user counts (students, staffs, admins, VOIP phones, IPTV), include QoS markings\n"
+        "5. VLAN plan — keep every department isolated using VLAN, create VLANs per building or per department, "
+        "   assign subnets sized to actual user counts (students, staffs, admins, VOIP phones, IPTV, printers), include QoS markings\n"
         "6. Redundancy & failover — If using VSX at the Core/Distribution layer, utilize VSX Active-Gateway for default gateways. Do NOT combine VRRP with VSX Active-Gateway on the same segment.\n"
         "Do NOT include a Bill of Materials."
     ), llm=llm, tools=[firecrawl_search_tool],
@@ -358,8 +355,8 @@ agent3 = FunctionAgent(
         "pricing, and any new product releases or updates. This is NON-NEGOTIABLE to ensure your recommendations match the latest data. "
         "You MUST perform this search BEFORE making any final recommendations, even if you think the local datasheets are sufficient.\n\n"
         "STEP 4: Compare specs across product families for each role and select the best fit based on:\n"
-        "  - Physical Port Density: Ensure the total physical ports provided by the switches on a floor mathematically EXCEED the total estimated endpoints plus growth margins provided by the topology designer.\n"
-        "  - PoE budget vs. PoE device count (phones, APs, IPTV)\n"
+        "  - Physical Port Density: Ensure the total physical ports provided by the switches on a department mathematically EXCEED the total estimated endpoints plus growth margins provided by the topology designer.\n"
+        "  - PoE budget vs. PoE device count (phones, APs, IPTV, printers)\n"
         "  - Downstream Port Speed: Ensure high-density wireless zones utilize switches supporting Smart Rate (2.5GbE+) for AP connectivity.\n"
         "  - Uplink speed requirements\n"
         "  - Stacking/redundancy capabilities (VSF, VSX)\n"
@@ -371,7 +368,7 @@ agent3 = FunctionAgent(
         "- You MUST call the search tools BEFORE recommending any device.\n"
         "- You MUST search MULTIPLE product families per role (not just one).\n"
         "- Base recommendations ONLY on retrieved datasheet specs.\n"
-        "- Calculate Wi-Fi AP quantities: approx 25-30 users per AP. Add these APs to the total floor port count requirement.\n"
+        "- Calculate Wi-Fi AP quantities: approx 25-30 users per AP. Add these APs to the total department port count requirement.\n"
         "- Prioritize cost-effectiveness without sacrificing quality and performance.\n"
     ), llm=llm, tools=[catalog_tool, product_search_tool, broad_search_tool, firecrawl_search_tool],
 )
@@ -383,8 +380,6 @@ agent4 = FunctionAgent(
         "You are a D2 Diagram Specialist.\n"
         "Given a network topology design and Bill of Materials (BOM), generate "
         "valid D2 diagram code that visualizes the topology.\n\n"
-        "IMPORTANT — Keep the diagram SIMPLE. Kroki.io has a complexity limit. "
-        "Do NOT create individual nodes for each device. Use AGGREGATED labels.\n\n"
         "CRITICAL D2 RULES:\n"
         "- First line MUST be exactly: `direction: down` on its own line\n"
         "- `style` blocks are ONLY allowed INSIDE a container — NEVER at the document root\n"
@@ -393,20 +388,27 @@ agent4 = FunctionAgent(
         "- Use arrows (->) for connections, label them inline\n"
         "- Do NOT use `icon:` — D2 does not support custom icons\n"
         "- ALL labels with special characters (spaces, slashes, commas) MUST use double quotes\n\n"
-        "AGGREGATION RULES (to keep diagram small):\n"
-        "- PER FLOOR: create exactly ONE access-switch node, ONE end-device group node, ONE Wi-Fi AP node\n"
-        "  → Bad: individual devices like \"Admin Device\\n10.1.10.10\"\n"
-        "  → Good: aggregated label like \"End Devices\\nVLAN 10\\n20 Users\"\n"
-        "- Do NOT create per-device connections. Just connect access -> aggregate_end_devices\n"
-        "- Limit total nodes to at most ~30 across the entire diagram\n"
-        "- Skip per-switch VSX pairs in connections — a single label on the container is enough\n\n"
+        "REQUIREMENTS:\n"
+        "- Each switch (core, distribution, access) MUST be a SEPARATE individual node — do NOT combine switches into one block.\n"
+        "- Each department label MUST include the department/area name AND floor number.\n"
+        "- Each switch node label MUST include the switch model name (e.g., CX 6400, CX 6200, CX 8360).\n"
+        "- End devices and Wi-Fi APs can be aggregated per department.\n\n"
         "STRUCTURE:\n"
-        "1. Core Layer (single container node with VSX label)\n"
+        "1. Core Layer — individual switch nodes (e.g., core1, core2 for VSX pair)\n"
         "2. Server/Management block (if present, one node), connected to core\n"
-        "3. Each building as a container with one distribution switch node\n"
-        "4. Each floor as a sub-container with ONE access switch, ONE aggregated end-device group, ONE Wi-Fi AP node\n"
+        "3. Each building as a container with distribution switch nodes (one per switch)\n"
+        "4. Each department as a sub-container with:\n"
+        "   - A label showing department name AND floor number (e.g., \"Dept 1 - MCA\")\n"
+        "   - Individual access switch nodes (one per switch with model name)\n"
+        "   - ONE aggregated end-device group node\n"
+        "   - ONE Wi-Fi AP node\n"
         "5. Connections: core -> building_dist, building_dist -> floor_access, access -> devices, access -> wifi\n"
         "6. Security zones (if sensitive areas mentioned)\n\n"
+        "NAMING CONVENTIONS:\n"
+        "- Core switches: core_sw1, core_sw2 (with model in label, e.g., \"CX 8360\")\n"
+        "- Distribution switches: dist_b1_sw1 (building 1 switch 1, with model in label)\n"
+        "- Access switches: acc_b1_d1_sw1 (building 1, department 1, switch 1, with model in label)\n"
+        "- Floor nodes: f1_dept_name (e.g., f1_mca, f2_library)\n\n"
         "COLOR SCHEME:\n"
         "- Core: fill \"#1a1a2e\", stroke \"#e94560\"\n"
         "- Building: fill \"#0f3460\", stroke \"#533483\"\n"
@@ -418,56 +420,64 @@ agent4 = FunctionAgent(
         "- Server: fill \"#2d4059\", stroke \"#ea5455\"\n"
         "- Security: fill \"#800020\", stroke \"#ff4444\"\n\n"
         "Output ONLY the D2 code — no explanations, no markdown fences.\n\n"
-        "EXAMPLE of valid MINIMAL D2:\n"
+        "EXAMPLE:\n"
         "direction: down\n"
         "\n"
-        "core: \"Core Layer (VSX Pair)\" {\n"
+        "core_sw1: \"Core Switch 1\\nCX 8360\" {\n"
         "  style: {\n"
         "    fill: \"#1a1a2e\"\n"
         "    stroke: \"#e94560\"\n"
         "  }\n"
         "}\n"
         "\n"
-        "b1: \"Building 1\" {\n"
+        "core_sw2: \"Core Switch 2\\nCX 8360\" {\n"
+        "  style: {\n"
+        "    fill: \"#1a1a2e\"\n"
+        "    stroke: \"#e94560\"\n"
+        "  }\n"
+        "}\n"
+        "\n"
+        "b1: \"Building 1 - PG Block\" {\n"
         "  style: {\n"
         "    fill: \"#0f3460\"\n"
         "    stroke: \"#533483\"\n"
         "  }\n"
-        "  dist: \"Distribution CX 6405\" {\n"
+        "  dist_b1_sw1: \"Distribution\\nCX 6400\" {\n"
         "    style: {\n"
         "      fill: \"#16213e\"\n"
         "      stroke: \"#0f3460\"\n"
         "    }\n"
         "  }\n"
-        "  f1: \"Floor 1\" {\n"
+        "  d1_mca: \"Dept 1 - MCA\" {\n"
         "    style: {\n"
         "      fill: \"#1a1a40\"\n"
         "      stroke: \"#533483\"\n"
         "    }\n"
-        "    acc: \"Access CX 6200F\" {\n"
+        "    acc_b1_d1_sw1: \"Access\\nCX 6200\" {\n"
         "      style: {\n"
         "        fill: \"#533483\"\n"
         "        stroke: \"#e94560\"\n"
         "      }\n"
         "    }\n"
-        "    devices: \"End Devices\\nVLAN 10\\n20 Users\" {\n"
+        "    devices: \"End Devices\\nVLAN 10\\n200 Users\" {\n"
         "      style: {\n"
         "        fill: \"#e94560\"\n"
         "        stroke: \"#ff6b6b\"\n"
         "      }\n"
         "    }\n"
-        "    wifi: \"Wi-Fi AP\\n2x AP\" {\n"
+        "    wifi: \"Wi-Fi AP\\n8x AP\" {\n"
         "      style: {\n"
         "        fill: \"#4ecca3\"\n"
         "        stroke: \"#36b37e\"\n"
         "      }\n"
         "    }\n"
-        "    acc -> devices: Access\n"
-        "    acc -> wifi: PoE\n"
+        "    acc_b1_d1_sw1 -> devices: Access\n"
+        "    acc_b1_d1_sw1 -> wifi: PoE\n"
         "  }\n"
-        "  dist -> f1.acc: 10G\n"
+        "  dist_b1_sw1 -> d1_mca.acc_b1_d1_sw1: 10G\n"
         "}\n"
-        "core -> b1.dist: 10G Fiber"
+        "core_sw1 -> b1.dist_b1_sw1: 10G Fiber\n"
+        "core_sw2 -> b1.dist_b1_sw1: 10G Fiber"
     ), llm=llm_qwen_coder,
 )
 
@@ -527,7 +537,22 @@ async def _generate_diagram_via_service(diagram_code: str) -> dict:
         resp.raise_for_status()
         return resp.json()
 
-def _save(prompt, rephrased, topology, devices, diagram_code="", diagram_url=None):
+def _format_tool_events(events: list[dict]) -> str:
+    if not events:
+        return "_(no tool calls)_\n"
+    lines: list[str] = []
+    for ev in events:
+        name = ev.get("tool_name", "?")
+        inp = ev.get("input", "")
+        out = ev.get("output", "")
+        lines.append(f"### {name}\n")
+        lines.append(f"**Input:**\n```\n{inp}\n```\n")
+        lines.append(f"**Output:**\n```\n{_strip_ansi(out)}\n```\n")
+    return "\n".join(lines)
+
+
+def _save(prompt, rephrased, topology, devices, diagram_code="", diagram_url=None,
+          tools_1=None, tools_2=None, tools_3=None, tools_4=None):
     ts = datetime.now()
     fp = OUTPUT_DIR / f"{ts:%Y-%m-%d_%H-%M-%S}_run.md"
     content = (
@@ -586,11 +611,19 @@ async def _send(ws, **kw):
     await ws.send_text(json.dumps(kw))
 
 async def _run_phase(ws, phase_num, phase_name, agent, initial_msg, model_name=""):
-    """Run one agent phase with event streaming and HITL approval."""
+    """Run one agent phase with event streaming and HITL approval.
+
+    Returns
+    -------
+    tuple[str, list[dict]]
+        (response_text, tool_events) where each tool_event has
+        ``tool_name``, ``input``, and ``output`` keys.
+    """
     wf = AgentWorkflow(agents=[agent], root_agent=agent.name, timeout=400.0)
     history: list[ChatMessage] = []
     msg = initial_msg
     iteration = 0
+    tool_events: list[dict] = []
 
     while True:
         iteration += 1
@@ -613,6 +646,12 @@ async def _run_phase(ws, phase_num, phase_name, agent, initial_msg, model_name="
                         await _send(ws, type="tool_call", tool_name=ev.tool_name, tool_kwargs=ev.tool_kwargs)
                     elif isinstance(ev, ToolCallResult):
                         out = str(ev.tool_output)
+                        # Collect for save
+                        tool_events.append({
+                            "tool_name": ev.tool_name,
+                            "input": str(getattr(ev, "tool_kwargs", ev.tool_name)),
+                            "output": out,
+                        })
                         if ev.tool_name in ("search_product_specs", "search_across_products"):
                             chunks = _parse_chunks(out)
                             await _send(ws, type="rag_result", tool_name=ev.tool_name, chunks=chunks, total=len(chunks))
@@ -647,9 +686,14 @@ async def _run_phase(ws, phase_num, phase_name, agent, initial_msg, model_name="
 
         if data.get("approved"):
             await _send(ws, type="phase_approved", phase=phase_num, name=phase_name)
-            return response_text
+            return response_text, tool_events
         else:
             msg = data.get("feedback", "Please revise.")
+            tool_events.append({
+                "tool_name": "__revision_request__",
+                "input": msg,
+                "output": f"Phase {phase_num} revised with feedback",
+            })
             await _send(ws, type="phase_revision", phase=phase_num, feedback=msg)
 
 @app.websocket("/ws")
@@ -660,14 +704,14 @@ async def ws_endpoint(ws: WebSocket):
         prompt = data["content"]
         await _send(ws, type="user_echo", content=prompt)
 
-        rephrased = await _run_phase(ws, 1, "Prompt Rephrasing", agent1, prompt, model_name=OLLAMA_MODEL)
-        topology = await _run_phase(ws, 2, "Network Topology Design", agent2, rephrased, model_name=OLLAMA_MODEL)
-        ctx = f"## Original Requirements\n{prompt}\n\n## Approved Topology\n{topology}"
-        devices = await _run_phase(ws, 3, "Device Selection & BOM", agent3, ctx, model_name=OLLAMA_MODEL)
+        rephrased, tools_1 = await _run_phase(ws, 1, "Prompt Rephrasing", agent1, prompt, model_name=OLLAMA_MODEL)
+        topology, tools_2 = await _run_phase(ws, 2, "Network Topology Design", agent2, rephrased, model_name=OLLAMA_MODEL)
+        ctx = f"## Refined Requirements\n{rephrased}\n\n## Approved Topology\n{topology}"
+        devices, tools_3 = await _run_phase(ws, 3, "Device Selection & BOM", agent3, ctx, model_name=OLLAMA_MODEL)
 
         # Phase 4: D2 Diagram Generation
         d2_ctx = f"## Approved Topology\n{topology}\n\n## Bill of Materials\n{devices}"
-        diagram_code = await _run_phase(ws, 4, "D2 Diagram Generation", agent4, d2_ctx, model_name="qwen3-coder:480b-cloud")
+        diagram_code, tools_4 = await _run_phase(ws, 4, "D2 Diagram Generation", agent4, d2_ctx, model_name="qwen3-coder:480b-cloud")
 
         # Render D2 code via Image Generation Service
         diagram_url = None
@@ -688,7 +732,8 @@ async def ws_endpoint(ws: WebSocket):
             await _send(ws, type="diagram_error",
                         message=f"Image service unavailable: {str(img_err)}")
 
-        fp = _save(prompt, rephrased, topology, devices, diagram_code, diagram_url)
+        fp = _save(prompt, rephrased, topology, devices, diagram_code, diagram_url,
+                    tools_1, tools_2, tools_3, tools_4)
         await _send(ws, type="workflow_complete", saved_to=str(fp),
                     diagram_url=diagram_url)
     except WebSocketDisconnect:

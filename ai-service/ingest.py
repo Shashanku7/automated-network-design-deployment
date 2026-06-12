@@ -3,7 +3,8 @@ Document ingestion pipeline for the RAG knowledge base.
 
 Parses HPE Aruba CX switch datasheets (PDF), chunks them with a
 structure-aware HybridChunker, embeds with Qwen3-Embedding, builds
-BM25 sparse vectors, and uploads to Qdrant for hybrid retrieval.
+hash-based sparse vectors, and uploads to Qdrant for hybrid retrieval
+(dense + Qdrant-native sparse with IDF modifier).
 """
 
 import os
@@ -38,8 +39,8 @@ from config import (
     MIN_CHUNK_LENGTH,
     get_embedding_model,
     create_qdrant_client,
+    text_to_sparse_vector,
     extract_product_model,
-    BM25SparseEncoder,
 )
 
 
@@ -65,7 +66,6 @@ class OptimizedTableSerializerProvider(ChunkingSerializerProvider):
 
 DATA_DIR = Path("data")
 PDF_PATTERN = "*.pdf"
-BM25_STATE_PATH = Path(__file__).resolve().parent / "bm25_state.json"
 
 hf_auth_kwargs = {"trust_remote_code": True}
 if HUGGINGFACE_TOKEN:
@@ -389,29 +389,26 @@ def chunk_documents(documents):
 
 
 # ============================================================================
-# Embedding + BM25 Sparse
+# Embedding
 # ============================================================================
-def embed_texts(texts: list[str]) -> tuple[list[list[float]], list[models.SparseVector], BM25SparseEncoder]:
+def embed_texts(texts: list[str]) -> tuple[list[list[float]], list[models.SparseVector]]:
     """
-    Build dense embeddings (Qwen) and BM25 sparse vectors for a list of texts.
+    Build dense embeddings (Qwen) and sparse vectors (hash TF) for a list of texts.
+
+    Sparse vectors use raw term-frequency values. Qdrant applies IDF weighting
+    natively during search via ``SparseVectorParams(modifier=Modifier.IDF)``.
 
     Returns:
         dense_embeddings: List of dense vectors
-        sparse_vectors: List of BM25-based sparse vectors
-        bm25_encoder: The fitted BM25 encoder (save it for query-time use)
+        sparse_vectors: List of Qdrant SparseVectors
     """
     print(f"  🧠 Building dense embeddings for {len(texts)} chunks...")
     dense_embeddings = embedding_model.get_text_embedding_batch(texts, show_progress=True)
 
-    print(f"  📝 Building BM25 sparse vectors...")
-    bm25_encoder = BM25SparseEncoder()
-    bm25_encoder.fit(texts)
-    sparse_vectors = bm25_encoder.encode_batch(texts)
+    print(f"  📝 Building sparse vectors (hash TF — Qdrant native IDF)...")
+    sparse_vectors = [text_to_sparse_vector(t) for t in texts]
 
-    print(f"  ✅ BM25 vocabulary size: {len(bm25_encoder.vocab)} terms, "
-          f"avg doc length: {bm25_encoder.avg_dl:.1f} tokens")
-
-    return dense_embeddings, sparse_vectors, bm25_encoder
+    return dense_embeddings, sparse_vectors
 
 
 # ============================================================================
@@ -439,46 +436,35 @@ def ensure_collection(client, collection_name: str, vector_size: int):
     """
     Ensure the Qdrant collection exists with the correct schema.
 
-    Instead of blindly deleting and recreating, this checks if the
-    existing collection matches the expected config first.
+    Always deletes any existing collection and creates a fresh one
+    to guarantee the schema (dense + sparse with IDF modifier,
+    full-text payload index) matches.
     """
-    existing = [c.name for c in client.get_collections().collections]
+    if collection_name in [c.name for c in client.get_collections().collections]:
+        client.delete_collection(collection_name)
+        print(f"  🗑️  Deleted existing collection '{collection_name}'")
 
-    if collection_name in existing:
-        info = client.get_collection(collection_name)
-        # Check if dense vector size matches
-        dense_config = info.config.params.vectors
-        if hasattr(dense_config, 'get'):
-            existing_size = dense_config.get("dense", models.VectorParams(size=0, distance=models.Distance.COSINE)).size
-        else:
-            existing_size = getattr(dense_config, 'size', 0)
-
-        if existing_size == vector_size:
-            print(f"  ♻️  Collection '{collection_name}' exists with matching schema — clearing points...")
-            # Delete all points but keep the collection structure
-            client.delete(
-                collection_name=collection_name,
-                points_selector=models.FilterSelector(
-                    filter=models.Filter()
-                ),
-            )
-            return
-        else:
-            print(f"  ⚠️  Collection '{collection_name}' has mismatched vector size "
-                  f"({existing_size} vs {vector_size}), recreating...")
-            client.delete_collection(collection_name)
-
-    # Create new hybrid collection with dense and sparse vectors
+    # Create new collection with dense + sparse vectors
     client.create_collection(
         collection_name=collection_name,
         vectors_config={
             "dense": models.VectorParams(size=vector_size, distance=models.Distance.COSINE),
         },
         sparse_vectors_config={
-            "sparse": models.SparseVectorParams(),
+            "sparse": models.SparseVectorParams(
+                modifier=models.Modifier.IDF,
+            ),
         },
     )
-    print(f"  ✅ Created hybrid collection: {collection_name}")
+
+    # Full-text index on ``text`` — enables BM25 scoring in Qdrant
+    client.create_payload_index(
+        collection_name=collection_name,
+        field_name="text",
+        field_type=models.TextIndexType.TEXT,
+    )
+
+    print(f"  ✅ Created hybrid collection (dense + sparse + BM25 FT index): {collection_name}")
 
 
 # ============================================================================
@@ -486,7 +472,7 @@ def ensure_collection(client, collection_name: str, vector_size: int):
 # ============================================================================
 def upload_nodes_to_qdrant(nodes, dense_vectors, sparse_vectors, client, collection_name: str):
     """Upload chunked nodes with hybrid vectors to Qdrant in batches."""
-    batch_size = 128
+    batch_size = 32
     points = []
     for node, dense_vec, sparse_vec in zip(nodes, dense_vectors, sparse_vectors):
         points.append(
@@ -527,19 +513,15 @@ def main():
     print("\n── Step 2: Chunking ──")
     nodes = chunk_documents(documents)
 
-    # 3. Embed + BM25
+    # 3. Embed
     print("\n── Step 3: Embedding ──")
     node_texts = [node.get_content(metadata_mode=MetadataMode.NONE) for node in nodes]
-    dense_embeddings, sparse_embeddings, bm25_encoder = embed_texts(node_texts)
+    dense_embeddings, sparse_vectors = embed_texts(node_texts)
 
     if len(dense_embeddings) == 0:
         raise RuntimeError("No embeddings were created from the PDF documents.")
 
-    # 4. Save BM25 encoder state for query-time use
-    bm25_encoder.save(BM25_STATE_PATH)
-    print(f"\n  💾 BM25 encoder state saved to: {BM25_STATE_PATH}")
-
-    # 5. Upload to Qdrant
+    # 4. Upload to Qdrant
     print("\n── Step 4: Uploading to Qdrant ──")
     qdrant_client = create_qdrant_client()
     ensure_collection(
@@ -547,14 +529,13 @@ def main():
         QDRANT_COLLECTION,
         vector_size=len(dense_embeddings[0]),
     )
-    upload_nodes_to_qdrant(nodes, dense_embeddings, sparse_embeddings, qdrant_client, QDRANT_COLLECTION)
+    upload_nodes_to_qdrant(nodes, dense_embeddings, sparse_vectors, qdrant_client, QDRANT_COLLECTION)
 
     print(
         f"\n✅ Done! Uploaded {len(nodes)} hybrid-embedded chunks from "
         f"{len(pdf_paths)} PDF(s) to Qdrant collection '{QDRANT_COLLECTION}'."
     )
     print(f"   Dense vector dim: {len(dense_embeddings[0])}")
-    print(f"   BM25 vocabulary: {len(bm25_encoder.vocab)} terms")
     print(f"   Chunker: HybridChunker (max_tokens={CHUNK_MAX_TOKENS})")
 
 

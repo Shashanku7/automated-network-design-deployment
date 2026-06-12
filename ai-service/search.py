@@ -1,49 +1,79 @@
-"""Bridge between raw Qdrant client and LlamaIndex vector-store index.
+"""Qdrant hybrid search with native prefetch + RRF fusion.
 
-Provides the two helpers used by app.py for creating retrievers.
-Enables hybrid search (dense + BM25 sparse) for better retrieval accuracy.
+Fuses dense (semantic) and sparse (TF-IDF with Qdrant IDF modifier)
+results using Qdrant's ``query_points`` API with ``Fusion.RRF``.
 """
 
-from pathlib import Path
-
-from config import QDRANT_COLLECTION, get_embedding_model, BM25SparseEncoder
-
-
-# Load the fitted BM25 encoder that was saved during ingestion
-_BM25_STATE_PATH = Path(__file__).resolve().parent / "bm25_state.json"
-_BM25_ENCODER = None
+from config import QDRANT_COLLECTION, get_embedding_model, text_to_sparse_vector
+from qdrant_client import QdrantClient, models
 
 
-def _get_bm25_encoder() -> BM25SparseEncoder:
-    global _BM25_ENCODER
-    if _BM25_ENCODER is None:
-        _BM25_ENCODER = BM25SparseEncoder.load(_BM25_STATE_PATH)
-    return _BM25_ENCODER
+def hybrid_search(
+    qdrant_client: QdrantClient,
+    query_text: str,
+    *,
+    collection_name: str = QDRANT_COLLECTION,
+    top_k: int = 25,
+    dense_limit: int = 50,
+    sparse_limit: int = 50,
+    filter_condition: models.Filter | None = None,
+) -> list[dict]:
+    """
+    Hybrid search via Qdrant's native prefetch + RRF fusion.
 
+    Parameters
+    ----------
+    filter_condition : optional
+        Qdrant ``Filter`` applied as a post-filter to the fused results.
+        Useful for scoping results (e.g. ``product_model == "CX 6200"``).
 
-def _sparse_query(text: str):
-    """Convert query text to BM25 sparse vector for hybrid search."""
-    return _get_bm25_encoder().encode(text)
+    Returns
+    -------
+    List of dicts with keys: ``id``, ``score``, ``text``, ``source``,
+    ``product_model``, ``doc_id``.
+    """
+    embed_model = get_embedding_model()
+    query_dense = embed_model.get_query_embedding(query_text)
+    query_sparse = text_to_sparse_vector(query_text)
 
+    prefetch = [
+        models.PrefetchQuery(query=query_dense, using="dense", limit=dense_limit),
+        models.PrefetchQuery(query=query_sparse, using="sparse", limit=sparse_limit),
+    ]
 
-def create_vector_store(qdrant_client):
-    """Wrap a QdrantClient in a LlamaIndex QdrantVectorStore with hybrid search."""
-    from llama_index.vector_stores.qdrant import QdrantVectorStore
-    return QdrantVectorStore(
-        client=qdrant_client,
-        collection_name=QDRANT_COLLECTION,
-        enable_hybrid=True,
-        sparse_doc_fn=_sparse_query,
-        sparse_query_fn=_sparse_query,
-        dense_vector_name="dense",
-        sparse_vector_name="sparse",
+    if filter_condition:
+        prefetch = [
+            models.PrefetchQuery(
+                query=query_dense,
+                using="dense",
+                limit=dense_limit,
+                filter=filter_condition,
+            ),
+            models.PrefetchQuery(
+                query=query_sparse,
+                using="sparse",
+                limit=sparse_limit,
+                filter=filter_condition,
+            ),
+        ]
+
+    result = qdrant_client.query_points(
+        collection_name=collection_name,
+        prefetch=prefetch,
+        query=models.FusionQuery(fusion=models.Fusion.RRF),
+        with_payload=True,
+        limit=top_k,
     )
 
-
-def create_vector_index(vector_store):
-    """Build a VectorStoreIndex from an existing vector store."""
-    from llama_index.core import VectorStoreIndex
-    return VectorStoreIndex.from_vector_store(
-        vector_store=vector_store,
-        embed_model=get_embedding_model(),
-    )
+    out = []
+    for point in result.points:
+        payload = point.payload or {}
+        out.append({
+            "id": point.id,
+            "score": point.score,
+            "text": payload.get("text", ""),
+            "source": payload.get("source", ""),
+            "product_model": payload.get("product_model", ""),
+            "doc_id": payload.get("doc_id", ""),
+        })
+    return out
