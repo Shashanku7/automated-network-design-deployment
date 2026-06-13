@@ -13,6 +13,7 @@ import { useNavigate } from 'react-router-dom';
 import { useProject } from '../context/ProjectContext';
 import { runWorkflow, sendApproval, sendRevision, sendChatMessage } from '../services/api';
 import { marked } from 'marked';
+import SandpackViewer from '../components/SandpackViewer';
 
 marked.setOptions({ gfm: true, breaks: true });
 
@@ -32,6 +33,7 @@ export default function ProposedDesign() {
   const [showFeedback, setShowFeedback] = useState(false);
   const [chatInput, setChatInput] = useState('');
   const [sending, setSending] = useState(false);
+  const [reactCode, setReactCode] = useState(null);
   const eventsEndRef = useRef(null);
   const hasStarted = useRef(false);
 
@@ -63,6 +65,9 @@ export default function ProposedDesign() {
         case 'approval_request':
           setStatus('awaiting');
           if (ev.ws) setWsRef(ev.ws);
+          break;
+        case 'topology_code_ready':
+          setReactCode(ev.code || null);
           break;
         case 'phase_approved':
           setStatus('running');
@@ -188,6 +193,23 @@ export default function ProposedDesign() {
             }`} title={name} />
           ))}
         </div>
+
+        {/* Interactive Topology Viewer (shown when react code is ready) */}
+        {reactCode && (
+          <div className="mx-6 mb-4 rounded-xl overflow-hidden border border-tertiary/30" style={{ height: '480px' }}>
+            <div className="flex items-center justify-between px-4 py-2 bg-surface-container border-b border-tertiary/15">
+              <div className="flex items-center gap-2">
+                <span className="material-symbols-outlined text-tertiary text-lg">schema</span>
+                <span className="text-sm font-bold text-on-surface">Interactive Network Topology</span>
+                <span className="text-[10px] px-2 py-0.5 rounded-full bg-tertiary/20 text-tertiary font-medium">LIVE</span>
+              </div>
+              <span className="text-xs text-on-surface-variant">Pan · Zoom · Hover nodes for details</span>
+            </div>
+            <div style={{ height: 'calc(100% - 40px)' }}>
+              <SandpackViewer reactCode={reactCode} />
+            </div>
+          </div>
+        )}
 
         {/* Events stream */}
         <div className="flex-1 overflow-y-auto px-6 pb-6 space-y-3 custom-scrollbar">

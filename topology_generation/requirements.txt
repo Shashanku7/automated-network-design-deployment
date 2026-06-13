@@ -1,0 +1,4 @@
+fastapi
+uvicorn[standard]
+syntax-checker==0.4.2
+httpx

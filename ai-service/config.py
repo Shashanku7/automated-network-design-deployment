@@ -72,9 +72,8 @@ def get_embedding_model() -> HuggingFaceEmbedding:
 def create_qdrant_client() -> QdrantClient:
     """Create a Qdrant client from environment config."""
     if QDRANT_URL is None or QDRANT_API_KEY is None:
-        raise ValueError(
-            "Set QDRANT_URL and QDRANT_API_KEY environment variables before running."
-        )
+        print("WARNING: QDRANT_URL or QDRANT_API_KEY not set. Falling back to local in-memory Qdrant database.")
+        return QdrantClient(":memory:")
     return QdrantClient(url=QDRANT_URL, api_key=QDRANT_API_KEY)
 
 

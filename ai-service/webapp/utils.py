@@ -2,6 +2,8 @@ import re, json, os
 from datetime import datetime
 from webapp.config import OUTPUT_DIR, IMAGE_SERVICE_URL, OLLAMA_MODEL
 
+TOPOLOGY_SERVICE_URL = os.getenv("TOPOLOGY_SERVICE_URL", "http://localhost:8002")
+
 def strip_ansi(t):
     return re.sub(r"\033\[[0-9;]*m", "", t)
 
@@ -34,6 +36,23 @@ async def generate_diagram_via_service(diagram_code: str) -> dict:
         resp = await client.post(
             f"{IMAGE_SERVICE_URL}/api/generate-diagram",
             json={"diagram_code": diagram_code},
+        )
+        resp.raise_for_status()
+        return resp.json()
+
+
+async def generate_topology_code(llm_output: str) -> dict:
+    """Send Agent 4's raw LLM output to the topology_generation gatekeeper.
+    
+    Returns dict with:
+      {'status': 'ok',    'code': '<clean React JSX>'}   on success
+      {'status': 'error', 'message': '<error details>'}  on failure
+    """
+    import httpx
+    async with httpx.AsyncClient(timeout=30.0) as client:
+        resp = await client.post(
+            f"{TOPOLOGY_SERVICE_URL}/api/validate-topology",
+            json={"llm_output": llm_output},
         )
         resp.raise_for_status()
         return resp.json()

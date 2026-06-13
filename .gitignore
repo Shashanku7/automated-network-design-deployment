@@ -37,3 +37,8 @@ desktop.ini
 .env.development.local
 .env.test.local
 .env.production.local
+
+# Virtual environments
+.venv/
+.venv
+*.venv
