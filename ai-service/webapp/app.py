@@ -9,8 +9,19 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from webapp.config import STATIC_DIR
 from webapp.routes import router
+from webapp.kafka_provider import kafka_provider
+from webapp.routes import process_kafka_task
 
 app = FastAPI(title="Network Automation Assistant")
+
+@app.on_event("startup")
+async def startup_event():
+    await kafka_provider.start()
+    asyncio.create_task(kafka_provider.listen_tasks(process_kafka_task))
+
+@app.on_event("shutdown")
+async def shutdown_event():
+    await kafka_provider.stop()
 
 app.add_middleware(
     CORSMiddleware,

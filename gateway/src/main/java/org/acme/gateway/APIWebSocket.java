@@ -11,13 +11,16 @@ import jakarta.websocket.OnOpen;
 import jakarta.websocket.Session;
 import jakarta.websocket.server.PathParam;
 import jakarta.websocket.server.ServerEndpoint;
+import java.util.Map;
+import java.util.UUID;
+import java.util.concurrent.ConcurrentHashMap;
 import org.acme.gateway.services.KafkaService;
 
 @ServerEndpoint("/chat/{projectId}")
 @ApplicationScoped
 public class APIWebSocket {
   @Inject KafkaService kafkaService;
-  Map<UUID, Session> sessions = new ConcurrentHashMap<>();
+  private Map<UUID, Session> sessions = new ConcurrentHashMap<>();
 
   @OnOpen
   public void onOpen(Session session, @PathParam("projectId") UUID projectId) {
