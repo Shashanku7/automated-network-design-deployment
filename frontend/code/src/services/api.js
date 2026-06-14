@@ -95,14 +95,15 @@ function buildPromptFromRequirements(req, solutionType) {
 }
 
 /**
- * Submit requirements and run the full 3-phase AI workflow via WebSocket.
+ * Submit requirements and run the full 5-phase AI workflow via WebSocket.
  *
  * @param {Object} requirements - The form inputs
  * @param {string} solutionType - 'campus' or 'datacenter'
  * @param {Function} onEvent - Callback for each streaming event: (event) => void
- *   Events: phase_start, agent_input, tool_call, rag_result, agent_response,
- *           approval_request, phase_approved, phase_revision, workflow_complete, error
- * @returns {Promise<Object>} - Resolves with { rephrased, topology, devices } when done
+ *   Events: phase_start, agent_input, tool_call, rag_result, config_rag_result,
+ *           agent_response, approval_request, phase_approved, phase_revision,
+ *           workflow_complete, error
+ * @returns {Promise<Object>} - Resolves with { rephrased, topology, devices, cliConfig } when done
  */
 export function runWorkflow(requirements, solutionType, onEvent) {
   return new Promise((resolve, reject) => {
@@ -110,7 +111,7 @@ export function runWorkflow(requirements, solutionType, onEvent) {
     const wsUrl = `ws://${window.location.host}/ws`;
     const ws = new WebSocket(wsUrl);
 
-    const results = { prompt, rephrased: '', topology: '', devices: '', diagramUrl: '', diagramDownloadUrl: '' };
+    const results = { prompt, rephrased: '', topology: '', devices: '', diagramUrl: '', diagramDownloadUrl: '', cliConfig: '' };
     let currentPhase = 0;
 
     // Expose send functions via the onEvent callback's return
@@ -136,6 +137,7 @@ export function runWorkflow(requirements, solutionType, onEvent) {
           if (currentPhase === 1) results.rephrased = content;
           else if (currentPhase === 2) results.topology = content;
           else if (currentPhase === 3) results.devices = content;
+          else if (currentPhase === 5) results.cliConfig = content;
         }
 
         if (data.type === 'diagram_ready') {

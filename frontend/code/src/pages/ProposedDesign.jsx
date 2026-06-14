@@ -81,6 +81,9 @@ export default function ProposedDesign() {
         if (results.diagramUrl) {
           dispatch({ type: 'SET_DIAGRAM', payload: { url: results.diagramUrl, downloadUrl: results.diagramDownloadUrl } });
         }
+        if (results.cliConfig) {
+          dispatch({ type: 'SET_CLI_CONFIG', payload: results.cliConfig });
+        }
         dispatch({ type: 'WORKFLOW_COMPLETE' });
         // Build legacy proposedDesign for BOM page
         dispatch({
@@ -182,11 +185,17 @@ export default function ProposedDesign() {
 
         {/* Phase progress bar */}
         <div className="px-6 py-4 flex gap-2">
-          {['Prompt Rephrasing', 'Topology Design', 'Device Selection', 'Topology Diagram'].map((name, i) => (
-            <div key={i} className={`flex-1 h-1.5 rounded-full transition-all duration-500 ${
-              currentPhase > i + 1 ? 'bg-tertiary' : currentPhase === i + 1 ? 'bg-primary animate-pulse' : 'bg-surface-container-high'
-            }`} title={name} />
-          ))}
+          {['Prompt Rephrasing', 'Topology Design', 'Device Selection', 'Topology Diagram', 'CLI Config'].map((name, i) => {
+            const phaseNum = i + 1;
+            const isDiagram = i === 3;
+            const isActive = isDiagram ? currentPhase === 'diagram' || currentPhase === 4 : currentPhase === phaseNum;
+            const isPast = isDiagram ? currentPhase > 4 : currentPhase > phaseNum;
+            return (
+              <div key={i} className={`flex-1 h-1.5 rounded-full transition-all duration-500 ${
+                isPast ? 'bg-tertiary' : isActive ? 'bg-primary animate-pulse' : 'bg-surface-container-high'
+              }`} title={name} />
+            );
+          })}
         </div>
 
         {/* Events stream */}
@@ -309,7 +318,7 @@ function EventCard({ event }) {
       return (
         <div className="flex justify-center py-2">
           <div className="px-5 py-2 rounded-full text-xs font-bold uppercase tracking-wider bg-primary/10 border border-primary/30 text-primary">
-            Phase {ev.phase}: {ev.name} {ev.iteration > 1 ? `(revision ${ev.iteration})` : ''}
+            {ev.phase === 'diagram' ? ev.name : `Phase ${ev.phase}: ${ev.name}`} {ev.iteration > 1 ? `(revision ${ev.iteration})` : ''}
           </div>
         </div>
       );
@@ -400,6 +409,24 @@ function EventCard({ event }) {
         </div>
       );
     }
+
+    case 'config_rag_result':
+      return (
+        <div className="border border-emerald-500/20 bg-emerald-500/5 rounded-xl overflow-hidden">
+          <button onClick={() => setOpen(!open)}
+            className="w-full flex items-center gap-2 px-4 py-2.5 text-sm text-left hover:bg-emerald-500/5 transition-colors">
+            <span className="material-symbols-outlined text-emerald-400 text-lg">terminal</span>
+            <span className="font-medium text-on-surface flex-1">Config Guide Search: {ev.total_chars} chars retrieved</span>
+            <span className="text-[10px] px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-400 font-medium">CLI reference</span>
+            <span className="text-outline text-sm">{open ? '▾' : '▸'}</span>
+          </button>
+          {open && (
+            <div className="px-4 pb-3 text-xs text-on-surface-variant max-h-64 overflow-y-auto custom-scrollbar">
+              <pre className="whitespace-pre-wrap font-[family-name:var(--font-mono)]">{ev.output}</pre>
+            </div>
+          )}
+        </div>
+      );
 
     case 'agent_response':
       return (
