@@ -33,6 +33,11 @@ OLLAMA_MODEL = os.getenv("OLLAMA_MODEL", "gemma4:31b-cloud")
 OLLAMA_BASE_URL = os.getenv("OLLAMA_BASE_URL", "https://api.ollama.com")
 IMAGE_SERVICE_URL = os.getenv("IMAGE_SERVICE_URL", "http://localhost:8001")
 
+# Kafka
+KAFKA_BOOTSTRAP_SERVERS = os.getenv("KAFKA_BOOTSTRAP_SERVERS", "localhost:9092")
+TOPIC_AGENT_TASKS = os.getenv("TOPIC_AGENT_TASKS", "agent-tasks")
+TOPIC_AGENT_EVENTS = os.getenv("TOPIC_AGENT_EVENTS", "agent-events")
+
 # ──────────────────────────────────────────────
 # RAG constants
 # ──────────────────────────────────────────────
