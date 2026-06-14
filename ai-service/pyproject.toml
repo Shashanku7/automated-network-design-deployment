@@ -17,4 +17,5 @@ dependencies = [
     "llama-index-vector-stores-qdrant>=0.10.0",
     "python-dotenv>=1.2.2",
     "uvicorn[standard]>=0.46.0",
+    "aiokafka>=0.12.0",
 ]
