@@ -20,9 +20,9 @@ public record AgentTask(
   @JsonNaming(PropertyNamingStrategies.SnakeCaseStrategy.class)
   public record ChatMessage(Role role, String content) {
     public enum Role {
-      user,
-      assistant,
-      system
+      USER,
+      ASSISTANT,
+      SYSTEM
     }
   }
 }

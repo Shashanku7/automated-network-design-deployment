@@ -17,18 +17,24 @@ public class KafkaService {
   @Channel("agent-tasks")
   Emitter<AgentTask> taskEmitter;
 
+  @Inject PipelineManager pipelineManager;
   @Inject APIWebSocket webSocket;
 
   public void sendTask(String message, UUID projectId) {
-    // Logic to convert WSMessage -> AgentTask
-    // AgentTask task = new AgentTask(projectId, message);
-    var task = new AgentTask();
+    var state = pipelineManager.getOrCreateState(projectId);
+    state.setLastOutput(message);
+    state.getHistory().add(new AgentTask.ChatMessage(AgentTask.ChatMessage.Role.user, message));
+
+    var task = pipelineManager.createNextTask(projectId);
     taskEmitter.send(task);
   }
 
   @Incoming("agent-events")
   public void consumeEvent(AgentEvent event) {
-    // Forward event to the correct WebSocket session
+    if (event.isFinal() && event.eventType() == AgentEvent.EventType.FINAL_ANSWER) {
+      pipelineManager.updateStateAfterPhase(event.projectId(), event.data());
+    }
+    // Forward event as JSON to UI
     webSocket.sendMessage(event.projectId(), event.toString());
   }
 }

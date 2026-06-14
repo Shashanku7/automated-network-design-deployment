@@ -37,6 +37,7 @@ public class APIWebSocket {
 
   @OnMessage
   public void onMessage(String message, @PathParam("projectId") UUID projectId) {
+    // Basic implementation: user sends feedback/input to trigger next step
     kafkaService.sendTask(message, projectId);
   }
 

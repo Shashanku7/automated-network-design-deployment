@@ -20,6 +20,7 @@ public record WebSocketMessage(
     Map<String, Object> payload,
     OffsetDateTime timestamp) {
 
+  @JsonNaming(PropertyNamingStrategies.SnakeCaseStrategy.class)
   public enum MessageType {
     USER_INPUT,
     AGENT_EVENT,
@@ -29,9 +30,13 @@ public record WebSocketMessage(
   }
 
   public enum EventType {
-    @JsonProperty("chunk") CHUNK,
-    @JsonProperty("tool_call") TOOL_CALL,
-    @JsonProperty("tool_result") TOOL_RESULT,
-    @JsonProperty("result") RESULT
+    @JsonProperty("chunk")
+    CHUNK,
+    @JsonProperty("tool_call")
+    TOOL_CALL,
+    @JsonProperty("tool_result")
+    TOOL_RESULT,
+    @JsonProperty("result")
+    RESULT
   }
 }

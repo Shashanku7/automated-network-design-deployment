@@ -16,4 +16,7 @@ public interface AIService {
 
   @Path("diagram")
   byte[] getDiagram(InputStream prompt);
+
+  @Path("cli-config")
+  String getCliConfig(InputStream prompt);
 }
