@@ -1,11 +1,21 @@
 package org.acme.gateway.models;
 
-import module java.base;
-
 import com.fasterxml.jackson.annotation.JsonInclude;
+import com.fasterxml.jackson.databind.PropertyNamingStrategies;
+import com.fasterxml.jackson.databind.annotation.JsonNaming;
+import java.util.Map;
+import java.util.UUID;
 
 @JsonInclude
-public record AgentEvent(UUID projectId, UUID taskId, String agentName, EventType event) {
+@JsonNaming(PropertyNamingStrategies.SnakeCaseStrategy.class)
+public record AgentEvent(
+    UUID projectId,
+    UUID taskId,
+    String agentName,
+    EventType eventType,
+    String data,
+    Map<String, Object> payload,
+    boolean isFinal) {
 
   public enum EventType {
     TOKEN,

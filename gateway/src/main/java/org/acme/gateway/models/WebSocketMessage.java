@@ -1,7 +1,13 @@
 package org.acme.gateway.models;
 
-import module java.base;
+import com.fasterxml.jackson.annotation.JsonProperty;
+import com.fasterxml.jackson.databind.PropertyNamingStrategies;
+import com.fasterxml.jackson.databind.annotation.JsonNaming;
+import java.time.OffsetDateTime;
+import java.util.Map;
+import java.util.UUID;
 
+@JsonNaming(PropertyNamingStrategies.SnakeCaseStrategy.class)
 public record WebSocketMessage(
     MessageType type,
     UUID projectId,
@@ -23,9 +29,9 @@ public record WebSocketMessage(
   }
 
   public enum EventType {
-    CHUNK,
-    TOOL_CALL,
-    TOOL_RESULT,
-    RESULT
+    @JsonProperty("chunk") CHUNK,
+    @JsonProperty("tool_call") TOOL_CALL,
+    @JsonProperty("tool_result") TOOL_RESULT,
+    @JsonProperty("result") RESULT
   }
 }
