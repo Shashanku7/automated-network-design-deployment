@@ -21,6 +21,7 @@ load_dotenv(dotenv_path=dotenv_path)
 
 QWEN_EMBEDDING_MODEL = os.getenv("QWEN_EMBEDDING_MODEL", "Qwen/Qwen3-Embedding-8B")
 QDRANT_COLLECTION = os.getenv("QDRANT_COLLECTION", "qwen-tech-docs")
+QDRANT_CONFIG_COLLECTION = os.getenv("QDRANT_CONFIG_COLLECTION", "qwen-config-guides")
 QDRANT_URL = os.getenv("QDRANT_URL")
 QDRANT_API_KEY = os.getenv("QDRANT_API_KEY")
 HUGGINGFACE_TOKEN = os.getenv("HUGGINGFACE_TOKEN")
@@ -28,6 +29,7 @@ OLLAMA_API_KEY = os.getenv("OLLAMA_API_KEY")
 OLLAMA_MODEL = os.getenv("OLLAMA_MODEL", "gemma4:31b-cloud")
 OLLAMA_BASE_URL = os.getenv("OLLAMA_BASE_URL", "https://api.ollama.com")
 IMAGE_SERVICE_URL = os.getenv("IMAGE_SERVICE_URL", "http://localhost:8001")
+OPENROUTER_API_KEY = os.getenv("OPENROUTER_API_KEY")
 
 # ──────────────────────────────────────────────
 # RAG constants
@@ -36,7 +38,11 @@ EMBEDDING_MAX_TOKENS = 1536
 CHUNK_MAX_TOKENS = 1024         # HybridChunker target (fits within embedding limit)
 RETRIEVAL_TOP_K = 25            # Consistent across all retrieval paths
 MIN_SCORE_THRESHOLD = 0.25      # Drop chunks below this relevance score
-MIN_CHUNK_LENGTH = 50           # Drop chunks shorter than this (chars)
+MIN_CHUNK_LENGTH = 200           # Drop chunks shorter than this (chars)
+TINY_CHUNK_MERGE_THRESHOLD = 400 # Merge chunks shorter than this into predecessor
+
+CONFIG_GUIDES_DIR = Path(__file__).resolve().parent / "config_guides"
+
 
 # ──────────────────────────────────────────────
 # Embedding model  (singleton — expensive to load)

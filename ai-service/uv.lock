@@ -1090,6 +1090,32 @@ wheels = [
 ]
 
 [[package]]
+name = "llama-index-llms-openai-like"
+version = "0.7.2"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "llama-index-core" },
+    { name = "llama-index-llms-openai" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/3b/a3/16410b28d131aa113ada79f856b78cb68a8e92a1e27255ea9c36c27a5dec/llama_index_llms_openai_like-0.7.2.tar.gz", hash = "sha256:ed9ff73f975dce470f98ac61c982151ba78eedfa3fb9b03894bc1d1312b213ff", size = 5389, upload-time = "2026-04-23T23:05:32.525Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/f4/0c/fdddaee5391d915d3d568d2d8dbdb7c95647e65bb94d4ddb31d47cef5daf/llama_index_llms_openai_like-0.7.2-py3-none-any.whl", hash = "sha256:1f45a7b1cec8fb3f5997684327ffe6c19f93e789c2fff35dc5522465850faf0b", size = 6602, upload-time = "2026-04-23T23:05:31.708Z" },
+]
+
+[[package]]
+name = "llama-index-llms-openrouter"
+version = "0.5.1"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "llama-index-core" },
+    { name = "llama-index-llms-openai-like" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/66/3d/0411bdd76067023da05ea0fe04c5f68048bb984e49a0f3be20464437772e/llama_index_llms_openrouter-0.5.1.tar.gz", hash = "sha256:986c3287552b6f3439c4f943b425a4c0577a095be0ade69e51972ccf422c0ad6", size = 5001, upload-time = "2026-06-09T22:44:19.747Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/2d/c4/995f75f8281ade520747e2d0c62a7c522492b6990df586e1953616127357/llama_index_llms_openrouter-0.5.1-py3-none-any.whl", hash = "sha256:43cb82e96614c940f566ef40baea76eb4c9c663154aa7e5d1a66b06829f45a76", size = 4893, upload-time = "2026-06-09T22:44:18.876Z" },
+]
+
+[[package]]
 name = "llama-index-node-parser-docling"
 version = "0.4.2"
 source = { registry = "https://pypi.org/simple" }
@@ -1816,6 +1842,7 @@ dependencies = [
     { name = "llama-index-embeddings-huggingface" },
     { name = "llama-index-llms-mistralai" },
     { name = "llama-index-llms-ollama" },
+    { name = "llama-index-llms-openrouter" },
     { name = "llama-index-node-parser-docling" },
     { name = "llama-index-readers-docling" },
     { name = "llama-index-vector-stores-qdrant" },
@@ -1832,6 +1859,7 @@ requires-dist = [
     { name = "llama-index-embeddings-huggingface", specifier = ">=0.7.0" },
     { name = "llama-index-llms-mistralai", specifier = ">=0.10.1" },
     { name = "llama-index-llms-ollama", specifier = ">=0.10.1" },
+    { name = "llama-index-llms-openrouter", specifier = ">=0.5.1" },
     { name = "llama-index-node-parser-docling", specifier = ">=0.4.2" },
     { name = "llama-index-readers-docling", specifier = ">=0.4.2" },
     { name = "llama-index-vector-stores-qdrant", specifier = ">=0.10.0" },

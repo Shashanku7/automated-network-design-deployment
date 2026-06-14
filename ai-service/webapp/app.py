@@ -14,6 +14,7 @@ from fastapi.responses import FileResponse
 from pydantic import BaseModel
 
 from llama_index.llms.ollama import Ollama
+from llama_index.llms.openrouter import OpenRouter
 from llama_index.core.agent.workflow import (
     AgentWorkflow, FunctionAgent, AgentInput, AgentOutput, ToolCall, ToolCallResult,
 )
@@ -22,39 +23,125 @@ from llama_index.core.llms import ChatMessage, MessageRole
 
 from config import (
     QDRANT_COLLECTION,
+    QDRANT_CONFIG_COLLECTION,
     OLLAMA_API_KEY,
     OLLAMA_MODEL,
     OLLAMA_BASE_URL,
+    OPENROUTER_API_KEY,
     IMAGE_SERVICE_URL,
     RETRIEVAL_TOP_K,
     MIN_SCORE_THRESHOLD,
     create_qdrant_client,
     extract_product_model,
+    get_embedding_model,
+    text_to_sparse_vector,
 )
-from search import hybrid_search
+from qdrant_client import models
 
 # ── Config ────────────────────────────────────────
 OUTPUT_DIR = Path(__file__).resolve().parent.parent / "output"
 OUTPUT_DIR.mkdir(exist_ok=True)
 
 # ── LLM ─────────────────────────────────────────
-llm = Ollama(
-    model=OLLAMA_MODEL, base_url=OLLAMA_BASE_URL,
-    request_timeout=400.0, context_window=262144,
+# llm = Ollama(
+#     model=OLLAMA_MODEL, base_url=OLLAMA_BASE_URL,
+#     request_timeout=400.0, context_window=262144,
+#     is_function_calling_model=True,
+#     headers={"Authorization": f"Bearer {OLLAMA_API_KEY}"},
+#     temperature=0.3,
+# )
+#
+# llm_qwen_coder= Ollama(
+#     model="qwen3-coder:480b-cloud", base_url=OLLAMA_BASE_URL,
+#     request_timeout=400.0, context_window=262144,
+#     is_function_calling_model=True,
+#     headers={"Authorization": f"Bearer {OLLAMA_API_KEY}"},
+# )
+
+llm = OpenRouter(
+    api_key=OPENROUTER_API_KEY,
+    model="google/gemma-4-31b-it:free",
+    temperature=0.4,
     is_function_calling_model=True,
-    headers={"Authorization": f"Bearer {OLLAMA_API_KEY}"},
-    temperature=0.3,
+    context_window=32000,
 )
 
-llm_qwen_coder= Ollama(
-    model="qwen3-coder:480b-cloud", base_url=OLLAMA_BASE_URL,
-    request_timeout=400.0, context_window=262144,
+llm_qwen_coder= OpenRouter(
+    model="openai/gpt-oss-120b:free",
     is_function_calling_model=True,
-    headers={"Authorization": f"Bearer {OLLAMA_API_KEY}"},
+    context_window=32000,
 )
 
 # ── Qdrant client ─────────────────────────────────
 _qdrant_client = create_qdrant_client()
+
+# ── Hybrid search (dense + sparse RRF fusion) ───────────
+def hybrid_search(
+    query_text: str,
+    *,
+    collection_name: str = QDRANT_COLLECTION,
+    top_k: int = 25,
+    dense_limit: int = 50,
+    sparse_limit: int = 50,
+    filter_condition: models.Filter | None = None,
+) -> list[dict]:
+    """Hybrid search via Qdrant prefetch + RRF fusion.
+
+    Fuses dense (semantic) and sparse (TF-IDF with Qdrant IDF modifier)
+    results using Qdrant's ``query_points`` API with ``Fusion.RRF``.
+
+    Parameters
+    ----------
+    filter_condition : optional
+        Qdrant Filter applied as a post-filter to the fused results.
+
+    Returns
+    -------
+    List of dicts with keys: ``id``, ``score``, ``text``, ``source``,
+    ``product_model``, ``doc_id``.
+    """
+    embed_model = get_embedding_model()
+    query_dense = embed_model.get_query_embedding(query_text)
+    query_sparse = text_to_sparse_vector(query_text)
+
+    prefetch = [
+        models.Prefetch(query=query_dense, using="dense", limit=dense_limit),
+        models.Prefetch(query=query_sparse, using="sparse", limit=sparse_limit),
+    ]
+
+    if filter_condition:
+        prefetch = [
+            models.Prefetch(
+                query=query_dense, using="dense", limit=dense_limit,
+                filter=filter_condition,
+            ),
+            models.Prefetch(
+                query=query_sparse, using="sparse", limit=sparse_limit,
+                filter=filter_condition,
+            ),
+        ]
+
+    result = _qdrant_client.query_points(
+        collection_name=collection_name,
+        prefetch=prefetch,
+        query=models.FusionQuery(fusion=models.Fusion.RRF),
+        with_payload=True,
+        limit=top_k,
+    )
+
+    out = []
+    for point in result.points:
+        payload = point.payload or {}
+        out.append({
+            "id": point.id,
+            "score": point.score,
+            "text": payload.get("text", ""),
+            "source": payload.get("source", ""),
+            "product_model": payload.get("product_model", ""),
+            "doc_id": payload.get("doc_id", ""),
+        })
+    return out
+
 
 # ── Firecrawl self-hosted search tool ─────────────────────
 
@@ -196,7 +283,7 @@ def search_product_specs(query: str, product_model: str) -> str:
 
     try:
         results = hybrid_search(
-            _qdrant_client, f"{product_model} {query}",
+            f"{product_model} {query}",
             top_k=TOP_K, dense_limit=TOP_K * 2, sparse_limit=TOP_K * 2,
             filter_condition=filter_cond,
         )
@@ -245,7 +332,7 @@ def search_across_products(query: str) -> str:
     Args:
         query: A natural-language question about networking equipment specs.
     """
-    results = hybrid_search(_qdrant_client, query, top_k=RETRIEVAL_TOP_K)
+    results = hybrid_search(query, top_k=RETRIEVAL_TOP_K)
     results = [r for r in results if r["score"] >= MIN_SCORE_THRESHOLD]
     parts = []
     for i, r in enumerate(results, 1):
@@ -277,6 +364,47 @@ broad_search_tool = FunctionTool.from_defaults(
     description=(
         "Search across ALL product families for broad queries like 'which switches support VSX' "
         "or 'compare PoE budgets'. Use for cross-product comparisons."
+    ),
+)
+
+
+def search_config_guides(query: str) -> str:
+    """Search the AOS-CX configuration guide knowledge base for CLI syntax,
+    feature configuration steps, and best practices.
+
+    Use this tool when you need to verify exact CLI command syntax, feature
+    configuration procedures, or best practices for HPE Aruba CX switches.
+    The knowledge base includes AOS-CX 10.13 guides covering fundamentals,
+    VSF, VSX, VXLAN, IP services, monitoring, and more.
+
+    Args:
+        query: What CLI configuration you need (e.g. 'configure VSX keepalive',
+               'VSF member numbering', 'VLAN trunk configuration')
+    """
+    try:
+        results = hybrid_search(
+            query,
+            collection_name=QDRANT_CONFIG_COLLECTION,
+            top_k=RETRIEVAL_TOP_K,
+        )
+        results = [r for r in results if r["score"] >= MIN_SCORE_THRESHOLD]
+    except Exception as exc:
+        return f"[search_config_guides error] {type(exc).__name__}: {exc}"
+    if not results:
+        return f"No configuration guide results found for: {query}"
+    parts = []
+    for i, r in enumerate(results, 1):
+        src_base = os.path.basename(r["source"])
+        parts.append(f"--- Config Guide Chunk {i} (score: {r['score']:.4f}) ---\nSource: {src_base}\n{r['text']}\n")
+    return "\n".join(parts)
+
+
+config_guide_tool = FunctionTool.from_defaults(
+    fn=search_config_guides, name="search_config_guides",
+    description=(
+        "Search AOS-CX configuration guides for CLI command syntax, feature "
+        "configuration steps, and best practices. Use for writing accurate "
+        "CLI configuration commands for each switch in the design."
     ),
 )
 
@@ -482,11 +610,69 @@ agent4 = FunctionAgent(
 )
 
 
+agent5 = FunctionAgent(
+    name="cli_config_generator",
+    description="Generates per-switch CLI configuration commands from the approved topology and BOM.",
+    system_prompt=(
+        "You are a Senior Network Automation Engineer specializing in HPE Aruba CX switches.\n\n"
+        "Your task is to generate a detailed, step-by-step CLI configuration for EVERY switch\n"
+        "in the design. You will receive:\n"
+        "1. The approved network topology (tier model, VLAN plan, HA design)\n"
+        "2. The Bill of Materials (switch models, roles, quantities per building/department)\n"
+        "3. The D2 diagram code (visual topology reference)\n\n"
+        "MANDATORY: You MUST use the 'search_config_guides' tool to verify the exact CLI syntax\n"
+        "for every feature you configure. Do NOT guess CLI commands — always verify with\n"
+        "the AOS-CX configuration guides. Search for:\n"
+        "  - VSF configuration (member numbering, link, split-detection)\n"
+        "  - VSX configuration (keepalive, link, active-gateway, inter-switch linking)\n"
+        "  - VLAN configuration (creation, trunk/access ports, allowed VLANs)\n"
+        "  - LAG/LACP configuration and interface binding\n"
+        "  - QoS configuration (trust, schedule-profile, queue profiles)\n"
+        "  - SNMP and management access configuration\n"
+        "  - Spanning Tree (MSTP/RSTP) configuration\n"
+        "  - OSPF/BGP routing configuration if applicable\n\n"
+        "OUTPUT FORMAT — Group by building, then by switch role, then per-switch:\n\n"
+        "---\n"
+        "## Building: <building name>\n"
+        "\n"
+        "### Switch: <hostname> — <role> (<model>)\n"
+        "```\n"
+        "configure terminal\n"
+        "hostname <hostname>\n"
+        "...\n"
+        "end\n"
+        "write memory\n"
+        "```\n"
+        "\n"
+        "Configuration blocks per switch (in this order):\n"
+        "1. **Base config**: hostname, enable password, banner, NTP, DNS\n"
+        "2. **VSF/VSX config**: member number (VSF), keepalive+link (VSX), active-gateway\n"
+        "3. **VLANs**: create VLANs per the approved VLAN plan with names\n"
+        "4. **Interfaces**: assign VLANs to access/trunk ports, LAG members, LACP\n"
+        "5. **LAG**: port-channel creation, member interfaces, allowed VLANs\n"
+        "6. **Routing**: VLAN interfaces (SVIs), OSPF/BGP config where applicable\n"
+        "7. **QoS**: trust settings, queue profiles for VOICE/VIDEO/DATA\n"
+        "8. **Management**: SNMP, SSH, AAA, logging\n"
+        "9. **Spanning Tree**: MSTP region config, root priority per VLAN\n"
+        "10. **Verification**: show commands to validate the config\n\n"
+        "RULES:\n"
+        "- Use the exact VLAN numbers and subnetting from the approved topology\n"
+        "- Use the exact switch models from the BOM\n"
+        "- Include EVERY switch from the design — core, distribution, and access\n"
+        "- Make configurations production-ready with proper interface descriptions\n"
+        "- Group switches by building, then by layer (core → distribution → access)\n"
+        "- Use only AOS-CX CLI syntax — verify EVERY command type with search_config_guides\n"
+        "- If you're unsure about a command, search the config guides\n"
+    ), llm=llm_qwen_coder, tools=[config_guide_tool],
+)
+
+
 PHASES = [
     (1, "Prompt Rephrasing", agent1),
     (2, "Network Topology Design", agent2),
     (3, "Device Selection & BOM", agent3),
     (4, "D2 Diagram Generation", agent4),
+    (5, "CLI Configuration Generation", agent5),
 ]
 
 # ── Helpers ───────────────────────────────────
@@ -552,7 +738,8 @@ def _format_tool_events(events: list[dict]) -> str:
 
 
 def _save(prompt, rephrased, topology, devices, diagram_code="", diagram_url=None,
-          tools_1=None, tools_2=None, tools_3=None, tools_4=None):
+          tools_1=None, tools_2=None, tools_3=None, tools_4=None, tools_5=None,
+          cli_config=""):
     ts = datetime.now()
     fp = OUTPUT_DIR / f"{ts:%Y-%m-%d_%H-%M-%S}_run.md"
     content = (
@@ -565,6 +752,8 @@ def _save(prompt, rephrased, topology, devices, diagram_code="", diagram_url=Non
     )
     if diagram_url:
         content += f"\n---\n\n## Topology Diagram\n\nGenerated diagram: `{diagram_url}`\n"
+    if cli_config:
+        content += f"\n---\n\n## Phase 5: CLI Configuration\n\n{_strip_ansi(cli_config)}\n"
     fp.write_text(content, encoding="utf-8")
     return fp
 
@@ -655,6 +844,8 @@ async def _run_phase(ws, phase_num, phase_name, agent, initial_msg, model_name="
                         if ev.tool_name in ("search_product_specs", "search_across_products"):
                             chunks = _parse_chunks(out)
                             await _send(ws, type="rag_result", tool_name=ev.tool_name, chunks=chunks, total=len(chunks))
+                        elif ev.tool_name == "search_config_guides":
+                            await _send(ws, type="config_rag_result", tool_name=ev.tool_name, output=out, total_chars=len(out))
                         else:
                             await _send(ws, type="tool_result", tool_name=ev.tool_name, output=out)
                     elif isinstance(ev, AgentOutput):
@@ -711,11 +902,11 @@ async def ws_endpoint(ws: WebSocket):
 
         # Phase 4: D2 Diagram Generation
         d2_ctx = f"## Approved Topology\n{topology}\n\n## Bill of Materials\n{devices}"
-        diagram_code, tools_4 = await _run_phase(ws, 4, "D2 Diagram Generation", agent4, d2_ctx, model_name="qwen3-coder:480b-cloud")
+        diagram_code, tools_4 = await _run_phase(ws, 4, "D2 Diagram Generation", agent4, d2_ctx, model_name="gpt-oss-120b")
 
-        # Render D2 code via Image Generation Service
+        # Render D2 code via Image Generation Service (non-agent step)
         diagram_url = None
-        await _send(ws, type="phase_start", phase=5, name="Topology Diagram", iteration=1)
+        await _send(ws, type="phase_start", phase="diagram", name="Rendering Topology Diagram", iteration=1)
         try:
             result = await _generate_diagram_via_service(diagram_code)
             if result.get("success"):
@@ -732,10 +923,19 @@ async def ws_endpoint(ws: WebSocket):
             await _send(ws, type="diagram_error",
                         message=f"Image service unavailable: {str(img_err)}")
 
+        # Phase 5: CLI Configuration Generation
+        cli_ctx = (
+            f"## Approved Topology\n{topology}\n\n"
+            f"## Bill of Materials\n{devices}\n\n"
+            f"## D2 Diagram Code\n```d2\n{diagram_code}\n```"
+        )
+        cli_config, tools_5 = await _run_phase(ws, 5, "CLI Configuration Generation", agent5, cli_ctx, model_name="qwen3-coder:480b-cloud")
+
         fp = _save(prompt, rephrased, topology, devices, diagram_code, diagram_url,
-                    tools_1, tools_2, tools_3, tools_4)
+                    tools_1, tools_2, tools_3, tools_4, tools_5, cli_config)
         await _send(ws, type="workflow_complete", saved_to=str(fp),
-                    diagram_url=diagram_url)
+                    diagram_url=diagram_url,
+                    has_cli_config=bool(cli_config))
     except WebSocketDisconnect:
         pass
     except Exception as e:
