@@ -12,6 +12,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse
 from pydantic import BaseModel
+from webapp.kafka_handler import KafkaManager
 
 from llama_index.llms.ollama import Ollama
 from llama_index.core.agent.workflow import (
@@ -543,8 +544,41 @@ def _save(prompt, rephrased, topology, devices, diagram_code="", diagram_url=Non
     fp.write_text(content, encoding="utf-8")
     return fp
 
+# ── Kafka Task Processor ──────────────────────────
+kafka_mgr = KafkaManager()
+
+async def process_kafka_task(task_data: dict):
+    project_id = task_data.get("project_id")
+    task_id = task_data.get("task_id")
+    phase_idx = task_data.get("phase", 1)
+    input_ctx = task_data.get("input_context")
+    history = task_data.get("history", [])
+
+    # Find the agent for this phase
+    matching_phases = [p for p in PHASES if p[0] == phase_idx]
+    if not matching_phases:
+        await kafka_mgr.send_event({
+            "project_id": project_id, "task_id": task_id, "agent_name": "system",
+            "event_type": "error", "data": f"Invalid phase: {phase_idx}", "is_final": True
+        })
+        return
+
+    _, phase_name, agent = matching_phases[0]
+    await _run_phase_kafka(kafka_mgr, project_id, task_id, phase_idx, phase_name, agent, input_ctx, history, model_name=OLLAMA_MODEL)
+
 # ── FastAPI ───────────────────────────────────────
-app = FastAPI(title="Network Automation Assistant")
+from contextlib import asynccontextmanager
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    # Startup
+    await kafka_mgr.start()
+    asyncio.create_task(kafka_mgr.consume_tasks(process_kafka_task))
+    yield
+    # Shutdown
+    await kafka_mgr.stop()
+
+app = FastAPI(title="Network Automation Assistant", lifespan=lifespan)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -651,6 +685,52 @@ async def _run_phase(ws, phase_num, phase_name, agent, initial_msg, model_name="
         else:
             msg = data.get("feedback", "Please revise.")
             await _send(ws, type="phase_revision", phase=phase_num, feedback=msg)
+
+async def _run_phase_kafka(kafka_mgr, project_id, task_id, phase_num, phase_name, agent, initial_msg, history=None, model_name=""):
+    """Run one agent phase and stream events to Kafka."""
+    wf = AgentWorkflow(agents=[agent], root_agent=agent.name, timeout=400.0)
+    # Convert history dicts to ChatMessage objects if provided
+    chat_history = []
+    if history:
+        for h in history:
+            role = MessageRole.USER if h.get("role") == "user" else MessageRole.ASSISTANT
+            chat_history.append(ChatMessage(role=role, content=h.get("content", "")))
+    
+    await kafka_mgr.send_event({
+        "project_id": project_id, "task_id": task_id, "agent_name": agent.name,
+        "event_type": "token", "data": f"Starting phase {phase_num}: {phase_name}", "is_final": False
+    })
+
+    try:
+        if chat_history:
+            handler = wf.run(chat_history=chat_history + [ChatMessage(role=MessageRole.USER, content=initial_msg)])
+        else:
+            handler = wf.run(user_msg=initial_msg)
+
+        async for ev in handler.stream_events():
+            base_event = {"project_id": project_id, "task_id": task_id, "agent_name": agent.name, "is_final": False}
+            if isinstance(ev, AgentInput):
+                pass # Already sent start event
+            elif isinstance(ev, ToolCall):
+                await kafka_mgr.send_event({**base_event, "event_type": "tool_call", "payload": {"name": ev.tool_name, "args": ev.tool_kwargs}})
+            elif isinstance(ev, ToolCallResult):
+                await kafka_mgr.send_event({**base_event, "event_type": "tool_result", "payload": {"name": ev.tool_name, "output": str(ev.tool_output)}})
+            elif isinstance(ev, AgentOutput):
+                if not ev.tool_calls:
+                    await kafka_mgr.send_event({**base_event, "event_type": "token", "data": str(ev.response)})
+
+        resp = await handler
+        await kafka_mgr.send_event({
+            "project_id": project_id, "task_id": task_id, "agent_name": agent.name,
+            "event_type": "final_answer", "data": str(resp), "is_final": True
+        })
+        return str(resp)
+    except Exception as e:
+        await kafka_mgr.send_event({
+            "project_id": project_id, "task_id": task_id, "agent_name": agent.name,
+            "event_type": "error", "data": str(e), "is_final": True
+        })
+        raise e
 
 @app.websocket("/ws")
 async def ws_endpoint(ws: WebSocket):
