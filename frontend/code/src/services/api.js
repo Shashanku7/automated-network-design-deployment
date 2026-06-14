@@ -23,38 +23,41 @@ function buildPromptFromRequirements(req, solutionType) {
   if (isCampus) {
     // Calculate totals from our new structured building list
     const totalBuildings = req.buildings?.length || 0;
-    let totalStudents = 0, totalStaff = 0, totalAdmins = 0, totalVoip = 0, totalIptv = 0;
+    let totalStudents = 0, totalStaff = 0, totalAdmins = 0, totalVoip = 0, totalIptv = 0, totalPrinters = 0;
     
     req.buildings?.forEach(b => {
-      b.floors.forEach(f => {
-        totalStudents += (Number(f.students) || 0);
-        totalStaff += (Number(f.staff) || 0);
-        totalAdmins += (Number(f.admins) || 0);
-        totalVoip += (Number(f.voip) || 0);
-        totalIptv += (Number(f.iptv) || 0);
+      b.departments?.forEach(d => {
+        totalStudents += (Number(d.students) || 0);
+        totalStaff += (Number(d.staff) || 0);
+        totalAdmins += (Number(d.admins) || 0);
+        totalVoip += (Number(d.voip) || 0);
+        totalIptv += (Number(d.iptv) || 0);
+        totalPrinters += (Number(d.printers) || 0);
       });
     });
 
     let prompt = `Design a campus network for an organization with ${totalBuildings} building(s).`;
-    prompt += ` Across all buildings, there are approximately ${totalStudents} students/visitors, ${totalStaff} staff/faculty, ${totalAdmins} administrators, ${totalVoip} VoIP phones, and ${totalIptv} IPTVs.\n\n`;
+    prompt += ` Across all buildings, there are approximately ${totalStudents} students/visitors, ${totalStaff} staff/faculty, ${totalAdmins} administrators, ${totalVoip} VoIP phones, ${totalIptv} IPTVs, and ${totalPrinters} printers.\n\n`;
 
-    // Per-building, per-floor breakdown
-    prompt += `## Building & Floor Breakdown\n`;
+    // Per-building, per-department breakdown
+    prompt += `## Building & Department Breakdown\n`;
     req.buildings?.forEach((b, bIdx) => {
-      prompt += `\n### Building ${bIdx + 1}: ${b.name || 'Unnamed'} (${b.floorCount || 0} floors)\n`;
-      if (b.floors?.length) {
-        prompt += `| Floor | Department / Name | Students | Staff | Admins | VoIP Phones | IPTVs |\n`;
-        prompt += `|-------|-------------------|----------|-------|--------|-------------|-------|\n`;
-        b.floors.forEach((f, fIdx) => {
-          const floorLabel = f.name || (fIdx === 0 ? 'Ground Floor' : `Floor ${fIdx}`);
-          prompt += `| ${fIdx + 1} | ${floorLabel} | ${f.students || 0} | ${f.staff || 0} | ${f.admins || 0} | ${f.voip || 0} | ${f.iptv || 0} |\n`;
+      prompt += `\n### Building ${bIdx + 1}: ${b.name || 'Unnamed'} (${b.departmentCount || 0} departments)\n`;
+      if (b.departments?.length) {
+        prompt += `| Department | Floor No. | Students | Staff | Admins | VoIP Phones | IPTVs | Printers |\n`;
+        prompt += `|------------|-----------|----------|-------|--------|-------------|-------|----------|\n`;
+        b.departments.forEach((d, dIdx) => {
+          const deptLabel = d.department || `Department ${dIdx + 1}`;
+          const floorLabel = d.floorNo || (dIdx + 1);
+          prompt += `| ${deptLabel} | ${floorLabel} | ${d.students || 0} | ${d.staff || 0} | ${d.admins || 0} | ${d.voip || 0} | ${d.iptv || 0} | ${d.printers || 0} |\n`;
         });
-        const bStudents = b.floors.reduce((s, f) => s + (Number(f.students) || 0), 0);
-        const bStaff = b.floors.reduce((s, f) => s + (Number(f.staff) || 0), 0);
-        const bAdmins = b.floors.reduce((s, f) => s + (Number(f.admins) || 0), 0);
-        const bVoip = b.floors.reduce((s, f) => s + (Number(f.voip) || 0), 0);
-        const bIptv = b.floors.reduce((s, f) => s + (Number(f.iptv) || 0), 0);
-        prompt += `| **Total** | | **${bStudents}** | **${bStaff}** | **${bAdmins}** | **${bVoip}** | **${bIptv}** |\n`;
+        const bStudents = b.departments.reduce((s, d) => s + (Number(d.students) || 0), 0);
+        const bStaff = b.departments.reduce((s, d) => s + (Number(d.staff) || 0), 0);
+        const bAdmins = b.departments.reduce((s, d) => s + (Number(d.admins) || 0), 0);
+        const bVoip = b.departments.reduce((s, d) => s + (Number(d.voip) || 0), 0);
+        const bIptv = b.departments.reduce((s, d) => s + (Number(d.iptv) || 0), 0);
+        const bPrinters = b.departments.reduce((s, d) => s + (Number(d.printers) || 0), 0);
+        prompt += `| **Total** | | **${bStudents}** | **${bStaff}** | **${bAdmins}** | **${bVoip}** | **${bIptv}** | **${bPrinters}** |\n`;
       }
     });
 
@@ -65,7 +68,12 @@ function buildPromptFromRequirements(req, solutionType) {
     }
     if (req.sensitiveAreas?.length) prompt += `Sensitive areas requiring extra security: ${req.sensitiveAreas.join(', ')}.\n`;
     if (req.specialRoles?.length) prompt += `Special roles to consider: ${req.specialRoles.join(', ')}.\n`;
-    prompt += `Uptime requirement: ${req.uptimeLevel}.\n`;
+    const uptimeDescriptions = {
+      standard: 'Standard — Occasional brief outages are acceptable',
+      important: 'Important — Minimal downtime, critical for daily operations',
+      critical: 'Mission Critical — 24/7 availability, no downtime allowed',
+    };
+    prompt += `Uptime requirement: ${uptimeDescriptions[req.uptimeLevel] || req.uptimeLevel}.\n`;
     if (req.expectGrowth) prompt += `Expecting growth of ${req.growthAmount} additional users/people.\n`;
     if (req.additionalNotes) prompt += `Additional notes: ${req.additionalNotes}\n`;
     return prompt;
@@ -74,7 +82,12 @@ function buildPromptFromRequirements(req, solutionType) {
     let prompt = `Design a data center network with ${req.dcRacks || 0} server rack(s) and approximately ${req.dcServers || 0} servers.`;
     if (req.specialRoles?.length) prompt += ` Use cases: ${req.specialRoles.join(', ')}.`;
     if (req.sensitiveAreas?.length) prompt += ` Security zones: ${req.sensitiveAreas.join(', ')}.`;
-    prompt += ` Uptime requirement: ${req.uptimeLevel}.`;
+    const uptimeDescriptions = {
+      standard: 'Standard — Occasional brief outages are acceptable',
+      important: 'Important — Minimal downtime, critical for daily operations',
+      critical: 'Mission Critical — 24/7 availability, no downtime allowed',
+    };
+    prompt += ` Uptime requirement: ${uptimeDescriptions[req.uptimeLevel] || req.uptimeLevel}.`;
     if (req.expectGrowth) prompt += ` Expecting growth of ${req.growthAmount} additional server racks.`;
     if (req.additionalNotes) prompt += ` Additional notes: ${req.additionalNotes}`;
     return prompt;
@@ -82,14 +95,15 @@ function buildPromptFromRequirements(req, solutionType) {
 }
 
 /**
- * Submit requirements and run the full 3-phase AI workflow via WebSocket.
+ * Submit requirements and run the full 5-phase AI workflow via WebSocket.
  *
  * @param {Object} requirements - The form inputs
  * @param {string} solutionType - 'campus' or 'datacenter'
  * @param {Function} onEvent - Callback for each streaming event: (event) => void
- *   Events: phase_start, agent_input, tool_call, rag_result, agent_response,
- *           approval_request, phase_approved, phase_revision, workflow_complete, error
- * @returns {Promise<Object>} - Resolves with { rephrased, topology, devices } when done
+ *   Events: phase_start, agent_input, tool_call, rag_result, config_rag_result,
+ *           agent_response, approval_request, phase_approved, phase_revision,
+ *           workflow_complete, error
+ * @returns {Promise<Object>} - Resolves with { rephrased, topology, devices, cliConfig } when done
  */
 export function runWorkflow(requirements, solutionType, onEvent) {
   return new Promise((resolve, reject) => {
@@ -97,7 +111,7 @@ export function runWorkflow(requirements, solutionType, onEvent) {
     const wsUrl = `ws://${window.location.host}/ws`;
     const ws = new WebSocket(wsUrl);
 
-    const results = { prompt, rephrased: '', topology: '', devices: '', diagramUrl: '', diagramDownloadUrl: '' };
+    const results = { prompt, rephrased: '', topology: '', devices: '', diagramUrl: '', diagramDownloadUrl: '', cliConfig: '' };
     let currentPhase = 0;
 
     // Expose send functions via the onEvent callback's return
@@ -123,6 +137,7 @@ export function runWorkflow(requirements, solutionType, onEvent) {
           if (currentPhase === 1) results.rephrased = content;
           else if (currentPhase === 2) results.topology = content;
           else if (currentPhase === 3) results.devices = content;
+          else if (currentPhase === 5) results.cliConfig = content;
         }
 
         if (data.type === 'diagram_ready') {

@@ -49,6 +49,7 @@ const initialState = {
   deviceSelection: null,
   diagramUrl: null,
   diagramDownloadUrl: null,
+  cliConfig: null,
 
   // Legacy compat
   proposedDesign: null,
@@ -88,6 +89,7 @@ function projectReducer(state, action) {
         deviceSelection: null,
         diagramUrl: null,
         diagramDownloadUrl: null,
+        cliConfig: null,
       };
 
     case 'WORKFLOW_EVENT':
@@ -118,6 +120,9 @@ function projectReducer(state, action) {
 
     case 'SET_DIAGRAM':
       return { ...state, diagramUrl: action.payload.url, diagramDownloadUrl: action.payload.downloadUrl };
+
+    case 'SET_CLI_CONFIG':
+      return { ...state, cliConfig: action.payload };
 
     case 'WORKFLOW_COMPLETE':
       return { ...state, workflowStatus: 'complete', wsRef: null };
