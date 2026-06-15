@@ -5,6 +5,10 @@ from config import KAFKA_BOOTSTRAP_SERVERS, TOPIC_AGENT_TASKS, TOPIC_AGENT_EVENT
 
 class KafkaManager:
     def __init__(self):
+        self.consumer = None
+        self.producer = None
+
+    async def start(self):
         self.consumer = AIOKafkaConsumer(
             TOPIC_AGENT_TASKS,
             bootstrap_servers=KAFKA_BOOTSTRAP_SERVERS,
@@ -15,8 +19,6 @@ class KafkaManager:
             bootstrap_servers=KAFKA_BOOTSTRAP_SERVERS,
             value_serializer=lambda v: json.dumps(v).encode("utf-8")
         )
-
-    async def start(self):
         await self.consumer.start()
         await self.producer.start()
 
