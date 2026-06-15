@@ -23,7 +23,7 @@ public class KafkaService {
   public void sendTask(String message, UUID projectId) {
     var state = pipelineManager.getOrCreateState(projectId);
     state.setLastOutput(message);
-    state.getHistory().add(new AgentTask.ChatMessage(AgentTask.ChatMessage.Role.user, message));
+    state.getHistory().add(new AgentTask.ChatMessage(AgentTask.ChatMessage.Role.USER, message));
 
     var task = pipelineManager.createNextTask(projectId);
     taskEmitter.send(task);
@@ -35,6 +35,6 @@ public class KafkaService {
       pipelineManager.updateStateAfterPhase(event.projectId(), event.data());
     }
     // Forward event as JSON to UI
-    webSocket.sendMessage(event.projectId(), event.toString());
+    webSocket.sendMessage(event.projectId().toString(), event.toString());
   }
 }
