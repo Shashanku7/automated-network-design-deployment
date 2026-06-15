@@ -2,21 +2,33 @@ package org.acme.gateway.services;
 
 import module java.base;
 
+import jakarta.ws.rs.POST;
 import jakarta.ws.rs.Path;
+import jakarta.ws.rs.Produces;
+import org.eclipse.microprofile.rest.client.inject.RegisterRestClient;
 
+@Path("/")
+@RegisterRestClient
 public interface AIService {
+
+  @POST
   @Path("rephrase")
-  String getRephrasedPrompt(InputStream initial);
+  String getRephrasedPrompt(String initial);
 
+  @POST
   @Path("topology")
-  String getNetworkTopology(InputStream prompt);
+  String getNetworkTopology(String prompt);
 
+  @POST
   @Path("selector")
-  String getDevices(InputStream prompt);
+  String getDevices(String prompt);
 
+  @POST
   @Path("diagram")
-  byte[] getDiagram(InputStream prompt);
+  @Produces("image/png")
+  byte[] getDiagram(String prompt);
 
+  @POST
   @Path("cli-config")
-  String getCliConfig(InputStream prompt);
+  String getCliConfig(String prompt);
 }

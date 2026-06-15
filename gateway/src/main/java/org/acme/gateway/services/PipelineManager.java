@@ -29,7 +29,7 @@ public class PipelineManager {
   public void updateStateAfterPhase(UUID projectId, String output) {
     PipelineState state = getOrCreateState(projectId);
     state.setLastOutput(output);
-    state.getHistory().add(new AgentTask.ChatMessage(AgentTask.ChatMessage.Role.assistant, output));
+    state.getHistory().add(new AgentTask.ChatMessage(AgentTask.ChatMessage.Role.ASSISTANT, output));
 
     switch (state.getCurrentPhase()) {
       case 1 -> state.setRephrasedPrompt(output);

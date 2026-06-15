@@ -20,29 +20,34 @@ public class APIWebSocket {
   Map<UUID, Session> sessions = new ConcurrentHashMap<>();
 
   @OnOpen
-  public void onOpen(Session session, @PathParam("projectId") UUID projectId) {
-    sessions.putIfAbsent(projectId, session);
+  public void onOpen(Session session, @PathParam("projectId") String projectId) {
+    var uuid = UUID.fromString(projectId);
+    sessions.putIfAbsent(uuid, session);
   }
 
   @OnClose
-  public void onClose(Session session, @PathParam("projectId") UUID projectId) {
-    sessions.remove(projectId);
+  public void onClose(Session session, @PathParam("projectId") String projectId) {
+    var uuid = UUID.fromString(projectId);
+    sessions.remove(uuid);
   }
 
   @OnError
   public void OnError(
-      Session session, @PathParam("projectId") UUID projectId, Throwable throwable) {
-    sessions.remove(projectId);
+      Session session, @PathParam("projectId") String projectId, Throwable throwable) {
+    var uuid = UUID.fromString(projectId);
+    sessions.remove(uuid);
   }
 
   @OnMessage
-  public void onMessage(String message, @PathParam("projectId") UUID projectId) {
+  public void onMessage(String message, @PathParam("projectId") String projectId) {
     // Basic implementation: user sends feedback/input to trigger next step
-    kafkaService.sendTask(message, projectId);
+    var uuid = UUID.fromString(projectId);
+    kafkaService.sendTask(message, uuid);
   }
 
-  public void sendMessage(UUID projectId, String content) {
-    Session session = sessions.get(projectId);
+  public void sendMessage(String projectId, String content) {
+    var uuid = UUID.fromString(projectId);
+    Session session = sessions.get(uuid);
     if (session != null && session.isOpen()) {
       session.getAsyncRemote().sendText(content);
     }
