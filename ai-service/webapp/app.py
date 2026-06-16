@@ -928,12 +928,12 @@ async def _run_phase_kafka(kafka_mgr, project_id, task_id, phase_num, phase_name
     chat_history = []
     if history:
         for h in history:
-            role = MessageRole.USER if h.get("role") == "user" else MessageRole.ASSISTANT
+            role = MessageRole.USER if str(h.get("role")).upper() == "USER" else MessageRole.ASSISTANT
             chat_history.append(ChatMessage(role=role, content=h.get("content", "")))
     
     await kafka_mgr.send_event({
         "project_id": project_id, "task_id": task_id, "agent_name": agent.name,
-        "event_type": "token", "data": f"Starting phase {phase_num}: {phase_name}", "is_final": False
+        "event_type": "TOKEN", "data": f"Starting phase {phase_num}: {phase_name}", "is_final": False
     })
 
     try:
@@ -947,23 +947,23 @@ async def _run_phase_kafka(kafka_mgr, project_id, task_id, phase_num, phase_name
             if isinstance(ev, AgentInput):
                 pass # Already sent start event
             elif isinstance(ev, ToolCall):
-                await kafka_mgr.send_event({**base_event, "event_type": "tool_call", "payload": {"name": ev.tool_name, "args": ev.tool_kwargs}})
+                await kafka_mgr.send_event({**base_event, "event_type": "TOOL_CALL", "payload": {"name": ev.tool_name, "args": ev.tool_kwargs}})
             elif isinstance(ev, ToolCallResult):
-                await kafka_mgr.send_event({**base_event, "event_type": "tool_result", "payload": {"name": ev.tool_name, "output": str(ev.tool_output)}})
+                await kafka_mgr.send_event({**base_event, "event_type": "TOOL_RESULT", "payload": {"name": ev.tool_name, "output": str(ev.tool_output)}})
             elif isinstance(ev, AgentOutput):
                 if not ev.tool_calls:
-                    await kafka_mgr.send_event({**base_event, "event_type": "token", "data": str(ev.response)})
+                    await kafka_mgr.send_event({**base_event, "event_type": "TOKEN", "data": str(ev.response)})
 
         resp = await handler
         await kafka_mgr.send_event({
             "project_id": project_id, "task_id": task_id, "agent_name": agent.name,
-            "event_type": "final_answer", "data": str(resp), "is_final": True
+            "event_type": "FINAL_ANSWER", "data": str(resp), "is_final": True
         })
         return str(resp)
     except Exception as e:
         await kafka_mgr.send_event({
             "project_id": project_id, "task_id": task_id, "agent_name": agent.name,
-            "event_type": "error", "data": str(e), "is_final": True
+            "event_type": "ERROR", "data": str(e), "is_final": True
         })
         raise e
 
