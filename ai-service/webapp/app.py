@@ -923,6 +923,10 @@ async def _run_phase(ws, phase_num, phase_name, agent, initial_msg, model_name="
 
 async def _run_phase_kafka(kafka_mgr, project_id, task_id, phase_num, phase_name, agent, initial_msg, history=None, model_name=""):
     """Run one agent phase and stream events to Kafka."""
+    print(f"\n=== START PHASE {phase_num}: {phase_name} ===", flush=True)
+    print(f"Project: {project_id}", flush=True)
+    print(f"Task: {task_id}", flush=True)
+    print(f"Agent: {agent.name}", flush=True)
     wf = AgentWorkflow(agents=[agent], root_agent=agent.name, timeout=400.0)
     # Convert history dicts to ChatMessage objects if provided
     chat_history = []
