@@ -37,3 +37,31 @@ desktop.ini
 .env.development.local
 .env.test.local
 .env.production.local
+
+# Virtual environments
+.venv/
+.venv
+*.venv
+
+# Local RAG Models and Tokenizer States
+ai-service/models/
+ai-service/bm25_state.json
+
+# Local Run Debug Logs and Design Outputs
+ai-service/temp_debug/
+ai-service/output/
+
+# Temp dev files and archives
+temp/
+*.zip
+.gemini/
+
+# Local utility & test scripts
+ai-service/test_autorun.py
+ai-service/diagnostic_scroll.py
+ai-service/download_model.py
+ai-service/web_test.py
+test_gatekeeper.py
+
+# Local documentation & artifacts
+docs/

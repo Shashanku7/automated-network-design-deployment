@@ -53,6 +53,7 @@ const initialState = {
   diagramUrl: null,
   diagramDownloadUrl: null,
   cliConfig: null,
+  reactCode: null,
 
   proposedDesign: null,
   chatHistory: [],
@@ -132,7 +133,11 @@ function projectReducer(state, action) {
         deviceSelection: null,
         diagramUrl: null,
         diagramDownloadUrl: null,
+<<<<<<< HEAD
         cliConfig: null,
+=======
+        reactCode: null,
+>>>>>>> 396e2d6 (fixed 3-d topology, added KaTeX for latex rendering)
       };
 
     case 'WORKFLOW_EVENT':
@@ -164,6 +169,9 @@ function projectReducer(state, action) {
 
     case 'WORKFLOW_ERROR':
       return { ...state, workflowStatus: 'error', wsRef: null };
+
+    case 'SET_REACT_CODE':
+      return { ...state, reactCode: action.payload };
 
     default:
       return state;

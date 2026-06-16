@@ -13,12 +13,51 @@ import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { useProject } from '../context/ProjectContext';
 import { runWorkflow, resumeWorkflow, sendApproval, sendRevision, sendChatMessage, getProjectConversation, getConversationMessages, getWorkflowState } from '../services/api';
 import { marked } from 'marked';
+import katex from 'katex';
+import 'katex/dist/katex.min.css';
+import ChatbotSidebar from '../components/ChatbotSidebar';
 
 marked.setOptions({ gfm: true, breaks: true });
 
+/**
+ * renderMd — Markdown parser with full KaTeX math rendering.
+ * Extracts block math ($$...$$) and inline math ($...$) before
+ * marked processes the text, preventing markdown from breaking LaTeX.
+ */
 function renderMd(text) {
   if (!text) return '';
-  return marked.parse(text);
+
+  const mathPlaceholders = [];
+
+  // Extract and render block math: $$...$$
+  let processed = text.replace(/\$\$([\s\S]+?)\$\$/g, (_, expr) => {
+    try {
+      const html = katex.renderToString(expr.trim(), { displayMode: true, throwOnError: false });
+      mathPlaceholders.push(html);
+    } catch {
+      mathPlaceholders.push(`<span class="katex-error">$$${expr}$$</span>`);
+    }
+    return `%%MATH_BLOCK_${mathPlaceholders.length - 1}%%`;
+  });
+
+  // Extract and render inline math: $...$
+  processed = processed.replace(/\$([^\$\n]+?)\$/g, (_, expr) => {
+    try {
+      const html = katex.renderToString(expr.trim(), { displayMode: false, throwOnError: false });
+      mathPlaceholders.push(html);
+    } catch {
+      mathPlaceholders.push(`<span class="katex-error">$${expr}$</span>`);
+    }
+    return `%%MATH_BLOCK_${mathPlaceholders.length - 1}%%`;
+  });
+
+  // Run marked on the math-extracted text
+  let html = marked.parse(processed);
+
+  // Restore math placeholders into the final HTML
+  html = html.replace(/%%MATH_BLOCK_(\d+)%%/g, (_, idx) => mathPlaceholders[parseInt(idx)]);
+
+  return html;
 }
 
 const PHASE_LABELS = ['Prompt Rephrasing', 'Topology Design', 'Device Selection', 'Topology Diagram', 'CLI Config'];
@@ -37,7 +76,7 @@ export default function ProposedDesign() {
   const { state, dispatch, loadProject, getProjectList, deleteProject } = useProject();
   const [events, setEvents] = useState([]);
   const wsRef = useRef(null);
-  const [status, setStatus] = useState('idle');
+  const [status, setStatus] = useState('idle'); // idle | running | awaiting | complete | error
   const [currentPhase, setCurrentPhase] = useState(0);
   const [historyLoading, setHistoryLoading] = useState(false);
   const [historyError, setHistoryError] = useState(null);
@@ -63,7 +102,7 @@ export default function ProposedDesign() {
     eventsEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, []);
 
-  useEffect(() => { scrollToBottom(); }, [events, scrollToBottom]);
+  useEffect(() => { scrollToBottom(); }, [state.workflowEvents, scrollToBottom]);
   useEffect(() => { chatEndRef.current?.scrollIntoView({ behavior: 'smooth' }); }, [state.chatHistory]);
 
   // Load project state on mount
@@ -129,6 +168,38 @@ export default function ProposedDesign() {
           phaseEvents.push({ type: 'phase_approved', phase: p.phase });
         }
         setEvents(phaseEvents);
+    // setStatus('running');
+    //
+    // runWorkflow(state.requirements, state.solutionType, (ev) => {
+    //   dispatch({ type: 'WORKFLOW_EVENT', payload: ev });
+    //
+    //   switch (ev.type) {
+    //     case 'phase_start':
+    //       setCurrentPhase(ev.phase);
+    //       setShowFeedback(false);
+    //       break;
+    //     case 'agent_response':
+    //       if (ev.ws) setWsRef(ev.ws);
+    //       if (ev.phase === 1) dispatch({ type: 'SET_REPHRASED', payload: ev.content });
+    //       if (ev.phase === 2) dispatch({ type: 'SET_TOPOLOGY', payload: ev.content });
+    //       if (ev.phase === 3) dispatch({ type: 'SET_DEVICES', payload: ev.content });
+    //       break;
+    //     case 'approval_request':
+    //       setStatus('awaiting');
+    //       if (ev.ws) setWsRef(ev.ws);
+    //       break;
+    //     case 'topology_code_ready':
+    //       if (ev.code) {
+    //         dispatch({ type: 'SET_REACT_CODE', payload: ev.code });
+    //       }
+    //       break;
+    //     case 'phase_approved':
+    //       setStatus('running');
+    //       break;
+    //     case 'phase_revision':
+    //       setStatus('running');
+    //       setShowFeedback(false);
+    //       break;
       }
 
       // If all phases complete, stop here
@@ -202,7 +273,7 @@ export default function ProposedDesign() {
 
       const handleError = (err) => {
         setStatus('error');
-        setEvents(prev => [...prev, { type: 'error', message: err.message }]);
+        dispatch({ type: 'WORKFLOW_EVENT', payload: { type: 'error', message: err.message } });
         dispatch({ type: 'WORKFLOW_ERROR' });
       };
 
@@ -241,19 +312,6 @@ export default function ProposedDesign() {
     setFeedbackText('');
     setShowFeedback(false);
     setStatus('running');
-  }
-
-  async function handleChat(e) {
-    e.preventDefault();
-    if (!chatInput.trim()) return;
-    setSending(true);
-    dispatch({ type: 'ADD_CHAT_MESSAGE', payload: { role: 'user', content: chatInput, timestamp: new Date().toISOString() } });
-    try {
-      const res = await sendChatMessage(chatInput, state.chatHistory);
-      dispatch({ type: 'ADD_CHAT_MESSAGE', payload: res });
-    } catch (err) { console.error(err); }
-    setChatInput('');
-    setSending(false);
   }
 
   // If no workflow started and no previous results, redirect
@@ -366,52 +424,61 @@ export default function ProposedDesign() {
           })}
         </div>
 
-        {/* Scrollable content area */}
-        <div className="flex-1 overflow-y-auto px-6 pb-4 space-y-4 custom-scrollbar">
+{/*         {/* Scrollable content area */} */}
+{/*         <div className="flex-1 overflow-y-auto px-6 pb-4 space-y-4 custom-scrollbar"> */}
+{/**/}
+{/*           {/* Phase Outputs as text bubbles */} */}
+{/*           {phaseOutputs.map(p => { */}
+{/*             if (!p.content) return null; */}
+{/*             if (p.isImage) { */}
+{/*               return ( */}
+{/*                 <div key={p.phase} className="max-w-[90%]"> */}
+{/*                   <div className="text-[10px] text-outline/50 uppercase tracking-wider mb-1 px-1">Phase {p.phase} — {p.label}</div> */}
+{/*                   <div className="bg-surface-container-low rounded-lg rounded-tl-none p-3 border border-outline-variant/10"> */}
+{/*                     <img src={p.content} alt={p.label} className="max-w-full max-h-[500px] object-contain rounded" /> */}
+{/*                   </div> */}
+{/*                 </div> */}
+{/*               ); */}
+{/*             } */}
+{/*             return ( */}
+{/*               <div key={p.phase} className="max-w-[90%]"> */}
+{/*                 <div className="text-[10px] text-outline/50 uppercase tracking-wider mb-1 px-1">Phase {p.phase} — {p.label}</div> */}
+{/*                 <div className="bg-surface-container-low rounded-lg rounded-tl-none px-4 py-3 text-sm md-content border border-outline-variant/10" */}
+{/*                   dangerouslySetInnerHTML={{ __html: renderMd(p.content) }} /> */}
+{/*               </div> */}
+{/*             ); */}
+{/*           })} */}
+{/**/}
+{/*           {/* Collapsible Event Stream */} */}
+{/*           {events.length > 0 && ( */}
+{/*             <div className="bg-surface-container-low rounded-xl border border-outline-variant/15 overflow-hidden"> */}
+{/*               <button onClick={() => setShowToolEvents(!showToolEvents)} */}
+{/*                 className="w-full flex items-center justify-between px-5 py-3 text-sm text-left hover:bg-surface-container-high/30 transition-colors"> */}
+{/*                 <div className="flex items-center gap-2"> */}
+{/*                   <span className="material-symbols-outlined text-outline text-lg">list_alt</span> */}
+{/*                   <span className="font-medium text-on-surface">Event Details</span> */}
+{/*                   <span className="text-[10px] px-2 py-0.5 rounded-full bg-outline/10 text-outline font-medium">{events.length}</span> */}
+{/*                 </div> */}
+{/*                 <span className="text-outline text-sm">{showToolEvents ? '▾' : '▸'}</span> */}
+{/*               </button> */}
+{/*               {showToolEvents && ( */}
+{/*                 <div className="px-5 py-3 space-y-3 max-h-96 overflow-y-auto custom-scrollbar"> */}
+{/*                   {events.map((ev, i) => ( */}
+{/*                     <EventCard key={i} event={ev} /> */}
+{/*                   ))} */}
+{/*                 </div> */}
+{/*               )} */}
+{/*             </div> */}
+{/*           )} */}
+        {/* Interactive Topology View Button has been moved to the bottom
+             of the event stream (inside the workflow_complete EventCard)
+             for a more natural, chronological workflow UX. */}
 
-          {/* Phase Outputs as text bubbles */}
-          {phaseOutputs.map(p => {
-            if (!p.content) return null;
-            if (p.isImage) {
-              return (
-                <div key={p.phase} className="max-w-[90%]">
-                  <div className="text-[10px] text-outline/50 uppercase tracking-wider mb-1 px-1">Phase {p.phase} — {p.label}</div>
-                  <div className="bg-surface-container-low rounded-lg rounded-tl-none p-3 border border-outline-variant/10">
-                    <img src={p.content} alt={p.label} className="max-w-full max-h-[500px] object-contain rounded" />
-                  </div>
-                </div>
-              );
-            }
-            return (
-              <div key={p.phase} className="max-w-[90%]">
-                <div className="text-[10px] text-outline/50 uppercase tracking-wider mb-1 px-1">Phase {p.phase} — {p.label}</div>
-                <div className="bg-surface-container-low rounded-lg rounded-tl-none px-4 py-3 text-sm md-content border border-outline-variant/10"
-                  dangerouslySetInnerHTML={{ __html: renderMd(p.content) }} />
-              </div>
-            );
-          })}
-
-          {/* Collapsible Event Stream */}
-          {events.length > 0 && (
-            <div className="bg-surface-container-low rounded-xl border border-outline-variant/15 overflow-hidden">
-              <button onClick={() => setShowToolEvents(!showToolEvents)}
-                className="w-full flex items-center justify-between px-5 py-3 text-sm text-left hover:bg-surface-container-high/30 transition-colors">
-                <div className="flex items-center gap-2">
-                  <span className="material-symbols-outlined text-outline text-lg">list_alt</span>
-                  <span className="font-medium text-on-surface">Event Details</span>
-                  <span className="text-[10px] px-2 py-0.5 rounded-full bg-outline/10 text-outline font-medium">{events.length}</span>
-                </div>
-                <span className="text-outline text-sm">{showToolEvents ? '▾' : '▸'}</span>
-              </button>
-              {showToolEvents && (
-                <div className="px-5 py-3 space-y-3 max-h-96 overflow-y-auto custom-scrollbar">
-                  {events.map((ev, i) => (
-                    <EventCard key={i} event={ev} />
-                  ))}
-                </div>
-              )}
-            </div>
-          )}
+        {/* Events stream */}
+        <div className="flex-1 overflow-y-auto px-6 pb-6 space-y-3 custom-scrollbar">
+          {state.workflowEvents.map((ev, i) => (
+            <EventCard key={i} event={ev} />
+          ))}
 
           {/* Approval UI */}
           {status === 'awaiting' && (
@@ -507,18 +574,20 @@ export default function ProposedDesign() {
         </div>
       </div>
 
-      {/* Chat input (sticky bottom) */}
-      <div className="border-t border-outline-variant/10 px-6 py-3 shrink-0">
-        <form onSubmit={handleChat} className="flex gap-2 max-w-3xl mx-auto">
-          <input value={chatInput} onChange={e => setChatInput(e.target.value)} disabled={sending}
-            className="flex-1 bg-surface-container-low border border-outline-variant/20 rounded-lg px-3 py-2 text-sm text-on-surface placeholder:text-outline/50 focus:ring-1 focus:ring-primary"
-            placeholder="Ask about your design…" />
-          <button type="submit" disabled={sending}
-            className="w-9 h-9 bg-primary rounded-lg flex items-center justify-center text-on-primary hover:brightness-110 transition-all disabled:opacity-50 shrink-0">
-            <span className="material-symbols-outlined text-base">send</span>
-          </button>
-        </form>
-      </div>
+      {/* {/* Chat input (sticky bottom) */} */}
+      {/* <div className="border-t border-outline-variant/10 px-6 py-3 shrink-0"> */}
+      {/*   <form onSubmit={handleChat} className="flex gap-2 max-w-3xl mx-auto"> */}
+      {/*     <input value={chatInput} onChange={e => setChatInput(e.target.value)} disabled={sending} */}
+      {/*       className="flex-1 bg-surface-container-low border border-outline-variant/20 rounded-lg px-3 py-2 text-sm text-on-surface placeholder:text-outline/50 focus:ring-1 focus:ring-primary" */}
+      {/*       placeholder="Ask about your design…" /> */}
+      {/*     <button type="submit" disabled={sending} */}
+      {/*       className="w-9 h-9 bg-primary rounded-lg flex items-center justify-center text-on-primary hover:brightness-110 transition-all disabled:opacity-50 shrink-0"> */}
+      {/*       <span className="material-symbols-outlined text-base">send</span> */}
+      {/*     </button> */}
+      {/*   </form> */}
+      {/* </div> */}
+      {/* Right: Copilot Chat */}
+      <ChatbotSidebar />
     </div>
   );
 }
@@ -678,13 +747,7 @@ function EventCard({ event }) {
       );
 
     case 'workflow_complete':
-      return (
-        <div className="flex justify-center py-2">
-          <div className="px-5 py-2 rounded-full text-xs font-bold bg-tertiary/10 border border-tertiary/30 text-tertiary">
-            ✅ Workflow Complete
-          </div>
-        </div>
-      );
+      return <WorkflowCompleteCard />;
 
     case 'error':
       return (
@@ -725,4 +788,44 @@ function EventCard({ event }) {
     default:
       return null;
   }
+}
+
+
+/* ─── Workflow Complete Card ─── */
+function WorkflowCompleteCard() {
+  const navigate = useNavigate();
+
+  return (
+    <div className="mt-2 bg-tertiary/8 border border-tertiary/30 rounded-xl overflow-hidden animate-in fade-in">
+      {/* Completion badge */}
+      <div className="flex justify-center pt-5 pb-3">
+        <div className="px-5 py-1.5 rounded-full text-xs font-bold bg-tertiary/15 border border-tertiary/30 text-tertiary flex items-center gap-2">
+          <span className="material-symbols-outlined text-sm">check_circle</span>
+          Workflow Complete
+        </div>
+      </div>
+
+      {/* Interactive Topology CTA */}
+      <div className="mx-5 mb-5 bg-surface-container-low border border-tertiary/20 rounded-xl p-5 flex items-center justify-between gap-4">
+        <div className="flex items-center gap-3">
+          <div className="w-11 h-11 rounded-full bg-tertiary/15 flex items-center justify-center text-tertiary shrink-0">
+            <span className="material-symbols-outlined text-xl">schema</span>
+          </div>
+          <div>
+            <h3 className="text-sm font-bold text-on-surface">Interactive Topology Ready</h3>
+            <p className="text-xs text-on-surface-variant mt-0.5">
+              Your React-based network map has been successfully generated and validated.
+            </p>
+          </div>
+        </div>
+        <button
+          onClick={() => navigate('/interactive-topology')}
+          className="shrink-0 px-5 py-2.5 bg-tertiary text-on-tertiary font-bold rounded-lg hover:brightness-110 transition-all flex items-center gap-2 text-sm shadow-sm"
+        >
+          View Topology
+          <span className="material-symbols-outlined text-base">open_in_new</span>
+        </button>
+      </div>
+    </div>
+  );
 }

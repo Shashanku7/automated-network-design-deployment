@@ -10,13 +10,13 @@ import re
 from pathlib import Path
 
 from dotenv import load_dotenv
-from llama_index.embeddings.huggingface import HuggingFaceEmbedding
+from llama_index.embeddings.ollama import OllamaEmbedding
 from qdrant_client import QdrantClient, models
 
 # ──────────────────────────────────────────────
 # Environment
 # ──────────────────────────────────────────────
-dotenv_path = Path(__file__).resolve().parent / ".env"
+dotenv_path = Path(__file__).resolve().parent.parent / ".env"
 load_dotenv(dotenv_path=dotenv_path)
 
 QWEN_EMBEDDING_MODEL = os.getenv("QWEN_EMBEDDING_MODEL", "Qwen/Qwen3-Embedding-8B")
@@ -59,18 +59,11 @@ CONFIG_GUIDES_DIR = Path(__file__).resolve().parent / "config_guides"
 _embedding_model = None
 
 
-def get_embedding_model() -> HuggingFaceEmbedding:
-    """Return the shared embedding model, lazily initialized."""
+def get_embedding_model():
     global _embedding_model
     if _embedding_model is None:
-        _embedding_model = HuggingFaceEmbedding(
-            model_name=QWEN_EMBEDDING_MODEL,
-            trust_remote_code=True,
-            token=HUGGINGFACE_TOKEN,
-            device=os.getenv("EMBEDDING_DEVICE", "cpu"),
-            embed_batch_size=4,
-            show_progress_bar=True,
-        )
+        print("Loading Nomic embeddings via Ollama...")
+        _embedding_model = OllamaEmbedding(model_name="nomic-embed-text")
     return _embedding_model
 
 
