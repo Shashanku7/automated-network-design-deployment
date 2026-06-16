@@ -41,23 +41,27 @@ async def generate_diagram_via_service(diagram_code: str) -> dict:
         return resp.json()
 
 
-async def generate_topology_code(llm_output: str) -> dict:
+async def generate_topology_code(llm_output: str, topology_text: str = "", bom_text: str = "") -> dict:
     """Send Agent 4's raw LLM output to the topology_generation gatekeeper.
     
     Returns dict with:
-      {'status': 'ok',    'code': '<clean React JSX>'}   on success
-      {'status': 'error', 'message': '<error details>'}  on failure
+      {'status': 'ok',    'code': '<clean React Flow JSON string>'}   on success
+      {'status': 'error', 'message': '<error details>'}               on failure
     """
     import httpx
     async with httpx.AsyncClient(timeout=30.0) as client:
         resp = await client.post(
             f"{TOPOLOGY_SERVICE_URL}/api/validate-topology",
-            json={"llm_output": llm_output},
+            json={
+                "llm_output": llm_output,
+                "topology_text": topology_text,
+                "bom_text": bom_text
+            },
         )
         resp.raise_for_status()
         return resp.json()
 
-def save_run(prompt, rephrased, topology, devices, diagram_code="", diagram_url=None):
+def save_run(prompt, rephrased, topology, devices, react_code="", diagram_url=None):
     ts = datetime.now()
     fp = OUTPUT_DIR / f"{ts:%Y-%m-%d_%H-%M-%S}_run.md"
     content = (
@@ -66,7 +70,7 @@ def save_run(prompt, rephrased, topology, devices, diagram_code="", diagram_url=
         f"## Phase 1: Rephrased Prompt\n\n{strip_ansi(rephrased)}\n\n---\n\n"
         f"## Phase 2: Network Topology\n\n{strip_ansi(topology)}\n\n---\n\n"
         f"## Phase 3: Device Selection & BOM\n\n{strip_ansi(devices)}\n\n---\n\n"
-        f"## Phase 4: D2 Diagram Code\n\n```d2\n{strip_ansi(diagram_code)}\n```\n"
+        f"## Phase 4: React Topology Code\n\n```jsx\n{strip_ansi(react_code)}\n```\n"
     )
     if diagram_url:
         content += f"\n---\n\n## Topology Diagram\n\nGenerated diagram: `{diagram_url}`\n"

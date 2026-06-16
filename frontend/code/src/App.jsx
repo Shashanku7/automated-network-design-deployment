@@ -15,6 +15,7 @@ import Requirements from './pages/Requirements';
 import ProposedDesign from './pages/ProposedDesign';
 import BillOfMaterials from './pages/BillOfMaterials';
 import DetailedTopology from './pages/DetailedTopology';
+import InteractiveTopology from './pages/InteractiveTopology';
 import Deployment from './pages/Deployment';
 
 export default function App() {
@@ -29,6 +30,7 @@ export default function App() {
             <Route path="design" element={<ProposedDesign />} />
             <Route path="bom" element={<BillOfMaterials />} />
             <Route path="topology" element={<DetailedTopology />} />
+            <Route path="interactive-topology" element={<InteractiveTopology />} />
             <Route path="deployment" element={<Deployment />} />
           </Route>
         </Routes>

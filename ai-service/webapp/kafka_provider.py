@@ -20,8 +20,14 @@ class KafkaProvider:
             bootstrap_servers=KAFKA_BOOTSTRAP_SERVERS,
             value_serializer=lambda v: json.dumps(v).encode('utf-8')
         )
-        await self.consumer.start()
-        await self.producer.start()
+        try:
+            await self.consumer.start()
+            await self.producer.start()
+            print("Kafka successfully connected.")
+        except Exception as e:
+            print(f"Warning: Failed to connect to Kafka at {KAFKA_BOOTSTRAP_SERVERS}. Ensure Kafka is running if you need event streaming. ({e})")
+            self.consumer = None
+            self.producer = None
 
     async def stop(self):
         self._stop_event.set()
@@ -35,6 +41,8 @@ class KafkaProvider:
             await self.producer.send_and_wait(TOPIC_AGENT_EVENTS, event_data)
 
     async def listen_tasks(self, callback):
+        if not self.consumer:
+            return
         try:
             async for msg in self.consumer:
                 if self._stop_event.is_set():

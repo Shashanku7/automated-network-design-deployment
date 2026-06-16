@@ -1,5 +1,5 @@
 from llama_index.core.agent.workflow import FunctionAgent
-from webapp.config import llm, llm_qwen_coder
+from webapp.config import llm
 from webapp.tools import firecrawl_search_tool, catalog_tool, product_search_tool, broad_search_tool
 
 agent1 = FunctionAgent(
@@ -39,65 +39,92 @@ agent3 = FunctionAgent(
 
 agent4 = FunctionAgent(
     name="react_topology_architect",
-    description="Generates an interactive React Flow network topology diagram from topology and BOM text.",
+    description="Generates raw nodes and edges JSON data for a React Flow network topology diagram from topology and BOM text.",
     system_prompt=(
-        "You are a React Flow Network Diagram Architect.\n"
-        "Read the topology description and BOM table provided, then write a complete, self-contained "
-        "React component that renders an interactive network diagram using React Flow.\n\n"
+        "You are a Network Topology Data Generator.\n"
+        "Read the topology description and BOM table provided, and generate the JSON data representing "
+        "the nodes and edges for an interactive network diagram in React Flow.\n\n"
 
         "## STRICT RULES\n"
-        "1. You may ONLY import from 'react' and 'reactflow'. No other libraries.\n"
-        "2. Always include: import ReactFlow, { Background, Controls, MiniMap } from 'reactflow';\n"
-        "3. Always include: import 'reactflow/dist/style.css';\n"
-        "4. The component MUST be named: export default function App() { ... }\n"
-        "5. Output ONLY a valid JSON object — no explanation, no markdown, no extra text.\n"
-        "   Format: {\"code\": \"<full React component as a properly escaped JSON string>\"}\n\n"
+        "1. Output ONLY a valid JSON object. Do not include any explanations, preambles, postambles, or markdown code block fences.\n"
+        "2. The JSON object MUST contain exactly two keys: 'nodes' and 'edges'.\n"
+        "3. Node format:\n"
+        "   {\n"
+        "     \"nodes\": [\n"
+        "       {\n"
+        "         \"id\": \"node_id\",\n"
+        "         \"type\": \"custom\",\n"
+        "         \"position\": { \"x\": 100, \"y\": 200 },\n"
+        "         \"data\": {\n"
+        "           \"iconType\": \"Switch\",\n"
+        "           \"label\": \"Device Name\\nIP Address\\nRole / VLAN\"\n"
+        "         }\n"
+        "       }\n"
+        "     ],\n"
+        "     \"edges\": [\n"
+        "       {\n"
+        "         \"id\": \"edge_id\",\n"
+        "         \"source\": \"source_node_id\",\n"
+        "         \"target\": \"target_node_id\",\n"
+        "         \"style\": { \"stroke\": \"#00A3AD\", \"strokeWidth\": 2 },\n"
+        "         \"label\": \"10G\",\n"
+        "         \"animated\": true\n"
+        "       }\n"
+        "     ]\n"
+        "   }\n\n"
+
+        "## NODE ICON TYPE RULES\n"
+        "Set 'iconType' in the data object to match the device role. NEVER omit iconType:\n"
+        "- \"Cloud\"   -> WAN link / Internet cloud node\n"
+        "- \"Gateway\" -> Firewall, Router, or Edge device\n"
+        "- \"Chassis\" -> Core switch or Spine switch (large chassis)\n"
+        "- \"Switch\"  -> Distribution switch, Leaf switch, or Access switch\n"
+        "- \"AP\"      -> Wireless Access Point or grouped Endpoint node\n"
+        "- \"Server\"  -> Server, NVR, Host\n"
+        "- \"Laptop\"  -> Laptops, Workstations, User Devices\n"
+        "- \"Phone\"   -> VoIP Phones\n"
+        "- \"Printer\" -> Printers\n"
+        "- \"IPTV\"    -> IPTVs, Monitors, Displays\n"
+        "- \"Camera\"  -> CCTV, Security Cameras\n"
+        "- \"WLC\"     -> Wireless LAN Controllers\n"
+        "- \"NAC\"     -> Network Access Control (ClearPass, ISE)\n"
+        "- \"IoT\"     -> Smart sensors, HVAC, Door controllers\n"
+        "- \"Storage\" -> Storage Arrays, SAN, NAS\n"
+        "- \"LoadBalancer\" -> Load Balancers, ADCs, F5\n\n"
 
         "## LAYOUT RULES\n"
         "IF the input describes a CAMPUS (buildings, floors, students, staff, VoIP):\n"
         "  - Top-to-bottom hierarchical tree layout.\n"
-        "  - Core switches: y=0, centered horizontally.\n"
-        "  - Distribution switches: y=160, one pair per building, spaced 320px apart.\n"
-        "  - Access switches: y=320, one per floor, spaced 160px apart under their building.\n"
-        "  - Endpoints (APs, phones): y=480.\n\n"
+        "  - Core switches (iconType: Chassis): y=0, centered horizontally.\n"
+        "  - Distribution switches (iconType: Switch): y=160, one pair per building, spaced 320px apart.\n"
+        "  - WLCs and NACs (iconType: WLC, NAC): y=160, placed near the core or distribution layer.\n"
+        "  - Access switches (iconType: Switch): y=320, one per floor, spaced 160px apart under their building.\n"
+        "  - Endpoints/APs (iconType: AP, Laptop, Phone, Printer, IPTV, Camera, IoT): y=480.\n"
+        "  - When placing multiple individual end devices horizontally under a switch, you MUST space them at least 150px apart on the X-axis so their SVG icons do not visually overlap.\n\n"
         "IF the input describes a DATA CENTER (racks, servers, spine, leaf):\n"
         "  - Spine-Leaf mesh layout.\n"
-        "  - Spine switches: y=0, spaced 220px apart in a horizontal row, centered.\n"
-        "  - Leaf switches: y=220, spaced 220px apart in a horizontal row.\n"
-        "  - Servers: y=440, grouped under their leaf switches.\n"
+        "  - Spine switches (iconType: Chassis): y=0, spaced 220px apart in a horizontal row, centered.\n"
+        "  - Load Balancers (iconType: LoadBalancer): y=110, placed between spine and leaf.\n"
+        "  - Leaf switches (iconType: Switch): y=220, spaced 220px apart in a horizontal row.\n"
+        "  - Servers and Storage (iconType: Server, Storage): y=440, grouped under their leaf switches.\n"
         "  - EVERY Leaf switch MUST have an edge to EVERY Spine switch (full mesh).\n\n"
 
-        "## NODE STYLING\n"
-        "Use the 'style' property on each node object. All nodes need: borderRadius:8, padding:10, fontSize:11, color:'#ffffff'.\n"
-        "- Core / Spine:        background:'#1a1a2e', border:'2px solid #e94560'\n"
-        "- Distribution / Leaf: background:'#0f3460', border:'2px solid #533483'\n"
-        "- Access:              background:'#533483', border:'2px solid #e94560'\n"
-        "- Endpoints / Servers: background:'#2d4059', border:'2px solid #4ecca3'\n"
-        "Include device model, VLAN, and IP in the node label using \\n for line breaks.\n\n"
+        "## LABEL FORMAT\n"
+        "Set 'label' in data to a 3-line string using \\n:\n"
+        "  Line 1: Device model name (e.g., 'CX 6405')\n"
+        "  Line 2: IP address (e.g., '10.10.10.1')\n"
+        "  Line 3: Role and VLAN (e.g., 'Core / VLAN 10')\n\n"
 
         "## EDGE STYLING\n"
         "Use the 'style' and 'label' properties on each edge object.\n"
-        "- Core uplinks:    style:{ stroke:'#e94560', strokeWidth:3 }, label: link speed (e.g. '10G')\n"
-        "- Dist links:      style:{ stroke:'#533483', strokeWidth:2 }, label: 'LAG'\n"
-        "- Access links:    style:{ stroke:'#4ecca3', strokeWidth:1.5 }, label: '1G'\n"
-        "- animated: true on all uplink edges.\n\n"
+        "- Core/Spine uplinks: style:{ stroke:'#FF8300', strokeWidth:3 }, label: link speed (e.g. '100G'), animated: true\n"
+        "- Dist/Leaf links:    style:{ stroke:'#00A3AD', strokeWidth:2 }, label: 'LAG', animated: true\n"
+        "- Access links:       style:{ stroke:'#8b949e', strokeWidth:1.5 }, label: '1G'\n\n"
 
-        "## REQUIRED APP STRUCTURE\n"
-        "const nodes = [ /* one node per device extracted from the topology and BOM */ ];\n"
-        "const edges = [ /* one edge per link described in the topology */ ];\n"
-        "export default function App() {\n"
-        "  return (\n"
-        "    <div style={{width:'100vw',height:'100vh',background:'#0d1117'}}>\n"
-        "      <ReactFlow nodes={nodes} edges={edges} fitView>\n"
-        "        <Background color='#21262d' gap={16} />\n"
-        "        <Controls />\n"
-        "        <MiniMap nodeStrokeColor='#e94560' nodeColor='#0f3460' />\n"
-        "      </ReactFlow>\n"
-        "    </div>\n"
-        "  );\n"
-        "}"
+        "## CRITICAL CONSTRAINTS\n"
+        "NEVER generate nodes for passive components like DAC cables, fiber optics, transceivers, or software licenses. Only draw active powered network devices. Cables must only be represented as Edges (link speeds), never as standalone Nodes.\n"
     ),
-    llm=llm_qwen_coder,
+    llm=llm,
 )
 
 PHASES = [
@@ -106,4 +133,3 @@ PHASES = [
     (3, "Device Selection & BOM", agent3),
     (4, "React Topology Generation", agent4),
 ]
-

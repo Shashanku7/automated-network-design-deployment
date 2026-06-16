@@ -114,11 +114,11 @@ export function runWorkflow(requirements, solutionType, onEvent) {
 
         if (data.type === 'phase_start') currentPhase = data.phase;
 
-        // Capture agent responses per phase
         if (data.type === 'agent_response') {
           let content = data.content || '';
           if (content.startsWith('assistant: ')) content = content.slice(11);
           data.content = content;
+          data.phase = currentPhase;
 
           if (currentPhase === 1) results.rephrased = content;
           else if (currentPhase === 2) results.topology = content;
@@ -175,9 +175,9 @@ export function sendRevision(ws, feedback) {
  * Send a message to the Grounded Design Copilot (AI chatbot).
  * Uses a separate WebSocket for follow-up chat.
  */
-export async function sendChatMessage(message, history = []) {
+export async function sendChatMessage(message, history = [], screenContext = "") {
   try {
-    const res = await API.post('/chat', { message, history });
+    const res = await API.post('/chat', { message, history, screenContext });
     return res.data;
   } catch {
     // Fallback stub if chat endpoint not ready

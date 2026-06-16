@@ -6,9 +6,8 @@
 # To stop everything, just close the 3 terminal windows it opens.
 
 $ROOT     = Split-Path -Parent $MyInvocation.MyCommand.Path
-$PYTHON   = "C:\Users\BMSCECSE\AppData\Local\Programs\Python\Python310\python.exe"
-$NPM      = "C:\Program Files\nodejs\npm.cmd"
-$NODE_DIR = "C:\Program Files\nodejs"
+$PYTHON   = if ($env:PYTHON_EXE) { $env:PYTHON_EXE } else { "python" }
+$NPM      = "npm"
 
 Write-Host ""
 Write-Host "========================================" -ForegroundColor Cyan
@@ -21,11 +20,20 @@ Write-Host "[1/3] Starting Topology Gatekeeper on port 8002..." -ForegroundColor
 $topoDir = Join-Path $ROOT "topology_generation"
 Start-Process powershell -ArgumentList @(
     "-NoExit",
+    "-ExecutionPolicy", "Bypass",
     "-Command",
     "& {
         Set-Location '$topoDir';
         Write-Host 'Topology Gatekeeper (Port 8002)' -ForegroundColor Cyan;
-        & '$PYTHON' -m uvicorn app:app --port 8002 --reload
+        `$VENV = Join-Path '$topoDir' '.venv';
+        `$VENV_PY = Join-Path `$VENV 'Scripts\python.exe';
+        if (-not (Test-Path `$VENV_PY)) {
+            Write-Host 'Creating venv for Gatekeeper...' -ForegroundColor Yellow;
+            & '$PYTHON' -m venv `$VENV;
+        }
+        Write-Host 'Installing Gatekeeper dependencies...' -ForegroundColor Yellow;
+        & `$VENV_PY -m pip install --quiet -r requirements.txt;
+        & `$VENV_PY -m uvicorn app:app --port 8002 --reload
     }"
 )
 
@@ -38,6 +46,7 @@ $aiScript = Join-Path $aiDir "start_ai_service.ps1"
 
 Start-Process powershell -ArgumentList @(
     "-NoExit",
+    "-ExecutionPolicy", "Bypass",
     "-Command",
     "& '$aiScript'"
 )
@@ -49,11 +58,15 @@ Write-Host "[3/3] Starting Frontend on port 5173..." -ForegroundColor Yellow
 $frontendDir = Join-Path $ROOT "frontend\code"
 Start-Process powershell -ArgumentList @(
     "-NoExit",
+    "-ExecutionPolicy", "Bypass",
     "-Command",
     "& {
-        `$env:PATH = 'C:\Program Files\nodejs;' + `$env:PATH;
         Set-Location '$frontendDir';
         Write-Host 'Frontend Dev Server (Port 5173)' -ForegroundColor Cyan;
+        if (-not (Test-Path 'node_modules')) {
+            Write-Host 'Installing Node dependencies...' -ForegroundColor Yellow;
+            & '$NPM' install;
+        }
         & '$NPM' run dev
     }"
 )

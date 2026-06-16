@@ -13,27 +13,61 @@ import { useNavigate } from 'react-router-dom';
 import { useProject } from '../context/ProjectContext';
 import { runWorkflow, sendApproval, sendRevision, sendChatMessage } from '../services/api';
 import { marked } from 'marked';
-import SandpackViewer from '../components/SandpackViewer';
+import katex from 'katex';
+import 'katex/dist/katex.min.css';
+import ChatbotSidebar from '../components/ChatbotSidebar';
 
 marked.setOptions({ gfm: true, breaks: true });
 
+/**
+ * renderMd — Markdown parser with full KaTeX math rendering.
+ * Extracts block math ($$...$$) and inline math ($...$) before
+ * marked processes the text, preventing markdown from breaking LaTeX.
+ */
 function renderMd(text) {
   if (!text) return '';
-  return marked.parse(text);
+
+  const mathPlaceholders = [];
+
+  // Extract and render block math: $$...$$
+  let processed = text.replace(/\$\$([\s\S]+?)\$\$/g, (_, expr) => {
+    try {
+      const html = katex.renderToString(expr.trim(), { displayMode: true, throwOnError: false });
+      mathPlaceholders.push(html);
+    } catch {
+      mathPlaceholders.push(`<span class="katex-error">$$${expr}$$</span>`);
+    }
+    return `%%MATH_BLOCK_${mathPlaceholders.length - 1}%%`;
+  });
+
+  // Extract and render inline math: $...$
+  processed = processed.replace(/\$([^\$\n]+?)\$/g, (_, expr) => {
+    try {
+      const html = katex.renderToString(expr.trim(), { displayMode: false, throwOnError: false });
+      mathPlaceholders.push(html);
+    } catch {
+      mathPlaceholders.push(`<span class="katex-error">$${expr}$</span>`);
+    }
+    return `%%MATH_BLOCK_${mathPlaceholders.length - 1}%%`;
+  });
+
+  // Run marked on the math-extracted text
+  let html = marked.parse(processed);
+
+  // Restore math placeholders into the final HTML
+  html = html.replace(/%%MATH_BLOCK_(\d+)%%/g, (_, idx) => mathPlaceholders[parseInt(idx)]);
+
+  return html;
 }
 
 export default function ProposedDesign() {
   const navigate = useNavigate();
   const { state, dispatch } = useProject();
-  const [events, setEvents] = useState([]);
   const [wsRef, setWsRef] = useState(null);
   const [status, setStatus] = useState('idle'); // idle | running | awaiting | complete | error
   const [currentPhase, setCurrentPhase] = useState(0);
   const [feedbackText, setFeedbackText] = useState('');
   const [showFeedback, setShowFeedback] = useState(false);
-  const [chatInput, setChatInput] = useState('');
-  const [sending, setSending] = useState(false);
-  const [reactCode, setReactCode] = useState(null);
   const eventsEndRef = useRef(null);
   const hasStarted = useRef(false);
 
@@ -41,17 +75,16 @@ export default function ProposedDesign() {
     eventsEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, []);
 
-  useEffect(() => { scrollToBottom(); }, [events, scrollToBottom]);
+  useEffect(() => { scrollToBottom(); }, [state.workflowEvents, scrollToBottom]);
 
   // Start workflow on mount if flagged
   useEffect(() => {
     if (state.workflowStatus !== 'running' || hasStarted.current) return;
     hasStarted.current = true;
     setStatus('running');
-    setEvents([]);
 
     runWorkflow(state.requirements, state.solutionType, (ev) => {
-      setEvents(prev => [...prev, ev]);
+      dispatch({ type: 'WORKFLOW_EVENT', payload: ev });
 
       switch (ev.type) {
         case 'phase_start':
@@ -60,14 +93,18 @@ export default function ProposedDesign() {
           break;
         case 'agent_response':
           if (ev.ws) setWsRef(ev.ws);
-          // Store per-phase result
+          if (ev.phase === 1) dispatch({ type: 'SET_REPHRASED', payload: ev.content });
+          if (ev.phase === 2) dispatch({ type: 'SET_TOPOLOGY', payload: ev.content });
+          if (ev.phase === 3) dispatch({ type: 'SET_DEVICES', payload: ev.content });
           break;
         case 'approval_request':
           setStatus('awaiting');
           if (ev.ws) setWsRef(ev.ws);
           break;
         case 'topology_code_ready':
-          setReactCode(ev.code || null);
+          if (ev.code) {
+            dispatch({ type: 'SET_REACT_CODE', payload: ev.code });
+          }
           break;
         case 'phase_approved':
           setStatus('running');
@@ -99,37 +136,24 @@ export default function ProposedDesign() {
       })
       .catch((err) => {
         setStatus('error');
-        setEvents(prev => [...prev, { type: 'error', message: err.message }]);
+        dispatch({ type: 'WORKFLOW_EVENT', payload: { type: 'error', message: err.message } });
         dispatch({ type: 'WORKFLOW_ERROR' });
       });
   }, [state.workflowStatus, state.requirements, state.solutionType, dispatch]);
 
   function handleApprove() {
     sendApproval(wsRef);
-    setEvents(prev => [...prev, { type: 'user_action', content: '✅ Approved' }]);
+    dispatch({ type: 'WORKFLOW_EVENT', payload: { type: 'user_action', content: '✅ Approved' } });
     setStatus('running');
   }
 
   function handleRevise() {
     if (!feedbackText.trim()) return;
     sendRevision(wsRef, feedbackText.trim());
-    setEvents(prev => [...prev, { type: 'user_action', content: feedbackText.trim() }]);
+    dispatch({ type: 'WORKFLOW_EVENT', payload: { type: 'user_action', content: feedbackText.trim() } });
     setFeedbackText('');
     setShowFeedback(false);
     setStatus('running');
-  }
-
-  async function handleChat(e) {
-    e.preventDefault();
-    if (!chatInput.trim()) return;
-    setSending(true);
-    dispatch({ type: 'ADD_CHAT_MESSAGE', payload: { role: 'user', content: chatInput, timestamp: new Date().toISOString() } });
-    try {
-      const res = await sendChatMessage(chatInput, state.chatHistory);
-      dispatch({ type: 'ADD_CHAT_MESSAGE', payload: res });
-    } catch (err) { console.error(err); }
-    setChatInput('');
-    setSending(false);
   }
 
   // If no workflow started and no previous results, redirect
@@ -194,26 +218,13 @@ export default function ProposedDesign() {
           ))}
         </div>
 
-        {/* Interactive Topology Viewer (shown when react code is ready) */}
-        {reactCode && (
-          <div className="mx-6 mb-4 rounded-xl overflow-hidden border border-tertiary/30" style={{ height: '480px' }}>
-            <div className="flex items-center justify-between px-4 py-2 bg-surface-container border-b border-tertiary/15">
-              <div className="flex items-center gap-2">
-                <span className="material-symbols-outlined text-tertiary text-lg">schema</span>
-                <span className="text-sm font-bold text-on-surface">Interactive Network Topology</span>
-                <span className="text-[10px] px-2 py-0.5 rounded-full bg-tertiary/20 text-tertiary font-medium">LIVE</span>
-              </div>
-              <span className="text-xs text-on-surface-variant">Pan · Zoom · Hover nodes for details</span>
-            </div>
-            <div style={{ height: 'calc(100% - 40px)' }}>
-              <SandpackViewer reactCode={reactCode} />
-            </div>
-          </div>
-        )}
+        {/* Interactive Topology View Button has been moved to the bottom
+             of the event stream (inside the workflow_complete EventCard)
+             for a more natural, chronological workflow UX. */}
 
         {/* Events stream */}
         <div className="flex-1 overflow-y-auto px-6 pb-6 space-y-3 custom-scrollbar">
-          {events.map((ev, i) => (
+          {state.workflowEvents.map((ev, i) => (
             <EventCard key={i} event={ev} />
           ))}
 
@@ -263,50 +274,7 @@ export default function ProposedDesign() {
       </div>
 
       {/* Right: Copilot Chat */}
-      <aside className="w-96 border-l border-outline-variant/15 flex flex-col bg-surface-dim">
-        <div className="p-4 border-b border-outline-variant/10 flex items-center gap-3">
-          <div className="w-9 h-9 rounded-lg bg-primary/10 flex items-center justify-center">
-            <span className="material-symbols-outlined text-primary">smart_toy</span>
-          </div>
-          <div>
-            <div className="text-sm font-bold text-on-surface">Design Copilot</div>
-            <div className="text-xs text-on-surface-variant">Ask about your network design</div>
-          </div>
-        </div>
-
-        <div className="flex-1 overflow-y-auto p-4 space-y-3 custom-scrollbar">
-          <div className="bg-surface-container-low rounded-lg p-3 border border-outline-variant/10">
-            <p className="text-xs text-on-surface-variant italic">
-              ✅ Your requirements have been loaded. Ask me anything about your design, or request changes.
-            </p>
-          </div>
-          {state.chatHistory.map((msg, i) => (
-            <div key={i} className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}>
-              <div className={`max-w-[85%] rounded-lg px-4 py-3 text-sm ${
-                msg.role === 'user'
-                  ? 'bg-surface-container-high text-on-surface rounded-tr-none'
-                  : 'bg-surface-container-low border border-outline-variant/10 text-on-surface rounded-tl-none md-content'
-              }`}
-                dangerouslySetInnerHTML={msg.role !== 'user' ? { __html: renderMd(msg.content) } : undefined}
-              >
-                {msg.role === 'user' ? msg.content : undefined}
-              </div>
-            </div>
-          ))}
-        </div>
-
-        <form onSubmit={handleChat} className="p-4 border-t border-outline-variant/10">
-          <div className="flex gap-2">
-            <input value={chatInput} onChange={e => setChatInput(e.target.value)} disabled={sending}
-              className="flex-1 bg-surface-container-low border border-outline-variant/20 rounded-lg px-4 py-2.5 text-sm text-on-surface placeholder:text-outline/50 focus:ring-1 focus:ring-primary"
-              placeholder="Ask about your design…" />
-            <button type="submit" disabled={sending}
-              className="w-10 h-10 bg-primary rounded-lg flex items-center justify-center text-on-primary hover:brightness-110 transition-all disabled:opacity-50">
-              <span className="material-symbols-outlined text-lg">send</span>
-            </button>
-          </div>
-        </form>
-      </aside>
+      <ChatbotSidebar />
     </div>
   );
 }
@@ -448,13 +416,7 @@ function EventCard({ event }) {
       );
 
     case 'workflow_complete':
-      return (
-        <div className="flex justify-center py-2">
-          <div className="px-5 py-2 rounded-full text-xs font-bold bg-tertiary/10 border border-tertiary/30 text-tertiary">
-            ✅ Workflow Complete
-          </div>
-        </div>
-      );
+      return <WorkflowCompleteCard />;
 
     case 'error':
       return (
@@ -495,4 +457,44 @@ function EventCard({ event }) {
     default:
       return null;
   }
+}
+
+
+/* ─── Workflow Complete Card ─── */
+function WorkflowCompleteCard() {
+  const navigate = useNavigate();
+
+  return (
+    <div className="mt-2 bg-tertiary/8 border border-tertiary/30 rounded-xl overflow-hidden animate-in fade-in">
+      {/* Completion badge */}
+      <div className="flex justify-center pt-5 pb-3">
+        <div className="px-5 py-1.5 rounded-full text-xs font-bold bg-tertiary/15 border border-tertiary/30 text-tertiary flex items-center gap-2">
+          <span className="material-symbols-outlined text-sm">check_circle</span>
+          Workflow Complete
+        </div>
+      </div>
+
+      {/* Interactive Topology CTA */}
+      <div className="mx-5 mb-5 bg-surface-container-low border border-tertiary/20 rounded-xl p-5 flex items-center justify-between gap-4">
+        <div className="flex items-center gap-3">
+          <div className="w-11 h-11 rounded-full bg-tertiary/15 flex items-center justify-center text-tertiary shrink-0">
+            <span className="material-symbols-outlined text-xl">schema</span>
+          </div>
+          <div>
+            <h3 className="text-sm font-bold text-on-surface">Interactive Topology Ready</h3>
+            <p className="text-xs text-on-surface-variant mt-0.5">
+              Your React-based network map has been successfully generated and validated.
+            </p>
+          </div>
+        </div>
+        <button
+          onClick={() => navigate('/interactive-topology')}
+          className="shrink-0 px-5 py-2.5 bg-tertiary text-on-tertiary font-bold rounded-lg hover:brightness-110 transition-all flex items-center gap-2 text-sm shadow-sm"
+        >
+          View Topology
+          <span className="material-symbols-outlined text-base">open_in_new</span>
+        </button>
+      </div>
+    </div>
+  );
 }

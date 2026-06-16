@@ -3,7 +3,7 @@
 # Handles venv creation, dependency install, and uvicorn startup.
 
 $AI_DIR = Split-Path -Parent $MyInvocation.MyCommand.Path
-$PYTHON  = "C:\Users\BMSCECSE\AppData\Local\Programs\Python\Python310\python.exe"
+$PYTHON  = if ($env:PYTHON_EXE) { $env:PYTHON_EXE } else { "python" }
 $VENV    = Join-Path $AI_DIR ".venv"
 $VENV_PY = Join-Path $VENV "Scripts\python.exe"
 $VENV_PIP = Join-Path $VENV "Scripts\pip.exe"
@@ -18,18 +18,22 @@ if (-not (Test-Path $VENV_PY)) {
 }
 
 # Always ensure required packages are installed
-Write-Host "Verifying dependencies..." -ForegroundColor Yellow
-& $VENV_PIP install --quiet `
-    fastapi `
-    "uvicorn[standard]" `
-    httpx `
-    python-dotenv `
-    llama-index `
-    llama-index-llms-ollama `
-    llama-index-embeddings-huggingface `
-    firecrawl-py `
-    qdrant-client `
-    numpy
+    Write-Host "Installing base ML dependencies (torch)..." -ForegroundColor Yellow
+    & $VENV_PY -m pip install numpy torch
+
+    Write-Host "Installing remaining dependencies..." -ForegroundColor Yellow
+    & $VENV_PY -m pip install `
+        fastapi `
+        "uvicorn[standard]" `
+        httpx `
+        python-dotenv `
+        llama-index `
+        llama-index-llms-ollama `
+        llama-index-embeddings-ollama `
+        firecrawl-py `
+        qdrant-client `
+        llama-index-vector-stores-qdrant `
+        aiokafka
 
 if ($LASTEXITCODE -ne 0) {
     Write-Host "Warning: Some packages may have failed to install." -ForegroundColor Red

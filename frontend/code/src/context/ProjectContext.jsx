@@ -49,6 +49,7 @@ const initialState = {
   deviceSelection: null,
   diagramUrl: null,
   diagramDownloadUrl: null,
+  reactCode: null,
 
   // Legacy compat
   proposedDesign: null,
@@ -88,6 +89,7 @@ function projectReducer(state, action) {
         deviceSelection: null,
         diagramUrl: null,
         diagramDownloadUrl: null,
+        reactCode: null,
       };
 
     case 'WORKFLOW_EVENT':
@@ -124,6 +126,9 @@ function projectReducer(state, action) {
 
     case 'WORKFLOW_ERROR':
       return { ...state, workflowStatus: 'error', wsRef: null };
+
+    case 'SET_REACT_CODE':
+      return { ...state, reactCode: action.payload };
 
     default:
       return state;
