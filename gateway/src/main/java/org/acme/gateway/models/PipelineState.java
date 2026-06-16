@@ -3,75 +3,21 @@ package org.acme.gateway.models;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
+import lombok.Getter;
+import lombok.Setter;
 
 public class PipelineState {
-  private final UUID projectId;
-  private int currentPhase = 1;
-  private final List<AgentTask.ChatMessage> history = new ArrayList<>();
-  private String lastOutput = "";
-  private String rephrasedPrompt = "";
-  private String topologyDesign = "";
-  private String billOfMaterials = "";
-  private String d2Diagram = "";
+  @Getter private final UUID projectId;
+  @Getter @Setter private int currentPhase = 1;
+  @Getter private final List<AgentTask.ChatMessage> history = new ArrayList<>();
+  @Getter @Setter private String lastOutput = "";
+  @Getter @Setter private String rephrasedPrompt = "";
+  @Getter @Setter private String topologyDesign = "";
+  @Getter @Setter private String billOfMaterials = "";
+  @Getter @Setter private String d2Diagram = "";
 
   public PipelineState(UUID projectId) {
     this.projectId = projectId;
-  }
-
-  public UUID getProjectId() {
-    return projectId;
-  }
-
-  public int getCurrentPhase() {
-    return currentPhase;
-  }
-
-  public void setCurrentPhase(int phase) {
-    this.currentPhase = phase;
-  }
-
-  public List<AgentTask.ChatMessage> getHistory() {
-    return history;
-  }
-
-  public String getLastOutput() {
-    return lastOutput;
-  }
-
-  public void setLastOutput(String output) {
-    this.lastOutput = output;
-  }
-
-  public String getRephrasedPrompt() {
-    return rephrasedPrompt;
-  }
-
-  public void setRephrasedPrompt(String rephrasedPrompt) {
-    this.rephrasedPrompt = rephrasedPrompt;
-  }
-
-  public String getTopologyDesign() {
-    return topologyDesign;
-  }
-
-  public void setTopologyDesign(String topologyDesign) {
-    this.topologyDesign = topologyDesign;
-  }
-
-  public String getBillOfMaterials() {
-    return billOfMaterials;
-  }
-
-  public void setBillOfMaterials(String billOfMaterials) {
-    this.billOfMaterials = billOfMaterials;
-  }
-
-  public String getD2Diagram() {
-    return d2Diagram;
-  }
-
-  public void setD2Diagram(String d2Diagram) {
-    this.d2Diagram = d2Diagram;
   }
 
   public String buildInputContext() {

@@ -4,6 +4,7 @@ import module java.base;
 
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.inject.Inject;
+import lombok.extern.java.Log;
 import org.acme.gateway.APIWebSocket;
 import org.acme.gateway.models.AgentEvent;
 import org.acme.gateway.models.AgentTask;
@@ -12,6 +13,7 @@ import org.eclipse.microprofile.reactive.messaging.Emitter;
 import org.eclipse.microprofile.reactive.messaging.Incoming;
 
 @ApplicationScoped
+@Log
 public class KafkaService {
   @Inject
   @Channel("agent-tasks")
@@ -24,8 +26,8 @@ public class KafkaService {
     var state = pipelineManager.getOrCreateState(projectId);
     state.setLastOutput(message);
     state.getHistory().add(new AgentTask.ChatMessage(AgentTask.ChatMessage.Role.USER, message));
-
     var task = pipelineManager.createNextTask(projectId);
+    log.info("Log Task:" + task.toString());
     taskEmitter.send(task);
   }
 
