@@ -37,6 +37,10 @@ public class PipelineManager {
       case 3 -> state.setBillOfMaterials(output);
       case 4 -> state.setD2Diagram(output);
     }
+    // Advance for next phase (1→2, 2→3, ..., 5→6 means done)
+    if (state.getCurrentPhase() <= 5) {
+      state.setCurrentPhase(state.getCurrentPhase() + 1);
+    }
   }
 
   private String getAgentTarget(int phase) {
