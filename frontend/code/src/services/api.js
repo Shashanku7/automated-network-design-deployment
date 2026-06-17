@@ -171,7 +171,8 @@ export function runWorkflow(projectId, requirements, solutionType, onEvent) {
         }
 
         if (event_type === 'TOOL_RESULT') {
-          onEvent({ type: 'tool_result', tool_name: agent_name, output: data || '' });
+          const toolOutput = payload?.output || data || '';
+          onEvent({ type: 'tool_result', tool_name: agent_name, output: toolOutput, payload });
         }
 
         if (event_type === 'ERROR') {
