@@ -43,6 +43,15 @@ public class PipelineManager {
     }
   }
 
+  public AgentTask advanceAfterPhaseComplete(UUID projectId, String output) {
+    updateStateAfterPhase(projectId, output);
+    int nextPhase = getOrCreateState(projectId).getCurrentPhase();
+    if (nextPhase > 5) {
+      return null;
+    }
+    return createNextTask(projectId);
+  }
+
   private String getAgentTarget(int phase) {
     return switch (phase) {
       case 1 -> "prompt_rephraser";
