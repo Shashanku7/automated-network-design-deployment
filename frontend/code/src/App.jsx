@@ -24,12 +24,13 @@ export default function App() {
         <Routes>
           <Route element={<AppLayout />}>
             <Route index element={<Dashboard />} />
-            <Route path="solution-type" element={<SolutionType />} />
-            <Route path="requirements" element={<Requirements />} />
-            <Route path="design" element={<ProposedDesign />} />
-            <Route path="bom" element={<BillOfMaterials />} />
-            <Route path="topology" element={<DetailedTopology />} />
-            <Route path="deployment" element={<Deployment />} />
+            <Route path="project/new" element={<SolutionType />} />
+            <Route path="project/:projectId" element={<Dashboard />} />
+            <Route path="project/:projectId/requirements" element={<Requirements />} />
+            <Route path="project/:projectId/design" element={<ProposedDesign />} />
+            <Route path="project/:projectId/bom" element={<BillOfMaterials />} />
+            <Route path="project/:projectId/topology" element={<DetailedTopology />} />
+            <Route path="project/:projectId/deployment" element={<Deployment />} />
           </Route>
         </Routes>
       </BrowserRouter>

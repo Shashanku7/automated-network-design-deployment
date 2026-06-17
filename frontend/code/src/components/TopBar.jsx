@@ -13,6 +13,7 @@ const MOCK_PROJECTS = [
   { id: '3', name: 'Remote Office VPN', type: 'SD-WAN' },
   { id: '4', name: 'IoT Security Layer', type: 'Security' },
 ];
+// TODO: Replace MOCK_PROJECTS with localStorage lookup (step 7)
 
 // TODO: [BACKEND TEAM]
 // Replace 'MOCK_PROJECTS' with a real API call.
@@ -53,9 +54,7 @@ export default function TopBar() {
   const handleResultClick = (id) => {
     setShowResults(false);
     setQuery('');
-    // For now, just navigate to dashboard or show an alert
-    navigate('/');
-    window.alert(`Opening Project: ${MOCK_PROJECTS.find(p => p.id === id).name}`);
+    navigate(`/project/${id}`);
   };
 
   return (
