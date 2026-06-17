@@ -1,15 +1,20 @@
 package org.acme.gateway.services;
 
 import jakarta.enterprise.context.ApplicationScoped;
+import jakarta.inject.Inject;
 import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 import org.acme.gateway.models.AgentTask;
 import org.acme.gateway.models.PipelineState;
+import org.acme.gateway.repositories.AgentTaskRepository;
 
 @ApplicationScoped
 public class PipelineManager {
   private final Map<UUID, PipelineState> states = new ConcurrentHashMap<>();
+
+  @Inject
+  AgentTaskRepository agentTaskRepository;
 
   public PipelineState getOrCreateState(UUID projectId) {
     return states.computeIfAbsent(projectId, PipelineState::new);
@@ -50,6 +55,26 @@ public class PipelineManager {
       return null;
     }
     return createNextTask(projectId);
+  }
+
+  public void rehydrateFromDb(UUID projectId) {
+    var completed = agentTaskRepository.findCompletedByProjectId(projectId);
+    if (completed.isEmpty()) return;
+    var state = getOrCreateState(projectId);
+    for (var task : completed) {
+      var out = task.getOutput() != null ? task.getOutput() : "";
+      state.getHistory().add(
+          new AgentTask.ChatMessage(AgentTask.ChatMessage.Role.ASSISTANT, out));
+      switch (task.getPhase()) {
+        case 1 -> state.setRephrasedPrompt(out);
+        case 2 -> state.setTopologyDesign(out);
+        case 3 -> state.setBillOfMaterials(out);
+        case 4 -> state.setD2Diagram(out);
+      }
+    }
+    var last = completed.getLast();
+    state.setCurrentPhase(last.getPhase() + 1);
+    state.setLastOutput(last.getOutput() != null ? last.getOutput() : "");
   }
 
   private String getAgentTarget(int phase) {
