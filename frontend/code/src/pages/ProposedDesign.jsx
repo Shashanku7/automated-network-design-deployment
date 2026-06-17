@@ -9,7 +9,7 @@
  * - Approval/revision UI between phases
  */
 import { useState, useEffect, useRef, useCallback } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useParams } from 'react-router-dom';
 import { useProject } from '../context/ProjectContext';
 import { runWorkflow, sendApproval, sendRevision, sendChatMessage } from '../services/api';
 import { marked } from 'marked';
@@ -23,7 +23,8 @@ function renderMd(text) {
 
 export default function ProposedDesign() {
   const navigate = useNavigate();
-  const { state, dispatch } = useProject();
+  const { projectId } = useParams();
+  const { state, dispatch, loadProject } = useProject();
   const [events, setEvents] = useState([]);
   const [wsRef, setWsRef] = useState(null);
   const [status, setStatus] = useState('idle'); // idle | running | awaiting | complete | error
@@ -41,6 +42,13 @@ export default function ProposedDesign() {
 
   useEffect(() => { scrollToBottom(); }, [events, scrollToBottom]);
 
+  // Load project state on mount
+  useEffect(() => {
+    if (projectId && state.projectId !== projectId) {
+      loadProject(projectId);
+    }
+  }, [projectId, state.projectId, loadProject]);
+
   // Start workflow on mount if flagged
   useEffect(() => {
     if (state.workflowStatus !== 'running' || hasStarted.current) return;
@@ -48,7 +56,7 @@ export default function ProposedDesign() {
     setStatus('running');
     setEvents([]);
 
-    runWorkflow(state.requirements, state.solutionType, (ev) => {
+    runWorkflow(projectId, state.requirements, state.solutionType, (ev) => {
       setEvents(prev => [...prev, ev]);
 
       switch (ev.type) {
@@ -100,7 +108,7 @@ export default function ProposedDesign() {
         setEvents(prev => [...prev, { type: 'error', message: err.message }]);
         dispatch({ type: 'WORKFLOW_ERROR' });
       });
-  }, [state.workflowStatus, state.requirements, state.solutionType, dispatch]);
+  }, [state.workflowStatus, state.requirements, state.solutionType, projectId, dispatch]);
 
   function handleApprove() {
     sendApproval(wsRef);
@@ -131,13 +139,13 @@ export default function ProposedDesign() {
   }
 
   // If no workflow started and no previous results, redirect
-  if (state.workflowStatus === 'idle' && !state.rephrasedPrompt) {
+  if (!projectId || (state.workflowStatus === 'idle' && !state.rephrasedPrompt)) {
     return (
       <div className="p-8 text-center mt-20">
         <span className="material-symbols-outlined text-6xl text-outline mb-4">info</span>
         <h2 className="text-xl font-bold text-on-surface mb-2">No design generated yet</h2>
         <p className="text-on-surface-variant mb-6">Please fill out the requirements form first.</p>
-        <button onClick={() => navigate('/requirements')} className="px-6 py-3 bg-primary text-on-primary font-bold rounded-lg">
+        <button onClick={() => navigate(projectId ? `/project/${projectId}/requirements` : '/')} className="px-6 py-3 bg-primary text-on-primary font-bold rounded-lg">
           Go to Requirements
         </button>
       </div>
@@ -168,12 +176,12 @@ export default function ProposedDesign() {
             </div>
             {status === 'complete' && (
               <div className="flex gap-3">
-                <button onClick={() => navigate('/bom')}
+                <button onClick={() => navigate(`/project/${projectId}/bom`)}
                   className="px-4 py-2 bg-primary text-on-primary font-bold rounded-lg hover:brightness-110 transition-all flex items-center gap-2 text-sm">
                   <span className="material-symbols-outlined text-lg">receipt_long</span>
                   View BOM
                 </button>
-                <button onClick={() => navigate('/deployment')}
+                <button onClick={() => navigate(`/project/${projectId}/deployment`)}
                   className="px-4 py-2 bg-primary text-on-primary font-bold rounded-lg hover:brightness-110 transition-all flex items-center gap-2 text-sm">
                   Deployment
                   <span className="material-symbols-outlined text-lg">arrow_forward</span>

@@ -15,6 +15,13 @@ export default defineConfig({
         target: 'ws://localhost:8000',
         ws: true,
       },
+      '/chat': {
+        target: 'ws://localhost:8080',
+        ws: true,
+      },
     },
+    allowedHosts: [
+      'invitation-bids-questions-fountain.trycloudflare.com'
+    ]  
   },
 })

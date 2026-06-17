@@ -105,7 +105,7 @@ function buildPromptFromRequirements(req, solutionType) {
  *           workflow_complete, error
  * @returns {Promise<Object>} - Resolves with { rephrased, topology, devices, cliConfig } when done
  */
-export function runWorkflow(requirements, solutionType, onEvent) {
+export function runWorkflow(projectId, requirements, solutionType, onEvent) {
   return new Promise((resolve, reject) => {
     const prompt = buildPromptFromRequirements(requirements, solutionType);
     const wsUrl = `ws://${window.location.host}/ws`;
@@ -119,7 +119,7 @@ export function runWorkflow(requirements, solutionType, onEvent) {
     ws._sendRevision = (feedback) => ws.send(JSON.stringify({ approved: false, feedback }));
 
     ws.onopen = () => {
-      ws.send(JSON.stringify({ content: prompt }));
+      ws.send(JSON.stringify({ content: prompt, projectId }));
     };
 
     ws.onmessage = (e) => {
