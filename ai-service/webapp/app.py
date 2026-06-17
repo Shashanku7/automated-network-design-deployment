@@ -14,7 +14,7 @@ from fastapi.responses import FileResponse
 from pydantic import BaseModel
 from webapp.kafka_handler import KafkaManager
 
-from llama_index.llms.ollama import Ollama
+# from llama_index.llms.ollama import Ollama
 from llama_index.llms.openrouter import OpenRouter
 from llama_index.core.agent.workflow import (
     AgentWorkflow, FunctionAgent, AgentInput, AgentOutput, ToolCall, ToolCallResult,
