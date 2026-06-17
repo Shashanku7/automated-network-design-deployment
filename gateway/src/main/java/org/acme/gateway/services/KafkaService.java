@@ -73,6 +73,7 @@ public class KafkaService {
     }
   }
 
+  @Transactional
   @Incoming("agent-events")
   public void consumeEvent(AgentEvent event) {
     log.info("consumeEvent projectId=" + event.projectId() + " taskId=" + event.taskId() + " type=" + event.eventType() + " isFinal=" + event.isFinal());
