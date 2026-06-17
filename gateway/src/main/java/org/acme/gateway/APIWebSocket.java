@@ -2,6 +2,7 @@ package org.acme.gateway;
 
 import module java.base;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
 import io.quarkus.websockets.next.OnClose;
 import io.quarkus.websockets.next.OnOpen;
 import io.quarkus.websockets.next.OnTextMessage;
@@ -20,6 +21,8 @@ import org.acme.gateway.services.KafkaService;
 public class APIWebSocket {
   @Inject
   KafkaService kafkaService;
+  @Inject
+  ObjectMapper objectMapper;
   Map<UUID, WebSocketConnection> connections = new ConcurrentHashMap<>();
 
   @OnOpen
@@ -41,6 +44,18 @@ public class APIWebSocket {
   public void onMessage(String message, @PathParam("projectId") String projectId) {
     log.info("WS msg projectId=" + projectId + " len=" + message.length() + " preview=" + message.substring(0, Math.min(200, message.length())));
     var uuid = UUID.fromString(projectId);
+
+    // Check for approval/revision messages (handled server-side via Kafka)
+    try {
+      var tree = objectMapper.readTree(message);
+      if (tree.has("approved")) {
+        log.info("WS approval msg projectId=" + projectId + " approved=" + tree.get("approved").asBoolean());
+        return;
+      }
+    } catch (Exception e) {
+      // Not JSON or no approved field — treat as regular prompt
+    }
+
     kafkaService.sendTask(message, uuid);
   }
 
