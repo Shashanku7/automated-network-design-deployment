@@ -820,6 +820,7 @@ class ChatRequest(BaseModel):
     message: str
     history: list = []
     conversation_id: str = "default"
+    project_id: str = "default"
 
 @app.get("/")
 async def index():
@@ -828,10 +829,11 @@ async def index():
 @app.post("/api/chat")
 async def chat_endpoint(req: ChatRequest):
     """Simple LLM chat endpoint for the copilot sidebar. Persists via PostgresChatStore."""
+    key = f"{req.project_id}:{req.conversation_id}"
     memory = ChatMemoryBuffer.from_defaults(
         token_limit=CHAT_TOKEN_LIMIT,
         chat_store=chat_store,
-        chat_store_key=req.conversation_id,
+        chat_store_key=key,
     )
     system_msg = ChatMessage(role=MessageRole.SYSTEM, content=(
         "You are a Network Design AI Assistant. Answer questions about network design, "
@@ -947,15 +949,14 @@ async def _run_phase_kafka(kafka_mgr, project_id, task_id, phase_num, phase_name
     print(f"Agent: {agent.name}", flush=True)
     print(f"initial_msg={'None' if initial_msg is None else ('len=' + str(len(str(initial_msg))))}", flush=True)
     wf = AgentWorkflow(agents=[agent], root_agent=agent.name, timeout=400.0)
-    # Convert history dicts to ChatMessage objects if provided
-
-    chat_history = []
+    # Convert history dicts to ChatMessage objects if provided (from gateway)
+    gateway_history = []
     if history:
         for h in history:
             role = MessageRole.USER if str(h.get("role")) == "user" else MessageRole.ASSISTANT
             content = h.get("content", "")
             print(f"RUN_PHASE convert history role={role} content={'None' if content is None else ('len=' + str(len(str(content))))}", flush=True)
-            chat_history.append(ChatMessage(role=role, content=content))
+            gateway_history.append(ChatMessage(role=role, content=content))
 
     # Load persisted history from PostgresChatStore
     key = f"{project_id}:phase{phase_num}"
@@ -965,6 +966,12 @@ async def _run_phase_kafka(kafka_mgr, project_id, task_id, phase_num, phase_name
         chat_store_key=key,
     )
     chat_history = memory.get()
+
+    # If DB is empty but gateway has history, seed the DB with it
+    if not chat_history and gateway_history:
+        print(f"RUN_PHASE seeding DB with {len(gateway_history)} messages from gateway history", flush=True)
+        chat_store.set_messages(key, gateway_history)
+        chat_history = gateway_history
     
     await kafka_mgr.send_event({
         "project_id": project_id, "task_id": task_id, "agent_name": agent.name,
