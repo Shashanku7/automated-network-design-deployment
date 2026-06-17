@@ -145,6 +145,18 @@ export function runWorkflow(projectId, requirements, solutionType, onEvent) {
           onEvent({ type: 'phase_start', phase, name: agent_name.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase()) });
         }
 
+        if (event.type === 'diagram_ready') {
+          results.diagramUrl = event.url || '';
+          results.diagramDownloadUrl = event.download_url || '';
+          onEvent({ type: 'diagram_ready', url: event.url, download_url: event.download_url, filename: event.filename });
+          return;
+        }
+
+        if (event.type === 'diagram_error') {
+          onEvent({ type: 'diagram_error', message: event.message });
+          return;
+        }
+
         if (event_type === 'TOKEN') {
           console.log('[WS] TOKEN agent=' + agent_name + ' data_preview=' + (data || '').substring(0, 80));
           return;

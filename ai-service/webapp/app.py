@@ -779,7 +779,7 @@ async def process_kafka_task(task_data: dict):
     if not matching_phases:
         await kafka_mgr.send_event({
             "project_id": project_id, "task_id": task_id, "agent_name": "system",
-            "event_type": "error", "data": f"Invalid phase: {phase_idx}", "is_final": True
+            "event_type": "ERROR", "data": f"Invalid phase: {phase_idx}", "is_final": True
         })
         return
 

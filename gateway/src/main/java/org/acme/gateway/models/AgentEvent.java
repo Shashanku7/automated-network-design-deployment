@@ -1,5 +1,6 @@
 package org.acme.gateway.models;
 
+import com.fasterxml.jackson.annotation.JsonCreator;
 import com.fasterxml.jackson.annotation.JsonInclude;
 import com.fasterxml.jackson.databind.PropertyNamingStrategies;
 import com.fasterxml.jackson.databind.annotation.JsonNaming;
@@ -23,5 +24,10 @@ public record AgentEvent(
     TOOL_RESULT,
     FINAL_ANSWER,
     ERROR;
+
+    @JsonCreator
+    public static EventType fromString(String value) {
+      return EventType.valueOf(value.toUpperCase());
+    }
   }
 }
