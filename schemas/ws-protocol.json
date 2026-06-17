@@ -6,7 +6,7 @@
   "properties": {
     "type": {
       "type": "string",
-      "enum": ["USER_INPUT", "AGENT_EVENT", "APPROVAL_REQ", "APPROVAL_RES", "ERROR"]
+      "enum": ["USER_INPUT", "AGENT_EVENT", "APPROVAL_REQ", "APPROVAL_RES", "PHASE_APPROVED", "ERROR"]
     },
     "project_id": { "type": "string", "format": "uuid" },
     "task_id": { "type": "string", "format": "uuid" },

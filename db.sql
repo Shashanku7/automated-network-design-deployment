@@ -35,6 +35,7 @@ CREATE TYPE agent_event_type AS ENUM (
     'TOOL_CALL',
     'TOOL_RESULT',
     'FINAL_ANSWER',
+    'PHASE_APPROVED',
     'ERROR'
 );
 

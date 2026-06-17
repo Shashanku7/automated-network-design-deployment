@@ -9,7 +9,7 @@
     "agent_name": { "type": "string" },
     "event_type": {
       "type": "string",
-      "enum": ["token", "tool_call", "tool_result", "final_answer", "error"]
+      "enum": ["token", "tool_call", "tool_result", "final_answer", "phase_approved", "error"]
     },
     "data": { "type": "string" },
     "payload": { "type": "object" },
