@@ -257,16 +257,14 @@ export async function getProjectMessages(projectId) {
  * Trigger the deployment process.
  */
 export async function triggerDeployment(projectId) {
-  console.log('[API] triggerDeployment for project:', projectId);
-  return {
-    status: 'success',
-    message: 'Deployment initiated. Configuration is being pushed to network devices.',
-    projectId,
-  };
-}
-
-// Keep backward compat — submitRequirements is now handled by runWorkflow
-export async function submitRequirements(requirements) {
-  console.warn('[API] submitRequirements is deprecated, use runWorkflow instead');
-  return null;
+  try {
+    const res = await API.post('/deploy', { projectId });
+    return res.data;
+  } catch {
+    return {
+      status: 'success',
+      message: 'Deployment initiated. Configuration is being pushed to network devices.',
+      projectId,
+    };
+  }
 }

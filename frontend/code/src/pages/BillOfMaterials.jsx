@@ -8,10 +8,7 @@ import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useProject } from '../context/ProjectContext';
 
-// MOCK PRICE DATABASE (In production, this would be an API call)
-// TODO: [BACKEND TEAM] 
-// Replace this object with a call to your Global Pricing Service.
-// The frontend should fetch these values based on the selected region/currency.
+// Default pricing — replace with Global Pricing Service API call for production.
 const PRICING_DATA = {
   'Aruba CX 6300M Switch':   { USD: 4500, EUR: 4150, INR: 375000 },
   'Aruba CX 6200F 24G Switch': { USD: 1200, EUR: 1100, INR: 99000 },
