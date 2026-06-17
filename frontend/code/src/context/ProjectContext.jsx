@@ -1,34 +1,38 @@
-/**
- * ProjectContext — Global State Management
- *
- * Holds user inputs, AI-generated outputs, and workflow state
- * including intermediate steps (tool calls, RAG chunks, agent thinking).
- */
-
-import { createContext, useContext, useReducer } from 'react';
+import { createContext, useContext, useReducer, useEffect, useRef, useCallback } from 'react';
 
 const ProjectContext = createContext(null);
 
+const INDEX_KEY = 'project_index';
+
+function getProjectIndex() {
+  try { return JSON.parse(localStorage.getItem(INDEX_KEY) || '[]'); }
+  catch { return []; }
+}
+
+function saveProjectIndex(index) {
+  localStorage.setItem(INDEX_KEY, JSON.stringify(index));
+}
+
+function loadProjectState(projectId) {
+  try {
+    const raw = localStorage.getItem(`project_${projectId}`);
+    return raw ? JSON.parse(raw) : null;
+  } catch { return null; }
+}
+
 const initialState = {
+  projectId: null,
+  conversationId: null,
+  projectTitle: '',
   solutionType: null,
 
   requirements: {
-    // Campus
     buildingCount: '',
-    buildings: [], // Array of { id, name, floorCount, floors: [...] }
-    
-    // Data Center
+    buildings: [],
     dcRacks: '',
     dcServers: '',
-
-    specialRoles: [],         // e.g. ['Principal', 'Exam Controller', 'Finance Head']
-    devices: {
-      laptops: false,
-      printers: false,
-      phones: false,
-      cameras: false,
-      wifi: true,
-    },
+    specialRoles: [],
+    devices: { laptops: false, printers: false, phones: false, cameras: false, wifi: true },
     sensitiveAreas: [],
     uptimeLevel: 'standard',
     expectGrowth: false,
@@ -36,14 +40,12 @@ const initialState = {
     additionalNotes: '',
   },
 
-  // AI workflow state
-  workflowStatus: 'idle', // 'idle' | 'running' | 'awaiting_approval' | 'complete' | 'error'
+  workflowStatus: 'idle',
   currentPhase: 0,
   currentPhaseName: '',
-  workflowEvents: [],     // Array of { type, ...data } for intermediate steps display
-  wsRef: null,            // WebSocket reference for approval
+  workflowEvents: [],
+  wsRef: null,
 
-  // Phase outputs (filled as phases complete)
   rephrasedPrompt: null,
   topologyDesign: null,
   deviceSelection: null,
@@ -51,7 +53,6 @@ const initialState = {
   diagramDownloadUrl: null,
   cliConfig: null,
 
-  // Legacy compat
   proposedDesign: null,
   chatHistory: [],
   deploymentStatus: 'idle',
@@ -59,6 +60,45 @@ const initialState = {
 
 function projectReducer(state, action) {
   switch (action.type) {
+    case 'LOAD_PROJECT': {
+      const projectId = action.payload;
+      const index = getProjectIndex();
+      const meta = index.find(p => p.id === projectId);
+      const saved = loadProjectState(projectId);
+      const base = {
+        ...initialState,
+        projectId,
+        projectTitle: meta?.title || saved?.projectTitle || '',
+        conversationId: saved?.conversationId || null,
+      };
+      if (saved) {
+        return {
+          ...base,
+          solutionType: saved.solutionType ?? null,
+          requirements: saved.requirements ? { ...base.requirements, ...saved.requirements } : base.requirements,
+          workflowStatus: saved.workflowStatus ?? 'idle',
+          currentPhase: saved.currentPhase ?? 0,
+          currentPhaseName: saved.currentPhaseName ?? '',
+          rephrasedPrompt: saved.rephrasedPrompt ?? null,
+          topologyDesign: saved.topologyDesign ?? null,
+          deviceSelection: saved.deviceSelection ?? null,
+          diagramUrl: saved.diagramUrl ?? null,
+          diagramDownloadUrl: saved.diagramDownloadUrl ?? null,
+          cliConfig: saved.cliConfig ?? null,
+          proposedDesign: saved.proposedDesign ?? null,
+          chatHistory: saved.chatHistory ?? [],
+          deploymentStatus: saved.deploymentStatus ?? 'idle',
+        };
+      }
+      return base;
+    }
+
+    case 'SET_PROJECT_ID':
+      return { ...state, projectId: action.payload.projectId, projectTitle: action.payload.projectTitle || '' };
+
+    case 'SET_CONVERSATION_ID':
+      return { ...state, conversationId: action.payload };
+
     case 'SET_SOLUTION_TYPE':
       return { ...state, solutionType: action.payload };
 
@@ -77,7 +117,6 @@ function projectReducer(state, action) {
     case 'RESET_PROJECT':
       return { ...initialState };
 
-    // ── Workflow actions ─────────────────────
     case 'WORKFLOW_START':
       return {
         ...state,
@@ -93,18 +132,10 @@ function projectReducer(state, action) {
       };
 
     case 'WORKFLOW_EVENT':
-      return {
-        ...state,
-        workflowEvents: [...state.workflowEvents, action.payload],
-      };
+      return { ...state, workflowEvents: [...state.workflowEvents, action.payload] };
 
     case 'PHASE_START':
-      return {
-        ...state,
-        currentPhase: action.payload.phase,
-        currentPhaseName: action.payload.name,
-        workflowStatus: 'running',
-      };
+      return { ...state, currentPhase: action.payload.phase, currentPhaseName: action.payload.name, workflowStatus: 'running' };
 
     case 'SET_REPHRASED':
       return { ...state, rephrasedPrompt: action.payload };
@@ -137,8 +168,66 @@ function projectReducer(state, action) {
 
 export function ProjectProvider({ children }) {
   const [state, dispatch] = useReducer(projectReducer, initialState);
+  const lastSavedRef = useRef('');
+
+  useEffect(() => {
+    if (!state.projectId) return;
+    const persistable = {
+      projectId: state.projectId,
+      conversationId: state.conversationId,
+      projectTitle: state.projectTitle,
+      solutionType: state.solutionType,
+      requirements: state.requirements,
+      workflowStatus: state.workflowStatus,
+      currentPhase: state.currentPhase,
+      currentPhaseName: state.currentPhaseName,
+      rephrasedPrompt: state.rephrasedPrompt,
+      topologyDesign: state.topologyDesign,
+      deviceSelection: state.deviceSelection,
+      diagramUrl: state.diagramUrl,
+      diagramDownloadUrl: state.diagramDownloadUrl,
+      cliConfig: state.cliConfig,
+      proposedDesign: state.proposedDesign,
+      chatHistory: state.chatHistory,
+      deploymentStatus: state.deploymentStatus,
+    };
+    const serialized = JSON.stringify(persistable);
+    if (serialized !== lastSavedRef.current) {
+      lastSavedRef.current = serialized;
+      localStorage.setItem(`project_${state.projectId}`, serialized);
+    }
+  }, [state]);
+
+  const createProject = useCallback((title) => {
+    const id = crypto.randomUUID();
+    const now = new Date().toISOString();
+    const index = getProjectIndex();
+    index.unshift({ id, title, createdAt: now, updatedAt: now, status: 'draft' });
+    saveProjectIndex(index);
+    dispatch({ type: 'SET_PROJECT_ID', payload: { projectId: id, projectTitle: title } });
+    return id;
+  }, []);
+
+  const loadProject = useCallback((id) => {
+    dispatch({ type: 'LOAD_PROJECT', payload: id });
+  }, []);
+
+  const getProjectList = useCallback(() => getProjectIndex(), []);
+
+  const deleteProject = useCallback((id) => {
+    const index = getProjectIndex().filter(p => p.id !== id);
+    saveProjectIndex(index);
+    localStorage.removeItem(`project_${id}`);
+    if (state.projectId === id) dispatch({ type: 'RESET_PROJECT' });
+  }, [state.projectId]);
+
+  const updateProjectMeta = useCallback((id, updates) => {
+    const index = getProjectIndex().map(p => p.id === id ? { ...p, ...updates, updatedAt: new Date().toISOString() } : p);
+    saveProjectIndex(index);
+  }, []);
+
   return (
-    <ProjectContext.Provider value={{ state, dispatch }}>
+    <ProjectContext.Provider value={{ state, dispatch, createProject, loadProject, getProjectList, deleteProject, updateProjectMeta }}>
       {children}
     </ProjectContext.Provider>
   );
