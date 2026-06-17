@@ -14,6 +14,7 @@ import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.inject.Inject;
 import lombok.extern.java.Log;
 import org.acme.gateway.services.KafkaService;
+import org.acme.gateway.services.PipelineManager;
 
 @WebSocket(path = "/chat/{projectId}")
 @ApplicationScoped
@@ -23,6 +24,8 @@ public class APIWebSocket {
   KafkaService kafkaService;
   @Inject
   ObjectMapper objectMapper;
+  @Inject
+  PipelineManager pipelineManager;
   Map<UUID, WebSocketConnection> connections = new ConcurrentHashMap<>();
 
   @OnOpen
@@ -30,6 +33,7 @@ public class APIWebSocket {
     log.info("WS open projectId=" + projectId);
     var uuid = UUID.fromString(projectId);
     connections.putIfAbsent(uuid, connection);
+    pipelineManager.rehydrateFromDb(uuid);
   }
 
   @OnClose
