@@ -30,6 +30,9 @@ public class AgentTaskEntity {
   @Column(name = "input_context", columnDefinition = "TEXT")
   private String inputContext;
 
+  @Column(columnDefinition = "TEXT")
+  private String output;
+
   @Column(nullable = false)
   private String status;
 
@@ -58,6 +61,8 @@ public class AgentTaskEntity {
   public UUID getProjectId() { return projectId; }
   public int getPhase() { return phase; }
   public String getAgentTarget() { return agentTarget; }
+  public String getOutput() { return output; }
+  public void setOutput(String output) { this.output = output; }
   public String getStatus() { return status; }
   public void setStatus(String status) { this.status = status; }
   public void setCompletedAt(OffsetDateTime completedAt) { this.completedAt = completedAt; }

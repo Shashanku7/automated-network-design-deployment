@@ -112,6 +112,8 @@ CREATE TABLE agent_tasks (
 
     input_context TEXT,
 
+    output TEXT,
+
     status task_status NOT NULL DEFAULT 'pending',
 
     started_at TIMESTAMPTZ NOT NULL DEFAULT now(),
