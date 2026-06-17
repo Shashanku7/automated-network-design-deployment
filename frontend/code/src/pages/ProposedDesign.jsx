@@ -27,14 +27,18 @@ export default function ProposedDesign() {
   const { state, dispatch, loadProject } = useProject();
   const [events, setEvents] = useState([]);
   const [wsRef, setWsRef] = useState(null);
-  const [status, setStatus] = useState('idle'); // idle | running | awaiting | complete | error
+  const [status, setStatus] = useState('idle'); // idle | running | awaiting | complete | error | reconnecting
   const [currentPhase, setCurrentPhase] = useState(0);
+  const [historyLoading, setHistoryLoading] = useState(false);
+  const [historyError, setHistoryError] = useState(null);
   const [feedbackText, setFeedbackText] = useState('');
   const [showFeedback, setShowFeedback] = useState(false);
   const [chatInput, setChatInput] = useState('');
   const [sending, setSending] = useState(false);
   const eventsEndRef = useRef(null);
   const hasStarted = useRef(false);
+  const retryCountRef = useRef(0);
+  const MAX_RETRIES = 3;
 
   const scrollToBottom = useCallback(() => {
     eventsEndRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -53,20 +57,30 @@ export default function ProposedDesign() {
   useEffect(() => {
     if (!projectId || !state.rephrasedPrompt) return;
     let cancelled = false;
+    setHistoryLoading(true);
+    setHistoryError(null);
     (async () => {
-      const conv = await getProjectConversation(projectId);
-      if (cancelled) return;
-      if (conv && conv.id !== state.conversationId) {
-        dispatch({ type: 'SET_CONVERSATION_ID', payload: conv.id });
+      try {
+        const conv = await getProjectConversation(projectId);
+        if (cancelled) return;
+        if (conv && conv.id !== state.conversationId) {
+          dispatch({ type: 'SET_CONVERSATION_ID', payload: conv.id });
+        }
+        const messages = conv ? await getConversationMessages(conv.id) : [];
+        if (cancelled) return;
+        if (messages.length) {
+          const chatMsgs = messages.map(m => ({
+            role: m.role,
+            content: m.content,
+            timestamp: m.createdAt || new Date().toISOString(),
+          }));
+          dispatch({ type: 'SET_CHAT_HISTORY', payload: chatMsgs });
+        }
+      } catch (err) {
+        if (!cancelled) setHistoryError('Failed to load conversation history');
+      } finally {
+        if (!cancelled) setHistoryLoading(false);
       }
-      const messages = conv ? await getConversationMessages(conv.id) : [];
-      if (cancelled || !messages.length) return;
-      const chatMsgs = messages.map(m => ({
-        role: m.role,
-        content: m.content,
-        timestamp: m.createdAt || new Date().toISOString(),
-      }));
-      dispatch({ type: 'SET_CHAT_HISTORY', payload: chatMsgs });
     })();
     return () => { cancelled = true; };
   }, [projectId, state.rephrasedPrompt, state.conversationId, dispatch]);
@@ -132,6 +146,14 @@ export default function ProposedDesign() {
       });
   }, [state.workflowStatus, state.requirements, state.solutionType, projectId, dispatch]);
 
+  function retryWorkflow() {
+    hasStarted.current = false;
+    retryCountRef.current = 0;
+    setEvents([]);
+    setStatus('running');
+    dispatch({ type: 'WORKFLOW_START' });
+  }
+
   function handleApprove() {
     sendApproval(wsRef);
     setEvents(prev => [...prev, { type: 'user_action', content: '✅ Approved' }]);
@@ -192,7 +214,8 @@ export default function ProposedDesign() {
                 {status === 'running' && '⏳ Processing…'}
                 {status === 'awaiting' && '✋ Awaiting your approval'}
                 {status === 'complete' && '✅ Workflow complete'}
-                {status === 'error' && '❌ Error occurred'}
+                {status === 'error' && '❌ Connection lost'}
+                {status === 'reconnecting' && '🔄 Reconnecting…'}
                 {status === 'idle' && 'Ready'}
               </p>
             </div>
@@ -263,6 +286,34 @@ export default function ProposedDesign() {
             </div>
           )}
 
+          {/* History loading indicator */}
+          {historyLoading && (
+            <div className="flex items-center gap-2 text-on-surface-variant text-sm py-2 justify-center">
+              <div className="w-4 h-4 border-2 border-primary border-t-transparent rounded-full animate-spin" />
+              Loading conversation history…
+            </div>
+          )}
+          {historyError && (
+            <div className="bg-error/10 border border-error/30 rounded-xl px-4 py-2 text-sm text-error flex items-center gap-2">
+              ⚠️ {historyError}
+            </div>
+          )}
+
+          {/* Reconnect banner */}
+          {status === 'error' && (
+            <div className="bg-error/10 border border-error/30 rounded-xl p-4 text-center animate-in fade-in">
+              <div className="flex items-center justify-center gap-2 text-error mb-2">
+                <span className="material-symbols-outlined text-lg">cloud_off</span>
+                <span className="text-sm font-bold">Connection lost</span>
+              </div>
+              <p className="text-xs text-on-surface-variant mb-3">The WebSocket connection closed unexpectedly. You can retry.</p>
+              <button onClick={retryWorkflow}
+                className="px-4 py-2 bg-error text-on-error font-bold rounded-lg text-sm hover:brightness-110 transition-all">
+                🔄 Retry Workflow
+              </button>
+            </div>
+          )}
+
           {/* Loading indicator */}
           {status === 'running' && (
             <div className="flex items-center gap-3 text-on-surface-variant text-sm py-2">
@@ -272,6 +323,12 @@ export default function ProposedDesign() {
                 <span className="w-2 h-2 rounded-full bg-primary animate-bounce" style={{animationDelay: '0.3s'}} />
               </div>
               Agent is thinking…
+            </div>
+          )}
+          {status === 'reconnecting' && (
+            <div className="flex items-center gap-3 text-on-surface-variant text-sm py-2 justify-center">
+              <div className="w-4 h-4 border-2 border-primary border-t-transparent rounded-full animate-spin" />
+              Reconnecting…
             </div>
           )}
 
