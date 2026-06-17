@@ -73,10 +73,9 @@ active_tasks = {}
 
 
 async def process_kafka_task(task_data: dict):
-    project_id = task_data.get("project_id")
-    task_id = task_data.get("task_id")
-    content = task_data.get("input_context")
-
+    project_id = task_data.get("projectId") or task_data.get("project_id")
+    task_id = task_data.get("taskId") or task_data.get("task_id")
+    
     # Handle Resume/Feedback
     if task_id in active_tasks:
         active_tasks[task_id]["feedback_queue"].put_nowait(task_data)
@@ -86,88 +85,69 @@ async def process_kafka_task(task_data: dict):
     asyncio.create_task(run_kafka_workflow(task_data))
 
 
+class KafkaSender:
+    def __init__(self, project_id, task_id):
+        self.project_id = project_id
+        self.task_id = task_id
+    
+    async def send_text(self, text: str):
+        data = json.loads(text)
+        await _send_kafka(self.project_id, self.task_id, **data)
+        
+    async def receive_text(self) -> str:
+        feedback_task = await active_tasks[self.task_id]["feedback_queue"].get()
+        return json.dumps({
+            "approved": feedback_task.get("approved", False), 
+            "feedback": feedback_task.get("feedback", "Please revise.")
+        })
+
 async def run_kafka_workflow(task_data: dict):
-    project_id = task_data.get("project_id")
-    task_id = task_data.get("task_id")
-    prompt = task_data.get("input_context")
+    project_id = task_data.get("projectId") or task_data.get("project_id")
+    task_id = task_data.get("taskId") or task_data.get("task_id")
+    prompt = task_data.get("inputContext") or task_data.get("input_context") or task_data.get("content")
 
     feedback_queue = asyncio.Queue()
     active_tasks[task_id] = {"feedback_queue": feedback_queue}
+    run_id = f"run_{datetime.now():%Y-%m-%d_%H-%M-%S}"
+    
+    ws = KafkaSender(project_id, task_id)
 
     try:
-        await _send_kafka(project_id, task_id, "token", content=f"Echo: {prompt}")
+        await _send_kafka(project_id, task_id, type="user_echo", content=prompt)
 
-        rephrased = await _run_phase_kafka(project_id, task_id, 1, "Prompt Rephrasing", agent1, prompt, feedback_queue, OLLAMA_MODEL)
-        topology = await _run_phase_kafka(project_id, task_id, 2, "Network Topology Design", agent2, rephrased, feedback_queue, OLLAMA_MODEL)
-        devices = await _run_phase_kafka(project_id, task_id, 3, "Device Selection & BOM", agent3, f"Req: {prompt}\nTopo: {topology}", feedback_queue, OLLAMA_MODEL)
-        diagram_code = await _run_phase_kafka(project_id, task_id, 4, "D2 Diagram Generation", agent4, f"UserReq: {prompt}\nTopo: {topology}\nBOM: {devices}", feedback_queue, OLLAMA_MODEL)
+        rephrased = await _run_phase(ws, 1, "Prompt Rephrasing", agent1, prompt, OLLAMA_MODEL, run_id=run_id)
+        if not rephrased: return
+        topology = await _run_phase(ws, 2, "Network Topology Design", agent2, rephrased, OLLAMA_MODEL, run_id=run_id)
+        if not topology: return
+        devices = await _run_phase(ws, 3, "Device Selection & BOM", agent3, f"Req: {prompt}\nTopo: {topology}", OLLAMA_MODEL, run_id=run_id)
+        if not devices: return
+        
+        react_code = await _run_phase4_automated(ws, 4, "React Topology Generation", agent4, prompt, topology, devices, OLLAMA_MODEL, run_id=run_id)
 
-        res = await generate_diagram_via_service(diagram_code)
-        url = f"{IMAGE_SERVICE_URL}{res['url']}" if res.get(
-            "success") else None
-
-        if url:
-            await _send_kafka(project_id, task_id, "final_answer", content=f"Diagram ready: {url}", payload={"diagram_url": url})
-
-        save_run(prompt, rephrased, topology, devices, diagram_code, url)
-        await _send_kafka(project_id, task_id, "final_answer", content="Workflow complete.", is_final=True)
+        fp = save_run(prompt, rephrased, topology, devices, react_code=react_code)
+        await _send_kafka(project_id, task_id, type="workflow_complete", saved_to=str(fp), is_final=True)
 
     except Exception as e:
-        await _send_kafka(project_id, task_id, "error", content=str(e))
+        await _send_kafka(project_id, task_id, type="error", message=str(e))
     finally:
         active_tasks.pop(task_id, None)
 
 
-async def _send_kafka(project_id, task_id, event_type, content=None, payload=None, is_final=False):
+async def _send_kafka(project_id, task_id, **kw):
+    event_type = kw.pop("type", "unknown")
+    content = kw.pop("content", "")
+    is_final = kw.pop("is_final", False)
+    
     event = {
-        "project_id": project_id,
-        "task_id": task_id,
-        "agent_name": "ai-service",
+        "projectId": project_id,
+        "taskId": task_id,
+        "agentName": "ai-service",
         "event_type": event_type,
         "data": content,
-        "payload": payload,
+        "payload": kw,
         "is_final": is_final
     }
     await kafka_provider.send_event(event)
-
-
-async def _run_phase_kafka(project_id, task_id, phase_num, phase_name, agent, initial_msg, feedback_queue, model_name=""):
-    wf = AgentWorkflow(agents=[agent], root_agent=agent.name, timeout=400.0)
-    history: list[ChatMessage] = []
-    msg = initial_msg
-
-    while True:
-        await _send_kafka(project_id, task_id, "token", content=f"Starting Phase {phase_num}: {phase_name}")
-        response_text = ""
-        handler = wf.run(user_msg=msg) if not history else wf.run(
-            chat_history=history + [ChatMessage(role=MessageRole.USER, content=msg)])
-
-        async for ev in handler.stream_events():
-            if isinstance(ev, AgentInput):
-                await _send_kafka(project_id, task_id, "token", content=f"Agent {ev.current_agent_name} running...")
-            elif isinstance(ev, ToolCall):
-                await _send_kafka(project_id, task_id, "tool_call", content=ev.tool_name, payload=ev.tool_kwargs)
-            elif isinstance(ev, ToolCallResult):
-                await _send_kafka(project_id, task_id, "tool_result", content=ev.tool_name, payload={"output": str(ev.tool_output)})
-
-        resp = await handler
-        response_text = str(resp)
-        history.append(ChatMessage(role=MessageRole.USER, content=msg))
-        history.append(ChatMessage(
-            role=MessageRole.ASSISTANT, content=response_text))
-
-        # Approval request via Kafka (Gateway/Frontend must handle this as a task requiring response)
-        await _send_kafka(project_id, task_id, "final_answer", content=f"Phase {phase_num} complete. Awaiting approval.", payload={"phase": phase_num, "awaiting_approval": True})
-
-        # Wait for feedback via Kafka
-        feedback_task = await feedback_queue.get()
-        content = feedback_task.get("input_context", "").lower()
-        approved = "approved" in content or feedback_task.get(
-            "approved", False)
-
-        if approved:
-            return response_text
-        msg = feedback_task.get("input_context", "Please revise.")
 
 
 @router.get("/")

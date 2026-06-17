@@ -10,21 +10,8 @@ public record AgentEvent(
     UUID projectId,
     UUID taskId,
     String agentName,
-    @JsonProperty("event_type") EventType eventType,
+    @JsonProperty("event_type") String eventType,
     String data,
     Map<String, Object> payload,
     @JsonProperty("is_final") Boolean isFinal) {
-
-  public enum EventType {
-    @JsonProperty("token")
-    TOKEN,
-    @JsonProperty("tool_call")
-    TOOL_CALL,
-    @JsonProperty("tool_result")
-    TOOL_RESULT,
-    @JsonProperty("final_answer")
-    FINAL_ANSWER,
-    @JsonProperty("error")
-    ERROR;
-  }
 }

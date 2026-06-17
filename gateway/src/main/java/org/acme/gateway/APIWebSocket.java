@@ -23,23 +23,27 @@ public class APIWebSocket {
   private Map<UUID, Session> sessions = new ConcurrentHashMap<>();
 
   @OnOpen
-  public void onOpen(Session session, @PathParam("projectId") UUID projectId) {
+  public void onOpen(Session session, @PathParam("projectId") String projectIdStr) {
+    UUID projectId = UUID.fromString(projectIdStr);
     sessions.putIfAbsent(projectId, session);
   }
 
   @OnClose
-  public void onClose(Session session, @PathParam("projectId") UUID projectId) {
+  public void onClose(Session session, @PathParam("projectId") String projectIdStr) {
+    UUID projectId = UUID.fromString(projectIdStr);
     sessions.remove(projectId);
   }
 
   @OnError
   public void OnError(
-      Session session, @PathParam("projectId") UUID projectId, Throwable throwable) {
+      Session session, @PathParam("projectId") String projectIdStr, Throwable throwable) {
+    UUID projectId = UUID.fromString(projectIdStr);
     sessions.remove(projectId);
   }
 
   @OnMessage
-  public void onMessage(String message, @PathParam("projectId") UUID projectId) {
+  public void onMessage(String message, @PathParam("projectId") String projectIdStr) {
+    UUID projectId = UUID.fromString(projectIdStr);
     kafkaService.sendTask(message, projectId);
   }
 

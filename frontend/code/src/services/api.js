@@ -94,23 +94,60 @@ function buildPromptFromRequirements(req, solutionType) {
 export function runWorkflow(requirements, solutionType, onEvent) {
   return new Promise((resolve, reject) => {
     const prompt = buildPromptFromRequirements(requirements, solutionType);
-    const wsUrl = `ws://${window.location.host}/ws`;
+    
+    // Generate a unique project ID for this session
+    const projectId = crypto.randomUUID(); 
+    const wsUrl = `ws://${window.location.host}/chat/${projectId}`;
     const ws = new WebSocket(wsUrl);
 
     const results = { prompt, rephrased: '', topology: '', devices: '', diagramUrl: '', diagramDownloadUrl: '' };
     let currentPhase = 0;
+    let taskId = null;
 
     // Expose send functions via the onEvent callback's return
-    ws._sendApproval = () => ws.send(JSON.stringify({ approved: true }));
-    ws._sendRevision = (feedback) => ws.send(JSON.stringify({ approved: false, feedback }));
+    ws._sendApproval = () => ws.send(JSON.stringify({
+      type: "APPROVAL_RES",
+      projectId: projectId,
+      taskId: taskId,
+      agentName: "ai-service",
+      approved: true
+    }));
+    ws._sendRevision = (feedback) => ws.send(JSON.stringify({
+      type: "APPROVAL_RES",
+      projectId: projectId,
+      taskId: taskId,
+      agentName: "ai-service",
+      approved: false,
+      feedback: feedback
+    }));
 
     ws.onopen = () => {
-      ws.send(JSON.stringify({ content: prompt }));
+      ws.send(JSON.stringify({ 
+        type: "USER_INPUT",
+        projectId: projectId,
+        agentName: "ai-service",
+        content: prompt 
+      }));
     };
 
     ws.onmessage = (e) => {
       try {
-        const data = JSON.parse(e.data);
+        const rawData = JSON.parse(e.data);
+        
+        // Track the taskId assigned by the Gateway so we can send it back in approvals
+        if (rawData.taskId && !taskId) {
+            taskId = rawData.taskId;
+        }
+        
+        // Unwrap Kafka AgentEvent structure if present
+        let data = rawData;
+        if (rawData.event_type) {
+           data = { 
+             type: rawData.event_type, 
+             ...(rawData.payload || {}), 
+             content: rawData.data || (rawData.payload && rawData.payload.content) 
+           };
+        }
 
         if (data.type === 'phase_start') currentPhase = data.phase;
 
@@ -158,7 +195,8 @@ export function runWorkflow(requirements, solutionType, onEvent) {
  */
 export function sendApproval(ws) {
   if (ws?.readyState === WebSocket.OPEN) {
-    ws.send(JSON.stringify({ approved: true }));
+    if (ws._sendApproval) ws._sendApproval();
+    else ws.send(JSON.stringify({ approved: true }));
   }
 }
 
@@ -167,7 +205,8 @@ export function sendApproval(ws) {
  */
 export function sendRevision(ws, feedback) {
   if (ws?.readyState === WebSocket.OPEN) {
-    ws.send(JSON.stringify({ approved: false, feedback }));
+    if (ws._sendRevision) ws._sendRevision(feedback);
+    else ws.send(JSON.stringify({ approved: false, feedback }));
   }
 }
 

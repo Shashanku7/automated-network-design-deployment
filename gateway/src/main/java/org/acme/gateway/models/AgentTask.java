@@ -9,9 +9,11 @@ public record AgentTask(
     int phase,
     String agentTarget,
     String inputContext,
+    Boolean approved,
+    String feedback,
     List<HistoryEntry> history) {
   public AgentTask() {
-    this(null, null, 0, null, null, null);
+    this(null, null, 0, null, null, null, null, null);
   }
 
   public record HistoryEntry(String role, String content) {}

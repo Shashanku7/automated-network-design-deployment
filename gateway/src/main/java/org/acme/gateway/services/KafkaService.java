@@ -33,11 +33,14 @@ public class KafkaService {
               0, // Initial phase or derive from wsMsg
               wsMsg.agentName(),
               wsMsg.content(),
+              wsMsg.approved(),
+              wsMsg.feedback(),
               null // history
               );
       taskEmitter.send(task);
     } catch (Exception e) {
-      // Log error or send error back via WS
+      System.err.println("FAILED TO DESERIALIZE OR SEND TASK: " + e.getMessage());
+      e.printStackTrace();
     }
   }
 

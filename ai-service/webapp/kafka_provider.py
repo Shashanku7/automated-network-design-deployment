@@ -20,14 +20,19 @@ class KafkaProvider:
             bootstrap_servers=KAFKA_BOOTSTRAP_SERVERS,
             value_serializer=lambda v: json.dumps(v).encode('utf-8')
         )
-        try:
-            await self.consumer.start()
-            await self.producer.start()
-            print("Kafka successfully connected.")
-        except Exception as e:
-            print(f"Warning: Failed to connect to Kafka at {KAFKA_BOOTSTRAP_SERVERS}. Ensure Kafka is running if you need event streaming. ({e})")
-            self.consumer = None
-            self.producer = None
+        for attempt in range(15):
+            try:
+                await self.consumer.start()
+                await self.producer.start()
+                print("Kafka successfully connected.")
+                return
+            except Exception as e:
+                print(f"Warning: Failed to connect to Kafka at {KAFKA_BOOTSTRAP_SERVERS} (Attempt {attempt+1}/15). Retrying in 2 seconds... ({e})")
+                await asyncio.sleep(2)
+        
+        print("Fatal: Could not connect to Kafka after 15 attempts. Event streaming is disabled.")
+        self.consumer = None
+        self.producer = None
 
     async def stop(self):
         self._stop_event.set()
