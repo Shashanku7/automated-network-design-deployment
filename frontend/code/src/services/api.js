@@ -116,7 +116,8 @@ const PHASE_MAP = {
 export function runWorkflow(projectId, requirements, solutionType, onEvent) {
   return new Promise((resolve, reject) => {
     const prompt = buildPromptFromRequirements(requirements, solutionType);
-    const wsUrl = `ws://${window.location.host}/chat/${projectId}`;
+    const wsProtocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+    const wsUrl = `${wsProtocol}//${window.location.host}/chat/${projectId}`;
     const ws = new WebSocket(wsUrl);
 
     const results = { prompt, rephrased: '', topology: '', devices: '', diagramUrl: '', diagramDownloadUrl: '', cliConfig: '' };
