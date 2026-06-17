@@ -94,6 +94,7 @@ public class KafkaService {
         agentTaskRepository.findByIdOptional(event.taskId()).ifPresent(t -> {
           log.info("consumeEvent mark task complete taskId=" + event.taskId());
           t.setStatus("completed");
+          t.setOutput(event.data());
           t.setCompletedAt(java.time.OffsetDateTime.now());
         });
       } catch (Exception e) {
