@@ -122,7 +122,6 @@ export function runWorkflow(projectId, requirements, solutionType, onEvent) {
 
     const results = { prompt, rephrased: '', topology: '', devices: '', diagramUrl: '', diagramDownloadUrl: '', cliConfig: '' };
     let currentPhase = 0;
-    let sentApprovals = {};
 
     ws.onopen = () => {
       console.log('[WS] open projectId=' + projectId);
@@ -170,12 +169,6 @@ export function runWorkflow(projectId, requirements, solutionType, onEvent) {
           else if (currentPhase === 5) results.cliConfig = content;
 
           onEvent({ type: 'agent_response', content });
-
-          // Auto-approve: send approval back so next phase starts
-          if (!sentApprovals[currentPhase] && ws.readyState === WebSocket.OPEN) {
-            sentApprovals[currentPhase] = true;
-            ws.send(JSON.stringify({ approved: true, projectId }));
-          }
         }
 
         if (event_type === 'TOOL_CALL') {
