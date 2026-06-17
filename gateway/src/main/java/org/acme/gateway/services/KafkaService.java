@@ -3,7 +3,6 @@ package org.acme.gateway.services;
 import module java.base;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
-import io.smallrye.common.annotation.Blocking;
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.inject.Inject;
 import jakarta.transaction.Transactional;
@@ -36,7 +35,6 @@ public class KafkaService {
   @Inject MessageRepository messageRepository;
   @Inject AgentTaskRepository agentTaskRepository;
 
-  @Blocking
   @Transactional
   public void sendTask(String message, UUID projectId) {
     log.info("sendTask START projectId=" + projectId + " msgPreview=" + message.substring(0, Math.min(100, message.length())));

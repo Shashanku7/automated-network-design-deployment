@@ -2,6 +2,7 @@ package org.acme.gateway;
 
 import module java.base;
 
+import io.smallrye.common.annotation.Blocking;
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.inject.Inject;
 import jakarta.websocket.OnClose;
@@ -44,6 +45,7 @@ public class APIWebSocket {
     sessions.remove(uuid);
   }
 
+  @Blocking
   @OnMessage
   public void onMessage(String message, @PathParam("projectId") String projectId) {
     log.info("WS msg projectId=" + projectId + " len=" + message.length() + " preview=" + message.substring(0, Math.min(200, message.length())));
