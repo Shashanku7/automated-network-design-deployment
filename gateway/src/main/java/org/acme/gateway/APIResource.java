@@ -19,6 +19,9 @@ import org.acme.gateway.entities.ConversationEntity;
 import org.acme.gateway.entities.MessageEntity;
 import org.acme.gateway.entities.ProjectEntity;
 import org.acme.gateway.models.AgentTask;
+import org.acme.gateway.models.PhaseResult;
+import org.acme.gateway.models.WorkflowState;
+import org.acme.gateway.repositories.AgentTaskRepository;
 import org.acme.gateway.repositories.ConversationRepository;
 import org.acme.gateway.repositories.MessageRepository;
 import org.acme.gateway.repositories.ProjectRepository;
@@ -46,6 +49,9 @@ public class APIResource {
 
   @Inject
   MessageRepository messageRepository;
+
+  @Inject
+  AgentTaskRepository agentTaskRepository;
 
   // ── Projects ─────────────────────────────────────────
 
@@ -105,6 +111,21 @@ public class APIResource {
     var message = new MessageEntity(conversationId, seq, request.role(), request.content());
     messageRepository.persist(message);
     return Response.ok(message).build();
+  }
+
+  // ── Workflow State ─────────────────────────────────
+
+  @GET
+  @Path("projects/{pid}/phases")
+  public Response getWorkflowState(@PathParam("pid") UUID projectId) {
+    var completed = agentTaskRepository.findCompletedByProjectId(projectId);
+    var phases = completed.stream()
+        .map(t -> new PhaseResult(t.getPhase(), t.getAgentTarget(), t.getOutput(), t.getStatus()))
+        .toList();
+    int nextPhase = completed.isEmpty() ? 1
+        : Math.min(completed.getLast().getPhase() + 1, 6);
+    return Response.ok(new WorkflowState(projectId,
+        nextPhase > 5 ? "complete" : "running", nextPhase, phases)).build();
   }
 
   // ── Existing endpoints ───────────────────────────────
