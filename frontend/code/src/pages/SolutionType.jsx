@@ -1,7 +1,3 @@
-/**
- * SolutionType — First step: Campus or Data Center
- * No technical jargon. Simple cards the user clicks.
- */
 import { useNavigate } from 'react-router-dom';
 import { useProject } from '../context/ProjectContext';
 
@@ -22,11 +18,13 @@ const solutions = [
 
 export default function SolutionType() {
   const navigate = useNavigate();
-  const { dispatch } = useProject();
+  const { dispatch, createProject } = useProject();
 
   function handleSelect(type) {
+    const title = `New ${type === 'campus' ? 'Campus Network' : 'Data Center'} Design`;
+    const projectId = createProject(title);
     dispatch({ type: 'SET_SOLUTION_TYPE', payload: type });
-    navigate('/requirements');
+    navigate(`/project/${projectId}/requirements`);
   }
 
   return (
