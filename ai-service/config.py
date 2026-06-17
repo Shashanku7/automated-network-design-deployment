@@ -36,6 +36,10 @@ KAFKA_BOOTSTRAP_SERVERS = os.getenv("KAFKA_BOOTSTRAP_SERVERS", "localhost:9092")
 TOPIC_AGENT_TASKS = os.getenv("TOPIC_AGENT_TASKS", "agent-tasks")
 TOPIC_AGENT_EVENTS = os.getenv("TOPIC_AGENT_EVENTS", "agent-events")
 
+# PostgreSQL chat store
+POSTGRES_URI = os.getenv("POSTGRES_URI", "postgresql+asyncpg://postgres:password@localhost:5433/network_design")
+CHAT_TOKEN_LIMIT = int(os.getenv("CHAT_TOKEN_LIMIT", "3000"))
+
 # ──────────────────────────────────────────────
 # RAG constants
 # ──────────────────────────────────────────────

@@ -1,6 +1,6 @@
 """FastAPI webapp – Network Automation Multi-Agent Workflow with WebSocket streaming."""
 
-import asyncio, json, os, re, sys
+import asyncio, json, os, re, sys, uuid
 from datetime import datetime
 from pathlib import Path
 
@@ -21,6 +21,8 @@ from llama_index.core.agent.workflow import (
 )
 from llama_index.core.tools import FunctionTool
 from llama_index.core.llms import ChatMessage, MessageRole
+from llama_index.core.memory import ChatMemoryBuffer
+from llama_index.storage.chat_store.postgres import PostgresChatStore
 
 from config import (
     QDRANT_COLLECTION,
@@ -32,6 +34,8 @@ from config import (
     IMAGE_SERVICE_URL,
     RETRIEVAL_TOP_K,
     MIN_SCORE_THRESHOLD,
+    POSTGRES_URI,
+    CHAT_TOKEN_LIMIT,
     create_qdrant_client,
     extract_product_model,
     get_embedding_model,
@@ -75,6 +79,9 @@ llm_qwen_coder= OpenRouter(
 
 # ── Qdrant client ─────────────────────────────────
 _qdrant_client = create_qdrant_client()
+
+# ── PostgresChatStore ────────────────────────────
+chat_store = PostgresChatStore.from_uri(uri=POSTGRES_URI)
 
 # ── Hybrid search (dense + sparse RRF fusion) ───────────
 def hybrid_search(
@@ -806,6 +813,7 @@ app.mount("/static", StaticFiles(directory=STATIC), name="static")
 class ChatRequest(BaseModel):
     message: str
     history: list = []
+    conversation_id: str = "default"
 
 @app.get("/")
 async def index():
@@ -813,17 +821,22 @@ async def index():
 
 @app.post("/api/chat")
 async def chat_endpoint(req: ChatRequest):
-    """Simple LLM chat endpoint for the copilot sidebar."""
-    messages = [ChatMessage(role=MessageRole.SYSTEM, content=(
+    """Simple LLM chat endpoint for the copilot sidebar. Persists via PostgresChatStore."""
+    memory = ChatMemoryBuffer.from_defaults(
+        token_limit=CHAT_TOKEN_LIMIT,
+        chat_store=chat_store,
+        chat_store_key=req.conversation_id,
+    )
+    system_msg = ChatMessage(role=MessageRole.SYSTEM, content=(
         "You are a Network Design AI Assistant. Answer questions about network design, "
         "HPE Aruba - CX products, VLANs, QoS, VSF, VSX, LAG, and general networking. "
         "Be concise and technical."
-    ))]
-    for h in req.history[-10:]:
-        role = MessageRole.USER if h.get("role") == "user" else MessageRole.ASSISTANT
-        messages.append(ChatMessage(role=role, content=h.get("content", "")))
+    ))
+    messages = [system_msg] + memory.get()
     messages.append(ChatMessage(role=MessageRole.USER, content=req.message))
     resp = await llm.achat(messages)
+    memory.put(ChatMessage(role=MessageRole.USER, content=req.message))
+    memory.put(ChatMessage(role=MessageRole.ASSISTANT, content=str(resp.message.content)))
     return {
         "role": "assistant",
         "content": str(resp.message.content),
@@ -833,17 +846,15 @@ async def chat_endpoint(req: ChatRequest):
 async def _send(ws, **kw):
     await ws.send_text(json.dumps(kw))
 
-async def _run_phase(ws, phase_num, phase_name, agent, initial_msg, model_name=""):
-    """Run one agent phase with event streaming and HITL approval.
-
-    Returns
-    -------
-    tuple[str, list[dict]]
-        (response_text, tool_events) where each tool_event has
-        ``tool_name``, ``input``, and ``output`` keys.
-    """
+async def _run_phase(ws, phase_num, phase_name, agent, initial_msg, model_name="", project_id="default"):
+    """Run one agent phase with event streaming, HITL approval, and persistent memory."""
+    key = f"{project_id}:phase{phase_num}"
+    memory = ChatMemoryBuffer.from_defaults(
+        token_limit=CHAT_TOKEN_LIMIT,
+        chat_store=chat_store,
+        chat_store_key=key,
+    )
     wf = AgentWorkflow(agents=[agent], root_agent=agent.name, timeout=400.0)
-    history: list[ChatMessage] = []
     msg = initial_msg
     iteration = 0
     tool_events: list[dict] = []
@@ -851,6 +862,7 @@ async def _run_phase(ws, phase_num, phase_name, agent, initial_msg, model_name="
     while True:
         iteration += 1
         await _send(ws, type="phase_start", phase=phase_num, name=phase_name, iteration=iteration)
+        history = memory.get()
 
         # Retry up to 3 times on transient LLM errors (e.g. Ollama cloud 500s)
         max_retries = 3
@@ -903,8 +915,8 @@ async def _run_phase(ws, phase_num, phase_name, agent, initial_msg, model_name="
                 else:
                     await _send(ws, type="agent_response", agent=agent.name,
                                 content=f"❌ LLM failed after {max_retries} attempts: {str(llm_err)[:300]}. Approving with partial result.")
-        history.append(ChatMessage(role=MessageRole.USER, content=msg))
-        history.append(ChatMessage(role=MessageRole.ASSISTANT, content=response_text))
+        memory.put(ChatMessage(role=MessageRole.USER, content=msg))
+        memory.put(ChatMessage(role=MessageRole.ASSISTANT, content=response_text))
 
         await _send(ws, type="approval_request", phase=phase_num, name=phase_name)
         data = json.loads(await ws.receive_text())
@@ -922,18 +934,20 @@ async def _run_phase(ws, phase_num, phase_name, agent, initial_msg, model_name="
             await _send(ws, type="phase_revision", phase=phase_num, feedback=msg)
 
 async def _run_phase_kafka(kafka_mgr, project_id, task_id, phase_num, phase_name, agent, initial_msg, history=None, model_name=""):
-    """Run one agent phase and stream events to Kafka."""
+    """Run one agent phase and stream events to Kafka. Uses PostgresChatStore for memory."""
     print(f"\n=== START PHASE {phase_num}: {phase_name} ===", flush=True)
     print(f"Project: {project_id}", flush=True)
     print(f"Task: {task_id}", flush=True)
     print(f"Agent: {agent.name}", flush=True)
     wf = AgentWorkflow(agents=[agent], root_agent=agent.name, timeout=400.0)
-    # Convert history dicts to ChatMessage objects if provided
-    chat_history = []
-    if history:
-        for h in history:
-            role = MessageRole.USER if str(h.get("role")) == "user" else MessageRole.ASSISTANT
-            chat_history.append(ChatMessage(role=role, content=h.get("content", "")))
+    # Load persisted history from PostgresChatStore
+    key = f"{project_id}:phase{phase_num}"
+    memory = ChatMemoryBuffer.from_defaults(
+        token_limit=CHAT_TOKEN_LIMIT,
+        chat_store=chat_store,
+        chat_store_key=key,
+    )
+    chat_history = memory.get()
     
     await kafka_mgr.send_event({
         "project_id": project_id, "task_id": task_id, "agent_name": agent.name,
@@ -959,6 +973,8 @@ async def _run_phase_kafka(kafka_mgr, project_id, task_id, phase_num, phase_name
                     await kafka_mgr.send_event({**base_event, "event_type": "TOKEN", "data": str(ev.response)})
 
         resp = await handler
+        memory.put(ChatMessage(role=MessageRole.USER, content=initial_msg))
+        memory.put(ChatMessage(role=MessageRole.ASSISTANT, content=str(resp)))
         await kafka_mgr.send_event({
             "project_id": project_id, "task_id": task_id, "agent_name": agent.name,
             "event_type": "FINAL_ANSWER", "data": str(resp), "is_final": True
@@ -977,16 +993,17 @@ async def ws_endpoint(ws: WebSocket):
     try:
         data = json.loads(await ws.receive_text())
         prompt = data["content"]
-        await _send(ws, type="user_echo", content=prompt)
+        project_id = data.get("project_id", str(uuid.uuid4()))
+        await _send(ws, type="user_echo", content=prompt, project_id=project_id)
 
-        rephrased, tools_1 = await _run_phase(ws, 1, "Prompt Rephrasing", agent1, prompt, model_name=OLLAMA_MODEL)
-        topology, tools_2 = await _run_phase(ws, 2, "Network Topology Design", agent2, rephrased, model_name=OLLAMA_MODEL)
+        rephrased, tools_1 = await _run_phase(ws, 1, "Prompt Rephrasing", agent1, prompt, model_name=OLLAMA_MODEL, project_id=project_id)
+        topology, tools_2 = await _run_phase(ws, 2, "Network Topology Design", agent2, rephrased, model_name=OLLAMA_MODEL, project_id=project_id)
         ctx = f"## Refined Requirements\n{rephrased}\n\n## Approved Topology\n{topology}"
-        devices, tools_3 = await _run_phase(ws, 3, "Device Selection & BOM", agent3, ctx, model_name=OLLAMA_MODEL)
+        devices, tools_3 = await _run_phase(ws, 3, "Device Selection & BOM", agent3, ctx, model_name=OLLAMA_MODEL, project_id=project_id)
 
         # Phase 4: D2 Diagram Generation
         d2_ctx = f"## Approved Topology\n{topology}\n\n## Bill of Materials\n{devices}"
-        diagram_code, tools_4 = await _run_phase(ws, 4, "D2 Diagram Generation", agent4, d2_ctx, model_name="gpt-oss-120b")
+        diagram_code, tools_4 = await _run_phase(ws, 4, "D2 Diagram Generation", agent4, d2_ctx, model_name="gpt-oss-120b", project_id=project_id)
 
         # Render D2 code via Image Generation Service (non-agent step)
         diagram_url = None
@@ -1013,7 +1030,7 @@ async def ws_endpoint(ws: WebSocket):
             f"## Bill of Materials\n{devices}\n\n"
             f"## D2 Diagram Code\n```d2\n{diagram_code}\n```"
         )
-        cli_config, tools_5 = await _run_phase(ws, 5, "CLI Configuration Generation", agent5, cli_ctx, model_name="qwen3-coder:480b-cloud")
+        cli_config, tools_5 = await _run_phase(ws, 5, "CLI Configuration Generation", agent5, cli_ctx, model_name="qwen3-coder:480b-cloud", project_id=project_id)
 
         fp = _save(prompt, rephrased, topology, devices, diagram_code, diagram_url,
                     tools_1, tools_2, tools_3, tools_4, tools_5, cli_config)
