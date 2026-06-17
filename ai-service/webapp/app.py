@@ -767,6 +767,12 @@ async def process_kafka_task(task_data: dict):
     phase_idx = task_data.get("phase", 1)
     input_ctx = task_data.get("input_context")
     history = task_data.get("history", [])
+    print(f"PROCESS_TASK project_id={project_id} task_id={task_id} phase={phase_idx}", flush=True)
+    print(f"PROCESS_TASK input_context={'None' if input_ctx is None else ('len=' + str(len(str(input_ctx))))}", flush=True)
+    print(f"PROCESS_TASK history_len={len(history)}", flush=True)
+    if history:
+        for i, h in enumerate(history):
+            print(f"PROCESS_TASK history[{i}] role={h.get('role')} content={'None' if h.get('content') is None else 'notNull'}", flush=True)
 
     # Find the agent for this phase
     matching_phases = [p for p in PHASES if p[0] == phase_idx]
@@ -927,13 +933,16 @@ async def _run_phase_kafka(kafka_mgr, project_id, task_id, phase_num, phase_name
     print(f"Project: {project_id}", flush=True)
     print(f"Task: {task_id}", flush=True)
     print(f"Agent: {agent.name}", flush=True)
+    print(f"initial_msg={'None' if initial_msg is None else ('len=' + str(len(str(initial_msg))))}", flush=True)
     wf = AgentWorkflow(agents=[agent], root_agent=agent.name, timeout=400.0)
     # Convert history dicts to ChatMessage objects if provided
     chat_history = []
     if history:
         for h in history:
             role = MessageRole.USER if str(h.get("role")) == "user" else MessageRole.ASSISTANT
-            chat_history.append(ChatMessage(role=role, content=h.get("content", "")))
+            content = h.get("content", "")
+            print(f"RUN_PHASE convert history role={role} content={'None' if content is None else ('len=' + str(len(str(content))))}", flush=True)
+            chat_history.append(ChatMessage(role=role, content=content))
     
     await kafka_mgr.send_event({
         "project_id": project_id, "task_id": task_id, "agent_name": agent.name,

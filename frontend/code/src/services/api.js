@@ -125,11 +125,15 @@ export function runWorkflow(projectId, requirements, solutionType, onEvent) {
     let sentApprovals = {};
 
     ws.onopen = () => {
-      ws.send(JSON.stringify({ content: prompt, projectId }));
+      console.log('[WS] open projectId=' + projectId);
+      const msg = JSON.stringify({ content: prompt, projectId });
+      console.log('[WS] send len=' + msg.length + ' preview=' + msg.substring(0, 150));
+      ws.send(msg);
     };
 
     ws.onmessage = (e) => {
       try {
+        console.log('[WS] recv len=' + e.data.length + ' preview=' + e.data.substring(0, 200));
         const event = JSON.parse(e.data);
         const { event_type, agent_name, data, payload, is_final } = event;
 
@@ -137,10 +141,14 @@ export function runWorkflow(projectId, requirements, solutionType, onEvent) {
         const phase = PHASE_MAP[agent_name];
         if (phase && phase !== currentPhase) {
           currentPhase = phase;
+          console.log('[WS] phase_start phase=' + phase + ' agent=' + agent_name);
           onEvent({ type: 'phase_start', phase, name: agent_name.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase()) });
         }
 
-        if (event_type === 'TOKEN') return;
+        if (event_type === 'TOKEN') {
+          console.log('[WS] TOKEN agent=' + agent_name + ' data_preview=' + (data || '').substring(0, 80));
+          return;
+        }
 
         if (event_type === 'FINAL_ANSWER') {
           const content = data || '';
@@ -183,8 +191,13 @@ export function runWorkflow(projectId, requirements, solutionType, onEvent) {
       }
     };
 
-    ws.onerror = () => reject(new Error('WebSocket connection failed'));
-    ws.onclose = () => {};
+    ws.onerror = () => {
+      console.error('[WS] error projectId=' + projectId);
+      reject(new Error('WebSocket connection failed'));
+    };
+    ws.onclose = (ev) => {
+      console.log('[WS] close projectId=' + projectId + ' code=' + ev.code + ' reason=' + ev.reason);
+    };
   });
 }
 

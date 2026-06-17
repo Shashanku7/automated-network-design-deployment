@@ -11,10 +11,12 @@ import jakarta.websocket.OnOpen;
 import jakarta.websocket.Session;
 import jakarta.websocket.server.PathParam;
 import jakarta.websocket.server.ServerEndpoint;
+import lombok.extern.java.Log;
 import org.acme.gateway.services.KafkaService;
 
 @ServerEndpoint("/chat/{projectId}")
 @ApplicationScoped
+@Log
 public class APIWebSocket {
   @Inject
   KafkaService kafkaService;
@@ -22,12 +24,14 @@ public class APIWebSocket {
 
   @OnOpen
   public void onOpen(Session session, @PathParam("projectId") String projectId) {
+    log.info("WS open projectId=" + projectId);
     var uuid = UUID.fromString(projectId);
     sessions.putIfAbsent(uuid, session);
   }
 
   @OnClose
   public void onClose(Session session, @PathParam("projectId") String projectId) {
+    log.info("WS close projectId=" + projectId);
     var uuid = UUID.fromString(projectId);
     sessions.remove(uuid);
   }
@@ -35,13 +39,14 @@ public class APIWebSocket {
   @OnError
   public void OnError(
       Session session, @PathParam("projectId") String projectId, Throwable throwable) {
+    log.severe("WS error projectId=" + projectId + " error=" + throwable.getMessage());
     var uuid = UUID.fromString(projectId);
     sessions.remove(uuid);
   }
 
   @OnMessage
   public void onMessage(String message, @PathParam("projectId") String projectId) {
-    // Basic implementation: user sends feedback/input to trigger next step
+    log.info("WS msg projectId=" + projectId + " len=" + message.length() + " preview=" + message.substring(0, Math.min(200, message.length())));
     var uuid = UUID.fromString(projectId);
     kafkaService.sendTask(message, uuid);
   }
@@ -50,7 +55,10 @@ public class APIWebSocket {
     var uuid = UUID.fromString(projectId);
     Session session = sessions.get(uuid);
     if (session != null && session.isOpen()) {
+      log.info("WS send projectId=" + projectId + " len=" + content.length());
       session.getAsyncRemote().sendText(content);
+    } else {
+      log.warning("WS send fail projectId=" + projectId + " session=" + (session == null ? "null" : "closed"));
     }
   }
 }

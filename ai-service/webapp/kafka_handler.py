@@ -27,13 +27,18 @@ class KafkaManager:
         await self.producer.stop()
 
     async def send_event(self, event_data: dict):
+        print(f"KAFKA_SEND event_type={event_data.get('event_type')} task_id={event_data.get('task_id')} project_id={event_data.get('project_id')} data_preview={str(event_data.get('data', ''))[:100]}", flush=True)
         await self.producer.send_and_wait(TOPIC_AGENT_EVENTS, event_data)
 
     async def consume_tasks(self, process_fn):
         try:
             async for msg in self.consumer:
                 task_data = msg.value
-                print(f"Received task: {task_data.get('task_id')}")
+                print(f"KAFKA_RECV task_id={task_data.get('task_id')} project_id={task_data.get('project_id')} phase={task_data.get('phase')}", flush=True)
+                print(f"KAFKA_RECV input_context={'null' if task_data.get('input_context') is None else ('notNull len=' + str(len(str(task_data.get('input_context', '')))))}", flush=True)
+                history = task_data.get('history', [])
+                print(f"KAFKA_RECV history_len={len(history)}", flush=True)
+                print(f"KAFKA_RECV task_data_keys={list(task_data.keys())}", flush=True)
                 # Schedule task processing
                 asyncio.create_task(process_fn(task_data))
         except Exception as e:
