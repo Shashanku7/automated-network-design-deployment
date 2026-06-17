@@ -16,7 +16,8 @@ import org.acme.gateway.services.KafkaService;
 @ServerEndpoint("/chat/{projectId}")
 @ApplicationScoped
 public class APIWebSocket {
-  @Inject KafkaService kafkaService;
+  @Inject
+  KafkaService kafkaService;
   Map<UUID, Session> sessions = new ConcurrentHashMap<>();
 
   @OnOpen
