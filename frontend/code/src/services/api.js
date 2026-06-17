@@ -274,6 +274,19 @@ export async function getProjectMessages(projectId) {
 }
 
 /**
+ * Fetch workflow state for a project — completed phases and their outputs.
+ * Used on page refresh to resume from where the workflow left off.
+ */
+export async function getWorkflowState(projectId) {
+  try {
+    const res = await API.get(`/projects/${projectId}/phases`);
+    return res.data;
+  } catch {
+    return null;
+  }
+}
+
+/**
  * Trigger the deployment process.
  */
 export async function triggerDeployment(projectId) {

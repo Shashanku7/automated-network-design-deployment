@@ -11,7 +11,7 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { useProject } from '../context/ProjectContext';
-import { runWorkflow, sendApproval, sendRevision, sendChatMessage, getProjectConversation, getConversationMessages } from '../services/api';
+import { runWorkflow, sendApproval, sendRevision, sendChatMessage, getProjectConversation, getConversationMessages, getWorkflowState } from '../services/api';
 import { marked } from 'marked';
 
 marked.setOptions({ gfm: true, breaks: true });
@@ -88,68 +88,93 @@ export default function ProposedDesign() {
   // Start workflow on mount if flagged
   useEffect(() => {
     if (state.workflowStatus !== 'running' || hasStarted.current) return;
-    // On refresh, don't restart if workflow already produced results
-    if (state.rephrasedPrompt) {
-      dispatch({ type: 'WORKFLOW_COMPLETE' });
-      setStatus('complete');
-      return;
-    }
     hasStarted.current = true;
-    setStatus('running');
-    setEvents([]);
 
-    runWorkflow(projectId, state.requirements, state.solutionType, (ev) => {
-      setEvents(prev => [...prev, ev]);
+    let cancelled = false;
+    (async () => {
+      // Fetch completed phases from server
+      const serverState = await getWorkflowState(projectId);
+      if (cancelled) return;
 
-      switch (ev.type) {
-        case 'phase_start':
-          setCurrentPhase(ev.phase);
-          setShowFeedback(false);
-          break;
-        case 'agent_response':
-          if (ev.ws) setWsRef(ev.ws);
-          // Store per-phase result
-          break;
-        case 'approval_request':
-          setStatus('awaiting');
-          if (ev.ws) setWsRef(ev.ws);
-          break;
-        case 'phase_approved':
-          setStatus('running');
-          break;
-        case 'phase_revision':
-          setStatus('running');
-          setShowFeedback(false);
-          break;
+      const completedPhases = serverState?.completed_phases || [];
+
+      // Dispatch results from server if any
+      if (completedPhases.length > 0) {
+        const phaseEvents = [];
+        for (const p of completedPhases) {
+          if (p.phase === 1) dispatch({ type: 'SET_REPHRASED', payload: p.output });
+          else if (p.phase === 2) dispatch({ type: 'SET_TOPOLOGY', payload: p.output });
+          else if (p.phase === 3) dispatch({ type: 'SET_DEVICES', payload: p.output });
+          else if (p.phase === 5) dispatch({ type: 'SET_CLI_CONFIG', payload: p.output });
+          phaseEvents.push({ type: 'phase_approved', phase: p.phase });
+        }
+        setEvents(phaseEvents);
       }
-    })
-      .then((results) => {
-        setStatus('complete');
-        dispatch({ type: 'SET_REPHRASED', payload: results.rephrased });
-        dispatch({ type: 'SET_TOPOLOGY', payload: results.topology });
-        dispatch({ type: 'SET_DEVICES', payload: results.devices });
-        if (results.diagramUrl) {
-          dispatch({ type: 'SET_DIAGRAM', payload: { url: results.diagramUrl, downloadUrl: results.diagramDownloadUrl } });
-        }
-        if (results.cliConfig) {
-          dispatch({ type: 'SET_CLI_CONFIG', payload: results.cliConfig });
-        }
+
+      // If all phases complete, stop here
+      if (serverState?.status === 'complete') {
         dispatch({ type: 'WORKFLOW_COMPLETE' });
-        // Build legacy proposedDesign for BOM page
-        dispatch({
-          type: 'SET_PROPOSED_DESIGN',
-          payload: {
-            summary: results.rephrased?.substring(0, 200) + '…',
-            topology: { nodes: [], links: [] },
-            bom: [],
-          },
-        });
+        setStatus('complete');
+        return;
+      }
+
+      // Otherwise start/resume workflow for remaining phases
+      setStatus('running');
+      if (completedPhases.length === 0) {
+        setEvents([]);
+      }
+
+      runWorkflow(projectId, state.requirements, state.solutionType, (ev) => {
+        setEvents(prev => [...prev, ev]);
+
+        switch (ev.type) {
+          case 'phase_start':
+            setCurrentPhase(ev.phase);
+            setShowFeedback(false);
+            break;
+          case 'approval_request':
+            setStatus('awaiting');
+            if (ev.ws) setWsRef(ev.ws);
+            break;
+          case 'phase_approved':
+            setStatus('running');
+            break;
+          case 'phase_revision':
+            setStatus('running');
+            setShowFeedback(false);
+            break;
+        }
       })
-      .catch((err) => {
-        setStatus('error');
-        setEvents(prev => [...prev, { type: 'error', message: err.message }]);
-        dispatch({ type: 'WORKFLOW_ERROR' });
-      });
+        .then((results) => {
+          setStatus('complete');
+          if (results.rephrased) dispatch({ type: 'SET_REPHRASED', payload: results.rephrased });
+          if (results.topology) dispatch({ type: 'SET_TOPOLOGY', payload: results.topology });
+          if (results.devices) dispatch({ type: 'SET_DEVICES', payload: results.devices });
+          if (results.diagramUrl) {
+            dispatch({ type: 'SET_DIAGRAM', payload: { url: results.diagramUrl, downloadUrl: results.diagramDownloadUrl } });
+          }
+          if (results.cliConfig) {
+            dispatch({ type: 'SET_CLI_CONFIG', payload: results.cliConfig });
+          }
+          dispatch({ type: 'WORKFLOW_COMPLETE' });
+          // Build legacy proposedDesign for BOM page
+          dispatch({
+            type: 'SET_PROPOSED_DESIGN',
+            payload: {
+              summary: (results.rephrased || state.rephrasedPrompt || '')?.substring(0, 200) + '…',
+              topology: { nodes: [], links: [] },
+              bom: [],
+            },
+          });
+        })
+        .catch((err) => {
+          setStatus('error');
+          setEvents(prev => [...prev, { type: 'error', message: err.message }]);
+          dispatch({ type: 'WORKFLOW_ERROR' });
+        });
+    })();
+
+    return () => { cancelled = true; };
   }, [state.workflowStatus, state.requirements, state.solutionType, projectId, dispatch]);
 
   function retryWorkflow() {
