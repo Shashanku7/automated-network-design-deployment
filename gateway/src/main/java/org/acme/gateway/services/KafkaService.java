@@ -81,8 +81,8 @@ public class KafkaService {
 
     if (event.isFinal() && event.eventType() == AgentEvent.EventType.FINAL_ANSWER) {
       log.info("consumeEvent FINAL_ANSWER data=" + (event.data() == null ? "null" : event.data().substring(0, Math.min(200, event.data().length()))));
-      pipelineManager.updateStateAfterPhase(event.projectId(), event.data());
 
+      // Persist agent response & mark task complete
       try {
         var convId = ensureConversation(event.projectId());
         if (event.data() != null) {
@@ -98,6 +98,35 @@ public class KafkaService {
         });
       } catch (Exception e) {
         log.severe("Failed to persist agent response: " + e.getMessage());
+      }
+
+      // Auto-approve: advance phase and emit next task
+      var nextTask = pipelineManager.advanceAfterPhaseComplete(event.projectId(), event.data());
+
+      // Send PHASE_APPROVED event to frontend
+      try {
+        var approvedEvent = new AgentEvent(
+            event.projectId(), event.taskId(), event.agentName(),
+            AgentEvent.EventType.PHASE_APPROVED,
+            nextTask == null ? "Workflow complete" : "Phase auto-approved, proceeding to next phase",
+            null, nextTask == null);
+        var approvedJson = objectMapper.writeValueAsString(approvedEvent);
+        webSocket.sendMessage(event.projectId().toString(), approvedJson);
+      } catch (Exception e) {
+        log.severe("Failed to send PHASE_APPROVED event: " + e.getMessage());
+      }
+
+      // Emit next task to Kafka if workflow continues
+      if (nextTask != null) {
+        log.info("consumeEvent auto-advance to phase=" + nextTask.phase() + " agent=" + nextTask.agentTarget());
+        taskEmitter.send(nextTask);
+
+        try {
+          var convId = ensureConversation(event.projectId());
+          agentTaskRepository.persist(new AgentTaskEntity(nextTask.taskId(), convId, nextTask.projectId(), nextTask.phase(), nextTask.agentTarget(), nextTask.inputContext()));
+        } catch (Exception e) {
+          log.severe("Failed to persist next task: " + e.getMessage());
+        }
       }
     }
 
