@@ -1,5 +1,6 @@
 package org.acme.gateway;
 
+import com.fasterxml.jackson.annotation.JsonProperty;
 import jakarta.inject.Inject;
 import jakarta.transaction.Transactional;
 import jakarta.ws.rs.Consumes;
@@ -140,7 +141,7 @@ public class APIResource {
   public record CreateTaskRequest(String projectId, String message) {
   }
 
-  public record ChatRequest(String message, List<AgentTask.ChatMessage> history) {
+  public record ChatRequest(String message, List<AgentTask.ChatMessage> history, @JsonProperty("project_id") String projectId) {
   }
 
   @POST
@@ -152,7 +153,7 @@ public class APIResource {
               h.role().name().toLowerCase(),
               h.content()))
           .collect(Collectors.toList());
-      var aiRequest = new AIService.ChatRequest(request.message(), history);
+      var aiRequest = new AIService.ChatRequest(request.message(), history, request.projectId());
       var aiResponse = aiService.sendChat(aiRequest);
       return Response.ok(aiResponse).build();
     } catch (Exception e) {
