@@ -88,6 +88,12 @@ export default function ProposedDesign() {
   // Start workflow on mount if flagged
   useEffect(() => {
     if (state.workflowStatus !== 'running' || hasStarted.current) return;
+    // On refresh, don't restart if workflow already produced results
+    if (state.rephrasedPrompt) {
+      dispatch({ type: 'WORKFLOW_COMPLETE' });
+      setStatus('complete');
+      return;
+    }
     hasStarted.current = true;
     setStatus('running');
     setEvents([]);
