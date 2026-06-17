@@ -108,6 +108,9 @@ function projectReducer(state, action) {
     case 'SET_PROPOSED_DESIGN':
       return { ...state, proposedDesign: action.payload, deploymentStatus: 'ready' };
 
+    case 'SET_CHAT_HISTORY':
+      return { ...state, chatHistory: action.payload };
+
     case 'ADD_CHAT_MESSAGE':
       return { ...state, chatHistory: [...state.chatHistory, action.payload] };
 
@@ -175,6 +178,7 @@ export function ProjectProvider({ children }) {
     const persistable = {
       projectId: state.projectId,
       conversationId: state.conversationId,
+      chatHistory: state.chatHistory,
       projectTitle: state.projectTitle,
       solutionType: state.solutionType,
       requirements: state.requirements,

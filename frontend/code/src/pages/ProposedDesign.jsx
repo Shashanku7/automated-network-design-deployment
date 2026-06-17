@@ -11,7 +11,7 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { useProject } from '../context/ProjectContext';
-import { runWorkflow, sendApproval, sendRevision, sendChatMessage } from '../services/api';
+import { runWorkflow, sendApproval, sendRevision, sendChatMessage, getProjectConversation, getConversationMessages } from '../services/api';
 import { marked } from 'marked';
 
 marked.setOptions({ gfm: true, breaks: true });
@@ -48,6 +48,28 @@ export default function ProposedDesign() {
       loadProject(projectId);
     }
   }, [projectId, state.projectId, loadProject]);
+
+  // Load conversation history from API if project has past results
+  useEffect(() => {
+    if (!projectId || !state.rephrasedPrompt) return;
+    let cancelled = false;
+    (async () => {
+      const conv = await getProjectConversation(projectId);
+      if (cancelled) return;
+      if (conv && conv.id !== state.conversationId) {
+        dispatch({ type: 'SET_CONVERSATION_ID', payload: conv.id });
+      }
+      const messages = conv ? await getConversationMessages(conv.id) : [];
+      if (cancelled || !messages.length) return;
+      const chatMsgs = messages.map(m => ({
+        role: m.role,
+        content: m.content,
+        timestamp: m.createdAt || new Date().toISOString(),
+      }));
+      dispatch({ type: 'SET_CHAT_HISTORY', payload: chatMsgs });
+    })();
+    return () => { cancelled = true; };
+  }, [projectId, state.rephrasedPrompt, state.conversationId, dispatch]);
 
   // Start workflow on mount if flagged
   useEffect(() => {

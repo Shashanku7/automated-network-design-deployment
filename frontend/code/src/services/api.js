@@ -224,6 +224,36 @@ export async function sendChatMessage(message, history = []) {
 }
 
 /**
+ * Fetch conversation messages for a project from REST API.
+ */
+export async function getProjectConversation(projectId) {
+  try {
+    const res = await API.get(`/projects/${projectId}/conversations`);
+    if (res.data && res.data.length > 0) {
+      return res.data[0];
+    }
+    return null;
+  } catch {
+    return null;
+  }
+}
+
+export async function getConversationMessages(conversationId) {
+  try {
+    const res = await API.get(`/conversations/${conversationId}/messages`);
+    return res.data || [];
+  } catch {
+    return [];
+  }
+}
+
+export async function getProjectMessages(projectId) {
+  const conv = await getProjectConversation(projectId);
+  if (!conv) return [];
+  return getConversationMessages(conv.id);
+}
+
+/**
  * Trigger the deployment process.
  */
 export async function triggerDeployment(projectId) {
