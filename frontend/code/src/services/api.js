@@ -105,18 +105,23 @@ function buildPromptFromRequirements(req, solutionType) {
  *           workflow_complete, error
  * @returns {Promise<Object>} - Resolves with { rephrased, topology, devices, cliConfig } when done
  */
+const PHASE_MAP = {
+  prompt_rephraser: 1,
+  topology_designer: 2,
+  device_selector: 3,
+  d2_diagram_generator: 4,
+  cli_config_generator: 5,
+};
+
 export function runWorkflow(projectId, requirements, solutionType, onEvent) {
   return new Promise((resolve, reject) => {
     const prompt = buildPromptFromRequirements(requirements, solutionType);
-    const wsUrl = `ws://${window.location.host}/ws`;
+    const wsUrl = `ws://${window.location.host}/chat/${projectId}`;
     const ws = new WebSocket(wsUrl);
 
     const results = { prompt, rephrased: '', topology: '', devices: '', diagramUrl: '', diagramDownloadUrl: '', cliConfig: '' };
     let currentPhase = 0;
-
-    // Expose send functions via the onEvent callback's return
-    ws._sendApproval = () => ws.send(JSON.stringify({ approved: true }));
-    ws._sendRevision = (feedback) => ws.send(JSON.stringify({ approved: false, feedback }));
+    let sentApprovals = {};
 
     ws.onopen = () => {
       ws.send(JSON.stringify({ content: prompt, projectId }));
@@ -124,40 +129,54 @@ export function runWorkflow(projectId, requirements, solutionType, onEvent) {
 
     ws.onmessage = (e) => {
       try {
-        const data = JSON.parse(e.data);
+        const event = JSON.parse(e.data);
+        const { event_type, agent_name, data, payload, is_final } = event;
 
-        if (data.type === 'phase_start') currentPhase = data.phase;
+        // Track phase from agent_name
+        const phase = PHASE_MAP[agent_name];
+        if (phase && phase !== currentPhase) {
+          currentPhase = phase;
+          onEvent({ type: 'phase_start', phase, name: agent_name.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase()) });
+        }
 
-        // Capture agent responses per phase
-        if (data.type === 'agent_response') {
-          let content = data.content || '';
-          if (content.startsWith('assistant: ')) content = content.slice(11);
-          data.content = content;
+        if (event_type === 'TOKEN') return;
 
+        if (event_type === 'FINAL_ANSWER') {
+          const content = data || '';
           if (currentPhase === 1) results.rephrased = content;
           else if (currentPhase === 2) results.topology = content;
           else if (currentPhase === 3) results.devices = content;
           else if (currentPhase === 5) results.cliConfig = content;
+
+          onEvent({ type: 'agent_response', content });
+
+          // Auto-approve: send approval back so next phase starts
+          if (!sentApprovals[currentPhase] && ws.readyState === WebSocket.OPEN) {
+            sentApprovals[currentPhase] = true;
+            ws.send(JSON.stringify({ approved: true, projectId }));
+          }
         }
 
-        if (data.type === 'diagram_ready') {
-          results.diagramUrl = data.url || '';
-          results.diagramDownloadUrl = data.download_url || '';
+        if (event_type === 'TOOL_CALL') {
+          onEvent({ type: 'tool_call', tool_name: agent_name, tool_kwargs: payload || {} });
         }
 
-        if (data.type === 'workflow_complete') {
-          if (data.diagram_url && !results.diagramUrl) results.diagramUrl = data.diagram_url;
+        if (event_type === 'TOOL_RESULT') {
+          onEvent({ type: 'tool_result', tool_name: agent_name, output: data || '' });
+        }
+
+        if (event_type === 'ERROR') {
+          onEvent({ type: 'error', message: data || 'Unknown error' });
+          ws.close();
+          reject(new Error(data || 'Unknown error'));
+        }
+
+        // Workflow complete when phase 5 FINAL_ANSWER received
+        if (is_final && event_type === 'FINAL_ANSWER' && currentPhase >= 5) {
+          onEvent({ type: 'workflow_complete' });
           ws.close();
           resolve(results);
         }
-
-        if (data.type === 'error') {
-          ws.close();
-          reject(new Error(data.message));
-        }
-
-        // Forward event to UI with ws reference for approval
-        onEvent({ ...data, ws });
       } catch (err) {
         console.error('WS parse error:', err);
       }

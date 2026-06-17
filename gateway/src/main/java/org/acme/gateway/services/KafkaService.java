@@ -2,6 +2,7 @@ package org.acme.gateway.services;
 
 import module java.base;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.inject.Inject;
 import lombok.extern.java.Log;
@@ -21,6 +22,7 @@ public class KafkaService {
 
   @Inject PipelineManager pipelineManager;
   @Inject APIWebSocket webSocket;
+  @Inject ObjectMapper objectMapper;
 
   public void sendTask(String message, UUID projectId) {
     var state = pipelineManager.getOrCreateState(projectId);
@@ -36,7 +38,11 @@ public class KafkaService {
     if (event.isFinal() && event.eventType() == AgentEvent.EventType.FINAL_ANSWER) {
       pipelineManager.updateStateAfterPhase(event.projectId(), event.data());
     }
-    // Forward event as JSON to UI
-    webSocket.sendMessage(event.projectId().toString(), event.toString());
+    try {
+      String json = objectMapper.writeValueAsString(event);
+      webSocket.sendMessage(event.projectId().toString(), json);
+    } catch (Exception e) {
+      log.severe("Failed to serialize AgentEvent: " + e.getMessage());
+    }
   }
 }
