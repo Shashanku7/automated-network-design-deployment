@@ -932,7 +932,7 @@ async def _run_phase_kafka(kafka_mgr, project_id, task_id, phase_num, phase_name
     chat_history = []
     if history:
         for h in history:
-            role = MessageRole.USER if str(h.get("role")).upper() == "USER" else MessageRole.ASSISTANT
+            role = MessageRole.USER if str(h.get("role")) == "user" else MessageRole.ASSISTANT
             chat_history.append(ChatMessage(role=role, content=h.get("content", "")))
     
     await kafka_mgr.send_event({
