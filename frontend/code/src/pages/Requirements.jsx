@@ -7,8 +7,8 @@
  * 
  * ALL questions in plain English. Zero technical jargon.
  */
-import { useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useState, useEffect } from 'react';
+import { useNavigate, useParams } from 'react-router-dom';
 import { useProject } from '../context/ProjectContext';
 // Workflow is triggered from ProposedDesign page via WebSocket
 
@@ -49,11 +49,19 @@ const dcEquipment = [
 
 export default function Requirements() {
   const navigate = useNavigate();
-  const { state, dispatch } = useProject();
+  const { projectId } = useParams();
+  const { state, dispatch, loadProject } = useProject();
   const isCampus = state.solutionType !== 'datacenter';
   const [form, setForm] = useState(state.requirements);
   const [submitting, setSubmitting] = useState(false);
   const [errors, setErrors] = useState({});
+
+  // Sync project state from URL params on mount
+  useEffect(() => {
+    if (projectId && state.projectId !== projectId) {
+      loadProject(projectId);
+    }
+  }, [projectId, state.projectId, loadProject]);
 
   function set(field, value) {
     setForm(prev => ({ ...prev, [field]: value }));
@@ -159,7 +167,7 @@ export default function Requirements() {
     setSubmitting(true);
     dispatch({ type: 'UPDATE_REQUIREMENTS', payload: form });
     dispatch({ type: 'WORKFLOW_START' });
-    navigate('/design');
+    navigate(`/project/${projectId}/design`);
   }
 
   return (
