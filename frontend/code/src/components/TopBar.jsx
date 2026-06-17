@@ -6,39 +6,28 @@
 
 import { useState, useEffect, useRef } from 'react';
 import { NavLink, useNavigate } from 'react-router-dom';
-
-const MOCK_PROJECTS = [
-  { id: '1', name: 'Campus Core Refresh', type: 'Campus' },
-  { id: '2', name: 'Data Center West', type: 'Data Center' },
-  { id: '3', name: 'Remote Office VPN', type: 'SD-WAN' },
-  { id: '4', name: 'IoT Security Layer', type: 'Security' },
-];
-// TODO: Replace MOCK_PROJECTS with localStorage lookup (step 7)
-
-// TODO: [BACKEND TEAM]
-// Replace 'MOCK_PROJECTS' with a real API call.
-// Implementation: Create a debounced function that calls GET /api/projects?search=${query}
-// and populates the results state dynamically.
+import { useProject } from '../context/ProjectContext';
 
 export default function TopBar() {
   const navigate = useNavigate();
+  const { getProjectList } = useProject();
   const [query, setQuery] = useState('');
   const [results, setResults] = useState([]);
   const [showResults, setShowResults] = useState(false);
   const searchRef = useRef(null);
 
-  // Simple search logic
   useEffect(() => {
     if (query.length > 1) {
-      const filtered = MOCK_PROJECTS.filter(p => 
-        p.name.toLowerCase().includes(query.toLowerCase())
+      const projects = getProjectList();
+      const filtered = projects.filter(p =>
+        p.title.toLowerCase().includes(query.toLowerCase())
       );
       setResults(filtered);
       setShowResults(true);
     } else {
       setShowResults(false);
     }
-  }, [query]);
+  }, [query, getProjectList]);
 
   // Close search when clicking outside
   useEffect(() => {
@@ -91,8 +80,8 @@ export default function TopBar() {
                       className="w-full flex items-center justify-between px-4 py-3 hover:bg-primary/10 text-left transition-colors group"
                     >
                       <div className="flex flex-col">
-                        <span className="text-sm font-medium text-on-surface group-hover:text-primary transition-colors">{project.name}</span>
-                        <span className="text-[10px] text-on-surface-variant uppercase tracking-wider">{project.type}</span>
+                        <span className="text-sm font-medium text-on-surface group-hover:text-primary transition-colors">{project.title}</span>
+                        <span className="text-[10px] text-on-surface-variant uppercase tracking-wider">{project.status || 'draft'}</span>
                       </div>
                       <span className="material-symbols-outlined text-outline group-hover:text-primary text-sm opacity-0 group-hover:opacity-100 transition-all">open_in_new</span>
                     </button>
