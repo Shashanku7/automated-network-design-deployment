@@ -23,6 +23,7 @@ public record AgentEvent(
     TOOL_CALL,
     TOOL_RESULT,
     FINAL_ANSWER,
+    PHASE_APPROVED,
     ERROR;
 
     @JsonCreator
