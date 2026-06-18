@@ -6,7 +6,8 @@
 #  Services started:
 #    1. AI-Service (FastAPI)           → http://localhost:8000
 #    2. Image Generation Service       → http://localhost:8001
-#    3. React Frontend (Vite dev)      → http://localhost:5173
+#    3. Topology Gatekeeper (FastAPI)  → http://localhost:8002
+#    4. React Frontend (Vite dev)      → http://localhost:5173
 #
 #  Usage:
 #    ./start.sh           # Start all services
@@ -20,6 +21,7 @@ SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 AI_SERVICE_DIR="$SCRIPT_DIR/ai-service"
 IMAGE_SERVICE_DIR="$SCRIPT_DIR/Image_generation_service"
 FRONTEND_DIR="$SCRIPT_DIR/frontend/code"
+TOPOLOGY_GEN_DIR="$SCRIPT_DIR/topology_generation"
 
 # ── PID file for cleanup ──────────────────────────
 PID_FILE="$SCRIPT_DIR/.running_pids"
@@ -55,7 +57,7 @@ stop_services() {
     else
         warn "No PID file found. Trying to find processes..."
         # Fallback: kill by port
-        for port in 8000 8001 5173; do
+        for port in 8000 8001 8002 5173; do
             pid=$(lsof -ti ":$port" 2>/dev/null || true)
             if [ -n "$pid" ]; then
                 kill "$pid" 2>/dev/null && log "Killed process on port $port (PID $pid)"
@@ -117,6 +119,7 @@ fi
 # Check directories
 [ -d "$AI_SERVICE_DIR" ]       || { err "ai-service dir not found: $AI_SERVICE_DIR"; exit 1; }
 [ -d "$IMAGE_SERVICE_DIR" ]    || { err "Image service dir not found: $IMAGE_SERVICE_DIR"; exit 1; }
+[ -d "$TOPOLOGY_GEN_DIR" ]     || { err "topology_generation dir not found: $TOPOLOGY_GEN_DIR"; exit 1; }
 [ -f "$AI_SERVICE_DIR/.env" ]  || { warn ".env not found in ai-service — defaults will be used"; }
 
 echo ""
@@ -124,7 +127,7 @@ echo ""
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 #  1. AI-Service (FastAPI backend) — port 8000
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-echo -e "${BOLD}${BLUE}[1/3] Starting AI-Service (FastAPI) → http://localhost:8000${RESET}"
+echo -e "${BOLD}${BLUE}[1/4] Starting AI-Service (FastAPI) → http://localhost:8000${RESET}"
 (
     cd "$AI_SERVICE_DIR"
     uv run uvicorn webapp.app:app \
@@ -144,7 +147,7 @@ sleep 2
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 #  2. Image Generation Service — port 8001
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-echo -e "${BOLD}${MAGENTA}[2/3] Starting Image Generation Service → http://localhost:8001${RESET}"
+echo -e "${BOLD}${MAGENTA}[2/4] Starting Image Generation Service → http://localhost:8001${RESET}"
 (
     cd "$IMAGE_SERVICE_DIR"
     # Prefer ai-service's uv venv (shared deps), else use system python
@@ -164,10 +167,29 @@ echo "${IMG_PID}|Image Generation Service (port 8001)" >> "$PID_FILE"
 log "Image Generation Service started (PID $IMG_PID)"
 
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-#  3. React Frontend (Vite dev server) — port 5173
+#  3. Topology Gatekeeper (FastAPI) — port 8002
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+echo -e "${BOLD}${YELLOW}[3/4] Starting Topology Gatekeeper → http://localhost:8002${RESET}"
+(
+    cd "$TOPOLOGY_GEN_DIR"
+    uv run uvicorn app:app \
+        --host 0.0.0.0 \
+        --port 8002 \
+        --reload \
+        --log-level info \
+        2>&1 | sed "s/^/  ${YELLOW}[topology-gk]${RESET} /"
+) &
+TOPOLOGY_PID=$!
+echo "${TOPOLOGY_PID}|Topology Gatekeeper (port 8002)" >> "$PID_FILE"
+log "Topology Gatekeeper started (PID $TOPOLOGY_PID)"
+
+sleep 1
+
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+#  4. React Frontend (Vite dev server) — port 5173
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 if [ "$SKIP_FRONTEND" = false ]; then
-    echo -e "${BOLD}${GREEN}[3/3] Starting React Frontend (Vite) → http://localhost:5173${RESET}"
+    echo -e "${BOLD}${GREEN}[4/4] Starting React Frontend (Vite) → http://localhost:5173${RESET}"
 
     # Install deps if needed
     if [ ! -d "$FRONTEND_DIR/node_modules" ]; then
@@ -196,6 +218,7 @@ echo -e "${CYAN}━━━━━━━━━━━━━━━━━━━━━�
 echo ""
 echo -e "  ${BLUE}AI-Service:${RESET}       http://localhost:8000"
 echo -e "  ${MAGENTA}Image Service:${RESET}    http://localhost:8001"
+echo -e "  ${YELLOW}Topology Gatekeeper:${RESET} http://localhost:8002"
 if [ "$SKIP_FRONTEND" = false ]; then
     echo -e "  ${GREEN}React Frontend:${RESET}   http://localhost:5173"
 fi

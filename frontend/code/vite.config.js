@@ -11,8 +11,8 @@ export default defineConfig({
         target: 'http://localhost:8000',
         changeOrigin: true,
       },
-      '/ws': {
-        target: 'ws://localhost:8000',
+      '/chat': {
+        target: 'ws://localhost:8080',
         ws: true,
       },
     },
