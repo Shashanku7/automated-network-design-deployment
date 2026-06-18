@@ -49,6 +49,7 @@ const initialState = {
   deviceSelection: null,
   diagramUrl: null,
   diagramDownloadUrl: null,
+  reactCode: null,
   cliConfig: null,
 
   // Legacy compat
@@ -89,6 +90,7 @@ function projectReducer(state, action) {
         deviceSelection: null,
         diagramUrl: null,
         diagramDownloadUrl: null,
+        reactCode: null,
         cliConfig: null,
       };
 
@@ -120,6 +122,9 @@ function projectReducer(state, action) {
 
     case 'SET_DIAGRAM':
       return { ...state, diagramUrl: action.payload.url, diagramDownloadUrl: action.payload.downloadUrl };
+
+    case 'SET_REACT_CODE':
+      return { ...state, reactCode: action.payload };
 
     case 'SET_CLI_CONFIG':
       return { ...state, cliConfig: action.payload };
