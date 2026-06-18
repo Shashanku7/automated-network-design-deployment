@@ -5,9 +5,10 @@
 #
 #  Services started:
 #    1. AI-Service (FastAPI)           → http://localhost:8000
-#    2. Image Generation Service       → http://localhost:8001
-#    3. Topology Gatekeeper (FastAPI)  → http://localhost:8002
-#    4. React Frontend (Vite dev)      → http://localhost:5173
+#    2. Gateway (Quarkus)              → http://localhost:8080
+#    3. Image Generation Service       → http://localhost:8001
+#    4. Topology Gatekeeper (FastAPI)  → http://localhost:8002
+#    5. React Frontend (Vite dev)      → http://localhost:5173
 #
 #  Usage:
 #    ./start.sh           # Start all services
@@ -22,6 +23,7 @@ AI_SERVICE_DIR="$SCRIPT_DIR/ai-service"
 IMAGE_SERVICE_DIR="$SCRIPT_DIR/Image_generation_service"
 FRONTEND_DIR="$SCRIPT_DIR/frontend/code"
 TOPOLOGY_GEN_DIR="$SCRIPT_DIR/topology_generation"
+GATEWAY_DIR="$SCRIPT_DIR/gateway"
 
 # ── PID file for cleanup ──────────────────────────
 PID_FILE="$SCRIPT_DIR/.running_pids"
@@ -57,7 +59,7 @@ stop_services() {
     else
         warn "No PID file found. Trying to find processes..."
         # Fallback: kill by port
-        for port in 8000 8001 8002 5173; do
+        for port in 8000 8080 8001 8002 5173; do
             pid=$(lsof -ti ":$port" 2>/dev/null || true)
             if [ -n "$pid" ]; then
                 kill "$pid" 2>/dev/null && log "Killed process on port $port (PID $pid)"
@@ -106,6 +108,13 @@ if ! command -v uv &>/dev/null; then
 fi
 log "uv found: $(uv --version)"
 
+# Check Java (for gateway)
+if ! command -v java &>/dev/null; then
+    err "java not found. Install JDK 25+ (GraalVM recommended)"
+    exit 1
+fi
+log "java found: $(java -version 2>&1 | head -1)"
+
 # Check node/npm (for frontend)
 if [ "$SKIP_FRONTEND" = false ]; then
     if ! command -v node &>/dev/null; then
@@ -120,6 +129,7 @@ fi
 [ -d "$AI_SERVICE_DIR" ]       || { err "ai-service dir not found: $AI_SERVICE_DIR"; exit 1; }
 [ -d "$IMAGE_SERVICE_DIR" ]    || { err "Image service dir not found: $IMAGE_SERVICE_DIR"; exit 1; }
 [ -d "$TOPOLOGY_GEN_DIR" ]     || { err "topology_generation dir not found: $TOPOLOGY_GEN_DIR"; exit 1; }
+[ -d "$GATEWAY_DIR" ]          || { err "gateway dir not found: $GATEWAY_DIR"; exit 1; }
 [ -f "$AI_SERVICE_DIR/.env" ]  || { warn ".env not found in ai-service — defaults will be used"; }
 
 echo ""
@@ -127,7 +137,7 @@ echo ""
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 #  1. AI-Service (FastAPI backend) — port 8000
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-echo -e "${BOLD}${BLUE}[1/4] Starting AI-Service (FastAPI) → http://localhost:8000${RESET}"
+echo -e "${BOLD}${BLUE}[1/5] Starting AI-Service (FastAPI) → http://localhost:8000${RESET}"
 (
     cd "$AI_SERVICE_DIR"
     uv run uvicorn webapp.app:app \
@@ -145,9 +155,27 @@ log "AI-Service started (PID $AI_PID)"
 sleep 2
 
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-#  2. Image Generation Service — port 8001
+#  2. Gateway (Quarkus) — port 8080
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-echo -e "${BOLD}${MAGENTA}[2/4] Starting Image Generation Service → http://localhost:8001${RESET}"
+echo -e "${BOLD}${CYAN}[2/5] Starting Gateway (Quarkus) → http://localhost:8080${RESET}"
+(
+    cd "$GATEWAY_DIR"
+    if [ ! -f target/quarkus-app/quarkus-run.jar ]; then
+        ./mvnw package -DskipTests -q
+    fi
+    java -jar target/quarkus-app/quarkus-run.jar \
+        2>&1 | sed "s/^/  ${CYAN}[gateway]${RESET} /"
+) &
+GATEWAY_PID=$!
+echo "${GATEWAY_PID}|Gateway (port 8080)" >> "$PID_FILE"
+log "Gateway started (PID $GATEWAY_PID)"
+
+sleep 3
+
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+#  3. Image Generation Service — port 8001
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+echo -e "${BOLD}${MAGENTA}[3/5] Starting Image Generation Service → http://localhost:8001${RESET}"
 (
     cd "$IMAGE_SERVICE_DIR"
     # Prefer ai-service's uv venv (shared deps), else use system python
@@ -167,9 +195,9 @@ echo "${IMG_PID}|Image Generation Service (port 8001)" >> "$PID_FILE"
 log "Image Generation Service started (PID $IMG_PID)"
 
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-#  3. Topology Gatekeeper (FastAPI) — port 8002
+#  4. Topology Gatekeeper (FastAPI) — port 8002
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-echo -e "${BOLD}${YELLOW}[3/4] Starting Topology Gatekeeper → http://localhost:8002${RESET}"
+echo -e "${BOLD}${YELLOW}[4/5] Starting Topology Gatekeeper → http://localhost:8002${RESET}"
 (
     cd "$TOPOLOGY_GEN_DIR"
     uv pip install -r requirements.txt -q 2>/dev/null
@@ -187,10 +215,10 @@ log "Topology Gatekeeper started (PID $TOPOLOGY_PID)"
 sleep 1
 
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-#  4. React Frontend (Vite dev server) — port 5173
+#  5. React Frontend (Vite dev server) — port 5173
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 if [ "$SKIP_FRONTEND" = false ]; then
-    echo -e "${BOLD}${GREEN}[4/4] Starting React Frontend (Vite) → http://localhost:5173${RESET}"
+    echo -e "${BOLD}${GREEN}[5/5] Starting React Frontend (Vite) → http://localhost:5173${RESET}"
 
     # Install deps if needed
     if [ ! -d "$FRONTEND_DIR/node_modules" ]; then
@@ -218,6 +246,7 @@ echo -e "${BOLD}  All services running!${RESET}"
 echo -e "${CYAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${RESET}"
 echo ""
 echo -e "  ${BLUE}AI-Service:${RESET}       http://localhost:8000"
+echo -e "  ${CYAN}Gateway:${RESET}          http://localhost:8080"
 echo -e "  ${MAGENTA}Image Service:${RESET}    http://localhost:8001"
 echo -e "  ${YELLOW}Topology Gatekeeper:${RESET} http://localhost:8002"
 if [ "$SKIP_FRONTEND" = false ]; then
