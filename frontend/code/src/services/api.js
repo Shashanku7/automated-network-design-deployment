@@ -105,7 +105,8 @@ export function runWorkflow(requirements, solutionType, onEvent) {
   return new Promise((resolve, reject) => {
     const prompt = buildPromptFromRequirements(requirements, solutionType);
     const projectId = crypto.randomUUID();
-    const wsUrl = `ws://${window.location.host}/chat/${projectId}`;
+    const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+    const wsUrl = `${protocol}//${window.location.host}/chat/${projectId}`;
     const ws = new WebSocket(wsUrl);
 
     const results = {
