@@ -1,6 +1,6 @@
 """FastAPI webapp – Network Automation Multi-Agent Workflow with WebSocket streaming."""
 
-import asyncio, json, os, re, sys, uuid
+import asyncio, httpx, json, os, re, sys, uuid
 from datetime import datetime
 from pathlib import Path
 
@@ -32,6 +32,7 @@ from config import (
     OLLAMA_BASE_URL,
     OPENROUTER_API_KEY,
     IMAGE_SERVICE_URL,
+    TOPOLOGY_SERVICE_URL,
     RETRIEVAL_TOP_K,
     MIN_SCORE_THRESHOLD,
     POSTGRES_URI,
@@ -675,12 +676,104 @@ agent5 = FunctionAgent(
 )
 
 
+agent6 = FunctionAgent(
+    name="react_topology_architect",
+    description="Generates raw nodes and edges JSON data for a React Flow network topology diagram from topology and BOM text.",
+    system_prompt=(
+        "You are a Network Topology Data Generator.\n"
+        "Read the topology description and BOM table provided, and generate the JSON data representing "
+        "the nodes and edges for an interactive network diagram in React Flow.\n\n"
+
+        "## STRICT RULES\n"
+        "1. Output ONLY a valid JSON object. Do not include any explanations, preambles, postambles, or markdown code block fences.\n"
+        "2. The JSON object MUST contain exactly two keys: 'nodes' and 'edges'.\n"
+        "3. Node format:\n"
+        "   {\n"
+        "     \"nodes\": [\n"
+        "       {\n"
+        "         \"id\": \"node_id\",\n"
+        "         \"type\": \"custom\",\n"
+        "         \"position\": { \"x\": 100, \"y\": 200 },\n"
+        "         \"data\": {\n"
+        "           \"iconType\": \"Switch\",\n"
+        "           \"label\": \"Device Name\\nIP Address\\nRole / VLAN\"\n"
+        "         }\n"
+        "       }\n"
+        "     ],\n"
+        "     \"edges\": [\n"
+        "       {\n"
+        "         \"id\": \"edge_id\",\n"
+        "         \"source\": \"source_node_id\",\n"
+        "         \"target\": \"target_node_id\",\n"
+        "         \"style\": { \"stroke\": \"#00A3AD\", \"strokeWidth\": 2 },\n"
+        "         \"label\": \"10G\",\n"
+        "         \"animated\": true\n"
+        "       }\n"
+        "     ]\n"
+        "   }\n\n"
+
+        "## NODE ICON TYPE RULES\n"
+        "Set 'iconType' in the data object to match the device role. NEVER omit iconType:\n"
+        "- \"Cloud\"   -> WAN link / Internet cloud node\n"
+        "- \"Gateway\" -> Firewall, Router, or Edge device\n"
+        "- \"Chassis\" -> Core switch or Spine switch (large chassis)\n"
+        "- \"Switch\"  -> Distribution switch, Leaf switch, or Access switch\n"
+        "- \"AP\"      -> Wireless Access Point or grouped Endpoint node\n"
+        "- \"Server\"  -> Server, NVR, Host\n"
+        "- \"Laptop\"  -> Laptops, Workstations, User Devices\n"
+        "- \"Phone\"   -> VoIP Phones\n"
+        "- \"Printer\" -> Printers\n"
+        "- \"IPTV\"    -> IPTVs, Monitors, Displays\n"
+        "- \"Camera\"  -> CCTV, Security Cameras\n"
+        "- \"WLC\"     -> Wireless LAN Controllers\n"
+        "- \"NAC\"     -> Network Access Control (ClearPass, ISE)\n"
+        "- \"IoT\"     -> Smart sensors, HVAC, Door controllers\n"
+        "- \"Storage\" -> Storage Arrays, SAN, NAS\n"
+        "- \"LoadBalancer\" -> Load Balancers, ADCs, F5\n\n"
+
+        "## LAYOUT RULES\n"
+        "IF the input describes a CAMPUS (buildings, floors, students, staff, VoIP):\n"
+        "  - Top-to-bottom hierarchical tree layout.\n"
+        "  - Core switches (iconType: Chassis): y=0, centered horizontally.\n"
+        "  - Distribution switches (iconType: Switch): y=160, one pair per building, spaced 320px apart.\n"
+        "  - WLCs and NACs (iconType: WLC, NAC): y=160, placed near the core or distribution layer.\n"
+        "  - Access switches (iconType: Switch): y=320, one per floor, spaced 160px apart under their building.\n"
+        "  - Endpoints/APs (iconType: AP, Laptop, Phone, Printer, IPTV, Camera, IoT): y=480.\n"
+        "  - When placing multiple individual end devices horizontally under a switch, you MUST space them at least 150px apart on the X-axis so their SVG icons do not visually overlap.\n\n"
+        "IF the input describes a DATA CENTER (racks, servers, spine, leaf):\n"
+        "  - Spine-Leaf mesh layout.\n"
+        "  - Spine switches (iconType: Chassis): y=0, spaced 220px apart in a horizontal row, centered.\n"
+        "  - Load Balancers (iconType: LoadBalancer): y=110, placed between spine and leaf.\n"
+        "  - Leaf switches (iconType: Switch): y=220, spaced 220px apart in a horizontal row.\n"
+        "  - Servers and Storage (iconType: Server, Storage): y=440, grouped under their leaf switches.\n"
+        "  - EVERY Leaf switch MUST have an edge to EVERY Spine switch (full mesh).\n\n"
+
+        "## LABEL FORMAT\n"
+        "Set 'label' in data to a 3-line string using \\n:\n"
+        "  Line 1: Device model name (e.g., 'CX 6405')\n"
+        "  Line 2: IP address (e.g., '10.10.10.1')\n"
+        "  Line 3: Role and VLAN (e.g., 'Core / VLAN 10')\n\n"
+
+        "## EDGE STYLING\n"
+        "Use the 'style' and 'label' properties on each edge object.\n"
+        "- Core/Spine uplinks: style:{ stroke:'#FF8300', strokeWidth:3 }, label: link speed (e.g. '100G'), animated: true\n"
+        "- Dist/Leaf links:    style:{ stroke:'#00A3AD', strokeWidth:2 }, label: 'LAG', animated: true\n"
+        "- Access links:       style:{ stroke:'#8b949e', strokeWidth:1.5 }, label: '1G'\n\n"
+
+        "## CRITICAL CONSTRAINTS\n"
+        "NEVER generate nodes for passive components like DAC cables, fiber optics, transceivers, or software licenses. Only draw active powered network devices. Cables must only be represented as Edges (link speeds), never as standalone Nodes.\n"
+    ),
+    llm=llm_qwen_coder,
+)
+
+
 PHASES = [
     (1, "Prompt Rephrasing", agent1),
     (2, "Network Topology Design", agent2),
     (3, "Device Selection & BOM", agent3),
     (4, "D2 Diagram Generation", agent4),
-    (5, "CLI Configuration Generation", agent5),
+    (5, "React Topology Generation", agent6),
+    (6, "CLI Configuration Generation", agent5),
 ]
 
 # ── Helpers ───────────────────────────────────
@@ -747,7 +840,7 @@ def _format_tool_events(events: list[dict]) -> str:
 
 def _save(prompt, rephrased, topology, devices, diagram_code="", diagram_url=None,
           tools_1=None, tools_2=None, tools_3=None, tools_4=None, tools_5=None,
-          cli_config=""):
+          cli_config="", react_code="", tools_6=None):
     ts = datetime.now()
     fp = OUTPUT_DIR / f"{ts:%Y-%m-%d_%H-%M-%S}_run.md"
     content = (
@@ -760,10 +853,66 @@ def _save(prompt, rephrased, topology, devices, diagram_code="", diagram_url=Non
     )
     if diagram_url:
         content += f"\n---\n\n## Topology Diagram\n\nGenerated diagram: `{diagram_url}`\n"
+    if react_code:
+        content += f"\n---\n\n## Phase 5: React Topology JSON\n\n```json\n{_strip_ansi(react_code)}\n```\n"
     if cli_config:
-        content += f"\n---\n\n## Phase 5: CLI Configuration\n\n{_strip_ansi(cli_config)}\n"
+        content += f"\n---\n\n## Phase 6: CLI Configuration\n\n{_strip_ansi(cli_config)}\n"
     fp.write_text(content, encoding="utf-8")
     return fp
+
+
+# ── React Flow Code Template ───────────────────────
+def build_react_flow_code(nodes_json: str, edges_json: str) -> str:
+    """Combine nodes/edges JSON into a functional React Flow app wrapper."""
+    return f"""import React from 'react';
+import ReactFlow, {{ Background, Controls, MiniMap }} from 'reactflow';
+import 'reactflow/dist/style.css';
+
+const nodes = {nodes_json};
+const edges = {edges_json};
+
+export default function App() {{
+  return (
+    <div style={{{{width:'100vw',height:'100vh',background:'#fdfdfd'}}}}>
+      <ReactFlow
+        nodes={{nodes}}
+        edges={{edges}}
+        fitView
+        defaultEdgeOptions={{{{ type: 'smoothstep' }}}}
+      >
+        <Background color='#e8e8e8' gap={{20}} />
+        <Controls />
+        <MiniMap nodeStrokeColor='#00A3AD' nodeColor='#e1e4e8' />
+      </ReactFlow>
+    </div>
+  );
+}}"""
+
+
+async def generate_topology_code(llm_output: str, topology_text: str = "", bom_text: str = "") -> dict:
+    """Send Agent 6's raw LLM output to topology_generation gatekeeper for 4-layer validation.
+
+    Returns dict with:
+      {'status': 'ok',    'code': '<clean React Flow JSON string>'}   on success
+      {'status': 'error', 'message': '<error details>'}               on failure
+    """
+    try:
+        async with httpx.AsyncClient(timeout=30.0) as client:
+            resp = await client.post(
+                f"{TOPOLOGY_SERVICE_URL}/validate-topology",
+                json={
+                    "llm_output": llm_output,
+                    "topology_text": topology_text,
+                    "bom_text": bom_text,
+                },
+            )
+            resp.raise_for_status()
+            return resp.json()
+    except httpx.ConnectError:
+        return {"status": "error", "message": "Topology gatekeeper unreachable (port 8002). Is it running?"}
+    except Exception as exc:
+        return {"status": "error", "message": f"Gatekeeper validation failed: {exc}"}
+
 
 # ── Kafka Task Processor ──────────────────────────
 kafka_mgr = KafkaManager()
@@ -1024,19 +1173,41 @@ async def ws_endpoint(ws: WebSocket):
             await _send(ws, type="diagram_error",
                         message=f"Image service unavailable: {str(img_err)}")
 
-        # Phase 5: CLI Configuration Generation
+        # Phase 5: React Topology JSON Generation
+        react_ctx = f"## Approved Topology\n{topology}\n\n## Bill of Materials\n{devices}\n\n## D2 Diagram Code\n```d2\n{diagram_code}\n```"
+        react_raw, tools_5 = await _run_phase(ws, 5, "React Topology Generation", agent6, react_ctx, model_name="qwen3-coder:480b-cloud", project_id=project_id)
+
+        # Validate and transform via topology gatekeeper
+        react_code = None
+        await _send(ws, type="phase_start", phase="topology_validate", name="Validating Topology JSON", iteration=1)
+        try:
+            gate_result = await generate_topology_code(react_raw, topology, devices)
+            if gate_result.get("status") == "ok":
+                react_code = gate_result["code"]
+                await _send(ws, type="topology_code_ready", code=react_code, phase=5)
+            else:
+                await _send(ws, type="topology_code_error", message=gate_result.get("message", "Gatekeeper validation failed"), raw=react_raw)
+                react_code = react_raw
+        except Exception as gate_err:
+            await _send(ws, type="topology_code_error", message=f"Gatekeeper error: {gate_err}", raw=react_raw)
+            react_code = react_raw
+
+        # Phase 6: CLI Configuration Generation
         cli_ctx = (
             f"## Approved Topology\n{topology}\n\n"
             f"## Bill of Materials\n{devices}\n\n"
-            f"## D2 Diagram Code\n```d2\n{diagram_code}\n```"
+            f"## D2 Diagram Code\n```d2\n{diagram_code}\n```\n"
+            f"## React Topology JSON\n```json\n{react_code or react_raw}\n```"
         )
-        cli_config, tools_5 = await _run_phase(ws, 5, "CLI Configuration Generation", agent5, cli_ctx, model_name="qwen3-coder:480b-cloud", project_id=project_id)
+        cli_config, tools_6 = await _run_phase(ws, 6, "CLI Configuration Generation", agent5, cli_ctx, model_name="qwen3-coder:480b-cloud", project_id=project_id)
 
         fp = _save(prompt, rephrased, topology, devices, diagram_code, diagram_url,
-                    tools_1, tools_2, tools_3, tools_4, tools_5, cli_config)
+                    tools_1, tools_2, tools_3, tools_4, tools_5, cli_config,
+                    react_code=react_code or "", tools_6=tools_6)
         await _send(ws, type="workflow_complete", saved_to=str(fp),
                     diagram_url=diagram_url,
-                    has_cli_config=bool(cli_config))
+                    has_cli_config=bool(cli_config),
+                    has_react_code=bool(react_code))
     except WebSocketDisconnect:
         pass
     except Exception as e:
