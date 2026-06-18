@@ -2,9 +2,11 @@ package org.acme.gateway;
 
 import com.fasterxml.jackson.annotation.JsonProperty;
 import jakarta.inject.Inject;
+import lombok.extern.java.Log;
 import jakarta.transaction.Transactional;
 import jakarta.ws.rs.Consumes;
 import jakarta.ws.rs.GET;
+import jakarta.ws.rs.PATCH;
 import jakarta.ws.rs.POST;
 import jakarta.ws.rs.Path;
 import jakarta.ws.rs.PathParam;
@@ -33,6 +35,7 @@ import org.eclipse.microprofile.rest.client.inject.RestClient;
 @Path("api")
 @Consumes(MediaType.APPLICATION_JSON)
 @Produces(MediaType.APPLICATION_JSON)
+@Log
 public class APIResource {
 
   @Inject
@@ -76,6 +79,20 @@ public class APIResource {
   public Response getProject(@PathParam("id") UUID id) {
     var project = projectRepository.findById(id);
     if (project == null) return Response.status(404).build();
+    return Response.ok(project).build();
+  }
+
+  @PATCH
+  @Path("projects/{id}")
+  @Transactional
+  public Response updateProject(@PathParam("id") UUID id, UpdateProjectRequest request) {
+    var project = projectRepository.findById(id);
+    if (project == null) return Response.status(404).build();
+    if (request.title() != null) project.setTitle(request.title());
+    if (request.solutionType() != null) project.setSolutionType(request.solutionType());
+    if (request.requirements() != null) project.setRequirements(request.requirements());
+    if (request.chatHistory() != null) project.setChatHistory(request.chatHistory());
+    if (request.workflowStatus() != null) project.setWorkflowStatus(request.workflowStatus());
     return Response.ok(project).build();
   }
 
@@ -129,6 +146,19 @@ public class APIResource {
         nextPhase > 5 ? "complete" : "running", nextPhase, phases)).build();
   }
 
+  // ── Deploy ─────────────────────────────────────────
+
+  @POST
+  @Path("deploy")
+  public Response deploy(DeployRequest request) {
+    log.info("deploy projectId=" + request.projectId());
+    return Response.ok(Map.of(
+        "status", "success",
+        "message", "Deployment initiated. Configuration is being pushed to network devices.",
+        "projectId", request.projectId()
+    )).build();
+  }
+
   // ── Existing endpoints ───────────────────────────────
 
   @POST
@@ -175,4 +205,15 @@ public class APIResource {
 
   public record SaveMessageRequest(String role, String content) {
   }
+
+  public record DeployRequest(String projectId) {
+  }
+
+  public record UpdateProjectRequest(
+    String title,
+    @JsonProperty("solution_type") String solutionType,
+    String requirements,
+    @JsonProperty("chat_history") String chatHistory,
+    @JsonProperty("workflow_status") String workflowStatus
+  ) {}
 }
