@@ -22,7 +22,12 @@ from llama_index.core.agent.workflow import (
 from llama_index.core.tools import FunctionTool
 from llama_index.core.llms import ChatMessage, MessageRole
 from llama_index.core.memory import ChatMemoryBuffer
-from llama_index.storage.chat_store.postgres import PostgresChatStore
+try:
+    from llama_index.storage.chat_store.postgres import PostgresChatStore
+    _HAS_POSTGRES = True
+except ImportError:
+    PostgresChatStore = None
+    _HAS_POSTGRES = False
 
 from config import (
     QDRANT_COLLECTION,
@@ -81,8 +86,17 @@ llm_qwen_coder= OpenRouter(
 # ── Qdrant client ─────────────────────────────────
 _qdrant_client = create_qdrant_client()
 
-# ── PostgresChatStore ────────────────────────────
-chat_store = PostgresChatStore.from_uri(uri=POSTGRES_URI)
+# ── PostgresChatStore (graceful fallback) ────────
+if _HAS_POSTGRES and POSTGRES_URI:
+    try:
+        chat_store = PostgresChatStore.from_uri(uri=POSTGRES_URI)
+    except Exception as e:
+        print(f"[WARN] PostgresChatStore init failed: {e}")
+        chat_store = None
+else:
+    chat_store = None
+    if not _HAS_POSTGRES:
+        print("[INFO] PostgresChatStore unavailable — chat persistence disabled")
 
 # ── Hybrid search (dense + sparse RRF fusion) ───────────
 def hybrid_search(
