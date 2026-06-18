@@ -914,27 +914,163 @@ async def generate_topology_code(llm_output: str, topology_text: str = "", bom_t
         return {"status": "error", "message": f"Gatekeeper validation failed: {exc}"}
 
 
-# ── Kafka Task Processor ──────────────────────────
-kafka_mgr = KafkaManager()
+# ── Global State for Kafka Task Tracking ─────────
+active_tasks: dict[str, dict] = {}
 
-async def process_kafka_task(task_data: dict):
-    project_id = task_data.get("project_id")
-    task_id = task_data.get("task_id")
-    phase_idx = task_data.get("phase", 1)
-    input_ctx = task_data.get("input_context")
-    history = task_data.get("history", [])
 
-    # Find the agent for this phase
-    matching_phases = [p for p in PHASES if p[0] == phase_idx]
-    if not matching_phases:
-        await kafka_mgr.send_event({
-            "project_id": project_id, "task_id": task_id, "agent_name": "system",
-            "event_type": "error", "data": f"Invalid phase: {phase_idx}", "is_final": True
+class KafkaSender:
+    """Duck-typed WebSocket replacement that sends/receives via Kafka topics.
+
+    Enables _run_phase (designed for WebSocket) to work over Kafka:
+      - send_text()  → publishes to agent-events topic
+      - receive_text()  → reads from in-memory feedback_queue
+    """
+
+    def __init__(self, project_id: str, task_id: str):
+        self.project_id = project_id
+        self.task_id = task_id
+
+    async def send_text(self, text: str):
+        data = json.loads(text)
+        await _send_kafka(self.project_id, self.task_id, **data)
+
+    async def receive_text(self) -> str:
+        feedback_task = await active_tasks[self.task_id]["feedback_queue"].get()
+        return json.dumps({
+            "approved": feedback_task.get("approved", False),
+            "feedback": feedback_task.get("feedback", "Please revise."),
         })
+
+
+async def _send_kafka(project_id, task_id, **kw):
+    """Publish an event to Kafka (agent-events topic) for the gateway to forward."""
+    event_type = kw.pop("type", "unknown").upper()
+    content = kw.pop("content", "")
+    is_final = kw.pop("is_final", False)
+
+    event = {
+        "project_id": project_id,
+        "task_id": task_id,
+        "agent_name": "ai-service",
+        "event_type": event_type,
+        "data": content,
+        "is_final": is_final,
+    }
+    if kw:
+        event["payload"] = kw
+
+    await kafka_mgr.send_event(event)
+
+
+async def run_kafka_workflow(task_data: dict):
+    """Full 6-phase agent workflow over Kafka with HITL approval.
+
+    Consumed tasks arrive on 'agent-tasks' topic.  Events are streamed
+    back to the gateway on 'agent-events'.  Approval/revision feedback
+    arrives as new tasks on 'agent-tasks' routed by task_id.
+    """
+    project_id = task_data.get("projectId") or task_data.get("project_id")
+    task_id = task_data.get("taskId") or task_data.get("task_id")
+    prompt = task_data.get("inputContext") or task_data.get("input_context") or task_data.get("content")
+
+    if not project_id or not task_id or not prompt:
         return
 
-    _, phase_name, agent = matching_phases[0]
-    await _run_phase_kafka(kafka_mgr, project_id, task_id, phase_idx, phase_name, agent, input_ctx, history, model_name=OLLAMA_MODEL)
+    feedback_queue: asyncio.Queue = asyncio.Queue()
+    active_tasks[task_id] = {"feedback_queue": feedback_queue}
+    ws = KafkaSender(project_id, task_id)
+
+    try:
+        await _send_kafka(project_id, task_id, type="user_echo", content=prompt)
+
+        rephrased, _ = await _run_phase(ws, 1, "Prompt Rephrasing", agent1, prompt, model_name=OLLAMA_MODEL, project_id=project_id)
+        if not rephrased:
+            return
+
+        topology, _ = await _run_phase(ws, 2, "Network Topology Design", agent2, rephrased, model_name=OLLAMA_MODEL, project_id=project_id)
+        if not topology:
+            return
+
+        ctx = f"## Refined Requirements\n{rephrased}\n\n## Approved Topology\n{topology}"
+        devices, _ = await _run_phase(ws, 3, "Device Selection & BOM", agent3, ctx, model_name=OLLAMA_MODEL, project_id=project_id)
+        if not devices:
+            return
+
+        # Phase 4: D2 Diagram
+        d2_ctx = f"## Approved Topology\n{topology}\n\n## Bill of Materials\n{devices}"
+        diagram_code, _ = await _run_phase(ws, 4, "D2 Diagram Generation", agent4, d2_ctx, model_name="gpt-oss-120b", project_id=project_id)
+        if not diagram_code:
+            return
+
+        # Render D2 diagram via image service
+        diagram_url = None
+        try:
+            result = await _generate_diagram_via_service(diagram_code)
+            if result.get("success"):
+                diagram_url = f"{IMAGE_SERVICE_URL}{result['url']}"
+                await _send_kafka(project_id, task_id, type="diagram_ready", url=diagram_url, is_final=False)
+        except Exception:
+            pass
+
+        # Phase 5: React Topology JSON
+        react_ctx = f"## Approved Topology\n{topology}\n\n## Bill of Materials\n{devices}\n\n## D2 Diagram Code\n```d2\n{diagram_code}\n```"
+        react_raw, _ = await _run_phase(ws, 5, "React Topology Generation", agent6, react_ctx, model_name="qwen3-coder:480b-cloud", project_id=project_id)
+        if not react_raw:
+            return
+
+        react_code = react_raw
+        try:
+            gate_result = await generate_topology_code(react_raw, topology, devices)
+            if gate_result.get("status") == "ok":
+                react_code = gate_result["code"]
+        except Exception:
+            pass
+
+        await _send_kafka(project_id, task_id, type="topology_code_ready", code=react_code, phase=5, is_final=False)
+
+        # Phase 6: CLI Configuration
+        cli_ctx = (
+            f"## Approved Topology\n{topology}\n\n"
+            f"## Bill of Materials\n{devices}\n\n"
+            f"## D2 Diagram Code\n```d2\n{diagram_code}\n```\n"
+            f"## React Topology JSON\n```json\n{react_code}\n```"
+        )
+        cli_config, _ = await _run_phase(ws, 6, "CLI Configuration Generation", agent5, cli_ctx, model_name="qwen3-coder:480b-cloud", project_id=project_id)
+
+        fp = _save(prompt, rephrased, topology, devices, diagram_code, diagram_url,
+                    cli_config=cli_config, react_code=react_code)
+
+        await _send_kafka(project_id, task_id, type="workflow_complete", saved_to=str(fp),
+                          has_cli_config=bool(cli_config), has_react_code=bool(react_code), is_final=True)
+
+    except Exception as e:
+        await _send_kafka(project_id, task_id, type="error", message=str(e), is_final=True)
+    finally:
+        active_tasks.pop(task_id, None)
+
+
+# ── Kafka Consumer ───────────────────────────────
+kafka_mgr = KafkaManager()
+
+
+async def process_kafka_task(task_data: dict):
+    """Dispatch incoming Kafka tasks.
+
+    - If task_id is already tracked → put in feedback_queue for HITL.
+    - Otherwise → start a new full workflow.
+    """
+    project_id = task_data.get("projectId") or task_data.get("project_id")
+    task_id = task_data.get("taskId") or task_data.get("task_id")
+
+    if not task_id:
+        return
+
+    if task_id in active_tasks:
+        active_tasks[task_id]["feedback_queue"].put_nowait(task_data)
+        return
+
+    asyncio.create_task(run_kafka_workflow(task_data))
+
 
 # ── FastAPI ───────────────────────────────────────
 from contextlib import asynccontextmanager
