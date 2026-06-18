@@ -16,5 +16,6 @@ export default defineConfig({
         ws: true,
       },
     },
+    allowedHosts: ["marcus-parent-county-securities.trycloudflare.com"]
   },
 })
