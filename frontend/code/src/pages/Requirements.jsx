@@ -167,7 +167,16 @@ export default function Requirements() {
     setSubmitting(true);
     dispatch({ type: 'UPDATE_REQUIREMENTS', payload: form });
     dispatch({ type: 'WORKFLOW_START' });
-    navigate(`/project/${projectId}/design`);
+    // Persist state immediately — navigate triggers mount before dispatch effects flush
+    try {
+      const saved = JSON.parse(localStorage.getItem(`project_${projectId}`) || '{}');
+      saved.workflowStatus = 'running';
+      saved.solutionType = state.solutionType;
+      saved.requirements = { ...form };
+      saved.projectTitle = state.projectTitle;
+      localStorage.setItem(`project_${projectId}`, JSON.stringify(saved));
+    } catch {}
+    navigate(`/project/${projectId}/design?fresh=1`);
   }
 
   return (

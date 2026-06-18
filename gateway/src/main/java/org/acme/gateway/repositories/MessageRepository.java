@@ -9,7 +9,7 @@ import org.acme.gateway.entities.MessageEntity;
 @ApplicationScoped
 public class MessageRepository implements PanacheRepositoryBase<MessageEntity, UUID> {
   public List<MessageEntity> findByConversationIdOrdered(UUID conversationId) {
-    return list("conversationId order by sequenceNo", conversationId);
+    return list("conversationId = ?1 order by sequenceNo", conversationId);
   }
 
   public long countByConversationId(UUID conversationId) {

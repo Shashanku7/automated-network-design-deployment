@@ -1,7 +1,5 @@
 package org.acme.gateway.services;
 
-import module java.base;
-
 import com.fasterxml.jackson.databind.ObjectMapper;
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.inject.Inject;
@@ -101,33 +99,20 @@ public class KafkaService {
         log.severe("Failed to persist agent response: " + e.getMessage());
       }
 
-      // Auto-approve: advance phase and emit next task
-      var nextTask = pipelineManager.advanceAfterPhaseComplete(event.projectId(), event.data());
+      // Store output but DON'T auto-advance — wait for HITL approval
+      pipelineManager.storePhaseOutput(event.projectId(), event.data());
 
-      // Send PHASE_APPROVED event to frontend
+      // Send APPROVAL_REQUIRED event to frontend
       try {
-        var approvedEvent = new AgentEvent(
+        var approvalEvent = new AgentEvent(
             event.projectId(), event.taskId(), event.agentName(),
-            AgentEvent.EventType.PHASE_APPROVED,
-            nextTask == null ? "Workflow complete" : "Phase auto-approved, proceeding to next phase",
-            null, nextTask == null);
-        var approvedJson = objectMapper.writeValueAsString(approvedEvent);
-        webSocket.sendMessage(event.projectId().toString(), approvedJson);
+            AgentEvent.EventType.APPROVAL_REQUIRED,
+            "Phase completed, awaiting approval",
+            null, false);
+        var approvalJson = objectMapper.writeValueAsString(approvalEvent);
+        webSocket.sendMessage(event.projectId().toString(), approvalJson);
       } catch (Exception e) {
-        log.severe("Failed to send PHASE_APPROVED event: " + e.getMessage());
-      }
-
-      // Emit next task to Kafka if workflow continues
-      if (nextTask != null) {
-        log.info("consumeEvent auto-advance to phase=" + nextTask.phase() + " agent=" + nextTask.agentTarget());
-        taskEmitter.send(nextTask);
-
-        try {
-          var convId = ensureConversation(event.projectId());
-          agentTaskRepository.persist(new AgentTaskEntity(nextTask.taskId(), convId, nextTask.projectId(), nextTask.phase(), nextTask.agentTarget(), nextTask.inputContext()));
-        } catch (Exception e) {
-          log.severe("Failed to persist next task: " + e.getMessage());
-        }
+        log.severe("Failed to send APPROVAL_REQUIRED event: " + e.getMessage());
       }
     }
 
@@ -148,6 +133,76 @@ public class KafkaService {
     var conv = new ConversationEntity(projectId, "Design Workflow");
     conversationRepository.persistAndFlush(conv);
     return conv.getId();
+  }
+
+  @Transactional
+  public void emitNextTask(UUID projectId) {
+    var nextTask = pipelineManager.advancePhase(projectId);
+    if (nextTask != null) {
+      log.info("emitNextTask projectId=" + projectId + " phase=" + nextTask.phase() + " agent=" + nextTask.agentTarget());
+      try {
+        var convId = ensureConversation(projectId);
+        agentTaskRepository.persist(new AgentTaskEntity(nextTask.taskId(), convId, projectId, nextTask.phase(), nextTask.agentTarget(), nextTask.inputContext()));
+      } catch (Exception e) {
+        log.severe("emitNextTask persist error: " + e.getMessage());
+      }
+      taskEmitter.send(nextTask);
+
+      // Notify frontend phase was approved
+      try {
+        var approvedEvent = new AgentEvent(projectId, nextTask.taskId(), nextTask.agentTarget(),
+            AgentEvent.EventType.PHASE_APPROVED,
+            nextTask != null ? "Phase approved, proceeding to next phase" : "Workflow complete",
+            null, nextTask == null);
+        var approvedJson = objectMapper.writeValueAsString(approvedEvent);
+        webSocket.sendMessage(projectId.toString(), approvedJson);
+      } catch (Exception e) {
+        log.severe("emitNextTask send PHASE_APPROVED error: " + e.getMessage());
+      }
+    } else {
+      log.info("emitNextTask projectId=" + projectId + " workflow complete");
+      try {
+        var doneEvent = new AgentEvent(projectId, UUID.randomUUID(), "",
+            AgentEvent.EventType.PHASE_APPROVED,
+            "Workflow complete", null, true);
+        webSocket.sendMessage(projectId.toString(), objectMapper.writeValueAsString(doneEvent));
+      } catch (Exception e) {
+        log.severe("emitNextTask send complete error: " + e.getMessage());
+      }
+    }
+  }
+
+  @Transactional
+  public void resumeWorkflow(UUID projectId) {
+    log.info("resumeWorkflow projectId=" + projectId);
+    var state = pipelineManager.getOrCreateState(projectId);
+    int phase = state.getCurrentPhase();
+    log.info("resumeWorkflow state phase=" + phase);
+
+    // If all 5 phases already done, send workflow complete
+    if (phase > 5) {
+      log.info("resumeWorkflow workflow already complete");
+      try {
+        var doneEvent = new AgentEvent(projectId, UUID.randomUUID(), "",
+            AgentEvent.EventType.PHASE_APPROVED,
+            "Workflow complete", null, true);
+        webSocket.sendMessage(projectId.toString(), objectMapper.writeValueAsString(doneEvent));
+      } catch (Exception e) {
+        log.severe("resumeWorkflow send complete error: " + e.getMessage());
+      }
+      return;
+    }
+
+    var task = pipelineManager.createNextTask(projectId);
+    log.info("resumeWorkflow taskId=" + task.taskId() + " phase=" + task.phase() + " agent=" + task.agentTarget());
+
+    try {
+      var convId = ensureConversation(projectId);
+      agentTaskRepository.persist(new AgentTaskEntity(task.taskId(), convId, projectId, task.phase(), task.agentTarget(), task.inputContext()));
+    } catch (Exception e) {
+      log.severe("resumeWorkflow persist error: " + e.getMessage());
+    }
+    taskEmitter.send(task);
   }
 
   private String extractContent(String messageJson) {

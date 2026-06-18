@@ -31,30 +31,33 @@ public class PipelineManager {
         state.getHistory());
   }
 
-  public void updateStateAfterPhase(UUID projectId, String output) {
+  public void storePhaseOutput(UUID projectId, String output) {
     PipelineState state = getOrCreateState(projectId);
     state.setLastOutput(output);
     state.getHistory().add(new AgentTask.ChatMessage(AgentTask.ChatMessage.Role.ASSISTANT, output));
-
     switch (state.getCurrentPhase()) {
       case 1 -> state.setRephrasedPrompt(output);
       case 2 -> state.setTopologyDesign(output);
       case 3 -> state.setBillOfMaterials(output);
       case 4 -> state.setD2Diagram(output);
     }
-    // Advance for next phase (1→2, 2→3, ..., 5→6 means done)
+  }
+
+  public AgentTask advancePhase(UUID projectId) {
+    PipelineState state = getOrCreateState(projectId);
     if (state.getCurrentPhase() <= 5) {
       state.setCurrentPhase(state.getCurrentPhase() + 1);
     }
-  }
-
-  public AgentTask advanceAfterPhaseComplete(UUID projectId, String output) {
-    updateStateAfterPhase(projectId, output);
-    int nextPhase = getOrCreateState(projectId).getCurrentPhase();
+    int nextPhase = state.getCurrentPhase();
     if (nextPhase > 5) {
       return null;
     }
     return createNextTask(projectId);
+  }
+
+  public AgentTask advanceAfterPhaseComplete(UUID projectId, String output) {
+    storePhaseOutput(projectId, output);
+    return advancePhase(projectId);
   }
 
   public void rehydrateFromDb(UUID projectId) {

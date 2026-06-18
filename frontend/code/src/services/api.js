@@ -113,6 +113,93 @@ const PHASE_MAP = {
   cli_config_generator: 5,
 };
 
+function stripHost(url) {
+  return url.replace(/^https?:\/\/[^\/]+/, '');
+}
+
+function makeWorkflowHandler(results, onEvent, resolve, reject, ws, projectId) {
+  let currentPhase = 0;
+  return function (e) {
+    try {
+      console.log('[WS] recv len=' + e.data.length + ' preview=' + e.data.substring(0, 200));
+      const event = JSON.parse(e.data);
+      const { event_type, agent_name, data, payload, is_final } = event;
+
+      const phase = PHASE_MAP[agent_name];
+      if (phase && phase !== currentPhase) {
+        currentPhase = phase;
+        console.log('[WS] phase_start phase=' + phase + ' agent=' + agent_name);
+        onEvent({ type: 'phase_start', phase, name: agent_name.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase()) });
+      }
+
+      if (event_type === 'TOKEN') {
+        console.log('[WS] TOKEN agent=' + agent_name + ' data_preview=' + (data || '').substring(0, 80));
+        return;
+      }
+
+      if (event_type === 'FINAL_ANSWER') {
+        const content = data || '';
+        if (currentPhase === 1) results.rephrased = content;
+        else if (currentPhase === 2) results.topology = content;
+        else if (currentPhase === 3) results.devices = content;
+        else if (currentPhase === 5) results.cliConfig = content;
+
+        onEvent({ type: 'agent_response', content, phase: currentPhase });
+
+        if (is_final && currentPhase >= 5) {
+          onEvent({ type: 'workflow_complete' });
+          ws.close();
+          resolve(results);
+        }
+        return;
+      }
+
+      if (event_type === 'TOOL_CALL') {
+        onEvent({ type: 'tool_call', tool_name: data || agent_name, tool_kwargs: payload || {} });
+        return;
+      }
+
+      if (event_type === 'TOOL_RESULT') {
+        const toolOutput = payload?.output || data || '';
+        onEvent({ type: 'tool_result', tool_name: agent_name, output: toolOutput, payload });
+        return;
+      }
+
+      if (event_type === 'PHASE_APPROVED') {
+        onEvent({ type: 'phase_approved' });
+        return;
+      }
+
+      if (event_type === 'APPROVAL_REQUIRED') {
+        onEvent({ type: 'approval_request', ws });
+        return;
+      }
+
+      if (event_type === 'DIAGRAM_READY') {
+        const url = stripHost(payload?.url || '');
+        results.diagramUrl = url;
+        results.diagramDownloadUrl = stripHost(payload?.download_url || '');
+        onEvent({ type: 'diagram_ready', url, download_url: results.diagramDownloadUrl, filename: payload?.filename });
+        return;
+      }
+
+      if (event_type === 'DIAGRAM_ERROR') {
+        onEvent({ type: 'diagram_error', message: payload?.message || 'Diagram rendering failed' });
+        return;
+      }
+
+      if (event_type === 'ERROR') {
+        onEvent({ type: 'error', message: data || 'Unknown error' });
+        ws.close();
+        reject(new Error(data || 'Unknown error'));
+        return;
+      }
+    } catch (err) {
+      console.error('WS parse error:', err);
+    }
+  };
+}
+
 export function runWorkflow(projectId, requirements, solutionType, onEvent) {
   return new Promise((resolve, reject) => {
     const prompt = buildPromptFromRequirements(requirements, solutionType);
@@ -121,7 +208,6 @@ export function runWorkflow(projectId, requirements, solutionType, onEvent) {
     const ws = new WebSocket(wsUrl);
 
     const results = { prompt, rephrased: '', topology: '', devices: '', diagramUrl: '', diagramDownloadUrl: '', cliConfig: '' };
-    let currentPhase = 0;
 
     ws.onopen = () => {
       console.log('[WS] open projectId=' + projectId);
@@ -130,72 +216,7 @@ export function runWorkflow(projectId, requirements, solutionType, onEvent) {
       ws.send(msg);
     };
 
-    ws.onmessage = (e) => {
-      try {
-        console.log('[WS] recv len=' + e.data.length + ' preview=' + e.data.substring(0, 200));
-        const event = JSON.parse(e.data);
-        const { event_type, agent_name, data, payload, is_final } = event;
-
-        // Track phase from agent_name
-        const phase = PHASE_MAP[agent_name];
-        if (phase && phase !== currentPhase) {
-          currentPhase = phase;
-          console.log('[WS] phase_start phase=' + phase + ' agent=' + agent_name);
-          onEvent({ type: 'phase_start', phase, name: agent_name.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase()) });
-        }
-
-        if (event.type === 'diagram_ready') {
-          results.diagramUrl = event.url || '';
-          results.diagramDownloadUrl = event.download_url || '';
-          onEvent({ type: 'diagram_ready', url: event.url, download_url: event.download_url, filename: event.filename });
-          return;
-        }
-
-        if (event.type === 'diagram_error') {
-          onEvent({ type: 'diagram_error', message: event.message });
-          return;
-        }
-
-        if (event_type === 'TOKEN') {
-          console.log('[WS] TOKEN agent=' + agent_name + ' data_preview=' + (data || '').substring(0, 80));
-          return;
-        }
-
-        if (event_type === 'FINAL_ANSWER') {
-          const content = data || '';
-          if (currentPhase === 1) results.rephrased = content;
-          else if (currentPhase === 2) results.topology = content;
-          else if (currentPhase === 3) results.devices = content;
-          else if (currentPhase === 5) results.cliConfig = content;
-
-          onEvent({ type: 'agent_response', content });
-        }
-
-        if (event_type === 'TOOL_CALL') {
-          onEvent({ type: 'tool_call', tool_name: agent_name, tool_kwargs: payload || {} });
-        }
-
-        if (event_type === 'TOOL_RESULT') {
-          const toolOutput = payload?.output || data || '';
-          onEvent({ type: 'tool_result', tool_name: agent_name, output: toolOutput, payload });
-        }
-
-        if (event_type === 'ERROR') {
-          onEvent({ type: 'error', message: data || 'Unknown error' });
-          ws.close();
-          reject(new Error(data || 'Unknown error'));
-        }
-
-        // Workflow complete when phase 5 FINAL_ANSWER received
-        if (is_final && event_type === 'FINAL_ANSWER' && currentPhase >= 5) {
-          onEvent({ type: 'workflow_complete' });
-          ws.close();
-          resolve(results);
-        }
-      } catch (err) {
-        console.error('WS parse error:', err);
-      }
-    };
+    ws.onmessage = makeWorkflowHandler(results, onEvent, resolve, reject, ws, projectId);
 
     ws.onerror = () => {
       console.error('[WS] error projectId=' + projectId);
@@ -203,6 +224,31 @@ export function runWorkflow(projectId, requirements, solutionType, onEvent) {
     };
     ws.onclose = (ev) => {
       console.log('[WS] close projectId=' + projectId + ' code=' + ev.code + ' reason=' + ev.reason);
+    };
+  });
+}
+
+export function resumeWorkflow(projectId, onEvent) {
+  return new Promise((resolve, reject) => {
+    const wsProtocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+    const wsUrl = `${wsProtocol}//${window.location.host}/chat/${projectId}`;
+    const ws = new WebSocket(wsUrl);
+
+    const results = { prompt: '', rephrased: '', topology: '', devices: '', diagramUrl: '', diagramDownloadUrl: '', cliConfig: '' };
+
+    ws.onopen = () => {
+      console.log('[WS] resume open projectId=' + projectId);
+      ws.send(JSON.stringify({ resume: true }));
+    };
+
+    ws.onmessage = makeWorkflowHandler(results, onEvent, resolve, reject, ws, projectId);
+
+    ws.onerror = () => {
+      console.error('[WS] resume error projectId=' + projectId);
+      reject(new Error('WebSocket connection failed'));
+    };
+    ws.onclose = (ev) => {
+      console.log('[WS] resume close projectId=' + projectId + ' code=' + ev.code + ' reason=' + ev.reason);
     };
   });
 }
@@ -277,6 +323,23 @@ export async function getProjectMessages(projectId) {
  * Fetch workflow state for a project — completed phases and their outputs.
  * Used on page refresh to resume from where the workflow left off.
  */
+/**
+ * Save/update project metadata (solutionType, requirements, chatHistory, workflowStatus) to DB.
+ */
+export async function saveProjectToDb(projectId, data) {
+  try {
+    const payload = {};
+    if (data.solutionType !== undefined) payload.solution_type = data.solutionType;
+    if (data.requirements !== undefined) payload.requirements = JSON.stringify(data.requirements);
+    if (data.chatHistory !== undefined) payload.chat_history = JSON.stringify(data.chatHistory);
+    if (data.workflowStatus !== undefined) payload.workflow_status = data.workflowStatus;
+    if (data.title !== undefined) payload.title = data.title;
+    await API.patch(`/projects/${projectId}`, payload);
+  } catch (err) {
+    console.error('[DB] saveProjectToDb failed:', err);
+  }
+}
+
 export async function getWorkflowState(projectId) {
   try {
     const res = await API.get(`/projects/${projectId}/phases`);

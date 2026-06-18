@@ -11,6 +11,8 @@ const statusStyles = {
 
 function statusLabel(meta) {
   if (!meta) return 'draft';
+  if (meta.status === 'draft') return 'Draft';
+  if (meta.status === 'designing') return 'Designing';
   if (meta.status === 'deployed') return 'Deployed';
   if (meta.status === 'complete') return 'Complete';
   return 'Designing';

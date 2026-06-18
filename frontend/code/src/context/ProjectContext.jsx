@@ -1,4 +1,5 @@
 import { createContext, useContext, useReducer, useEffect, useRef, useCallback } from 'react';
+import { saveProjectToDb } from '../services/api';
 
 const ProjectContext = createContext(null);
 
@@ -173,6 +174,19 @@ export function ProjectProvider({ children }) {
   const [state, dispatch] = useReducer(projectReducer, initialState);
   const lastSavedRef = useRef('');
 
+  const updateProjectMeta = useCallback((id, updates) => {
+    const index = getProjectIndex().map(p => p.id === id ? { ...p, ...updates, updatedAt: new Date().toISOString() } : p);
+    saveProjectIndex(index);
+  }, []);
+
+  // Sync workflowStatus to project index for dashboard
+  useEffect(() => {
+    if (!state.projectId) return;
+    const map = { running: 'designing', awaiting_approval: 'designing', complete: 'complete', error: 'designing' };
+    const s = map[state.workflowStatus];
+    if (s) updateProjectMeta(state.projectId, { status: s });
+  }, [state.workflowStatus, state.projectId, updateProjectMeta]);
+
   useEffect(() => {
     if (!state.projectId) return;
     const persistable = {
@@ -199,6 +213,14 @@ export function ProjectProvider({ children }) {
     if (serialized !== lastSavedRef.current) {
       lastSavedRef.current = serialized;
       localStorage.setItem(`project_${state.projectId}`, serialized);
+      // Also persist to PostgreSQL
+      saveProjectToDb(state.projectId, {
+        title: state.projectTitle,
+        solutionType: state.solutionType,
+        requirements: state.requirements,
+        chatHistory: state.chatHistory,
+        workflowStatus: state.workflowStatus,
+      });
     }
   }, [state]);
 
@@ -224,11 +246,6 @@ export function ProjectProvider({ children }) {
     localStorage.removeItem(`project_${id}`);
     if (state.projectId === id) dispatch({ type: 'RESET_PROJECT' });
   }, [state.projectId]);
-
-  const updateProjectMeta = useCallback((id, updates) => {
-    const index = getProjectIndex().map(p => p.id === id ? { ...p, ...updates, updatedAt: new Date().toISOString() } : p);
-    saveProjectIndex(index);
-  }, []);
 
   return (
     <ProjectContext.Provider value={{ state, dispatch, createProject, loadProject, getProjectList, deleteProject, updateProjectMeta }}>

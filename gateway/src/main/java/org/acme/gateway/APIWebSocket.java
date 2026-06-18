@@ -1,6 +1,8 @@
 package org.acme.gateway;
 
-import module java.base;
+import java.util.Map;
+import java.util.UUID;
+import java.util.concurrent.ConcurrentHashMap;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import io.quarkus.websockets.next.OnClose;
@@ -12,6 +14,7 @@ import io.quarkus.websockets.next.WebSocketConnection;
 import io.smallrye.common.annotation.Blocking;
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.inject.Inject;
+import jakarta.transaction.Transactional;
 import lombok.extern.java.Log;
 import org.acme.gateway.services.KafkaService;
 import org.acme.gateway.services.PipelineManager;
@@ -29,6 +32,7 @@ public class APIWebSocket {
   Map<UUID, WebSocketConnection> connections = new ConcurrentHashMap<>();
 
   @OnOpen
+  @Transactional
   public void onOpen(WebSocketConnection connection, @PathParam("projectId") String projectId) {
     log.info("WS open projectId=" + projectId);
     var uuid = UUID.fromString(projectId);
@@ -49,15 +53,39 @@ public class APIWebSocket {
     log.info("WS msg projectId=" + projectId + " len=" + message.length() + " preview=" + message.substring(0, Math.min(200, message.length())));
     var uuid = UUID.fromString(projectId);
 
-    // Check for approval/revision messages (handled server-side via Kafka)
+    // Check for approval/revision messages
     try {
       var tree = objectMapper.readTree(message);
       if (tree.has("approved")) {
-        log.info("WS approval msg projectId=" + projectId + " approved=" + tree.get("approved").asBoolean());
+        var approved = tree.get("approved").asBoolean();
+        log.info("WS approval msg projectId=" + projectId + " approved=" + approved);
+        if (approved) {
+          kafkaService.emitNextTask(uuid);
+        } else {
+          String feedback = tree.has("feedback") ? tree.get("feedback").asText() : "";
+          log.info("WS revision msg projectId=" + projectId + " feedback=" + feedback);
+          // Re-run current phase with feedback appended
+          var state = pipelineManager.getOrCreateState(uuid);
+          String lastOut = state.getLastOutput();
+          String revisedInput = (lastOut != null ? lastOut : "") + "\n\n## Revision Request\n" + feedback;
+          kafkaService.sendTask(revisedInput, uuid);
+        }
         return;
       }
     } catch (Exception e) {
       // Not JSON or no approved field — treat as regular prompt
+    }
+
+    // Handle resume — continue from current phase, no new user message
+    try {
+      var tree = objectMapper.readTree(message);
+      if (tree.has("resume") && tree.get("resume").asBoolean()) {
+        log.info("WS resume projectId=" + projectId);
+        kafkaService.resumeWorkflow(uuid);
+        return;
+      }
+    } catch (Exception e) {
+      // fall through
     }
 
     kafkaService.sendTask(message, uuid);

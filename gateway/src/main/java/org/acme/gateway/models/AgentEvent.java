@@ -24,6 +24,9 @@ public record AgentEvent(
     TOOL_RESULT,
     FINAL_ANSWER,
     PHASE_APPROVED,
+    APPROVAL_REQUIRED,
+    DIAGRAM_READY,
+    DIAGRAM_ERROR,
     ERROR;
 
     @JsonCreator

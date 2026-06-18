@@ -9,9 +9,9 @@
  * - Approval/revision UI between phases
  */
 import { useState, useEffect, useRef, useCallback } from 'react';
-import { useNavigate, useParams } from 'react-router-dom';
+import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { useProject } from '../context/ProjectContext';
-import { runWorkflow, sendApproval, sendRevision, sendChatMessage, getProjectConversation, getConversationMessages, getWorkflowState } from '../services/api';
+import { runWorkflow, resumeWorkflow, sendApproval, sendRevision, sendChatMessage, getProjectConversation, getConversationMessages, getWorkflowState } from '../services/api';
 import { marked } from 'marked';
 
 marked.setOptions({ gfm: true, breaks: true });
@@ -21,13 +21,23 @@ function renderMd(text) {
   return marked.parse(text);
 }
 
+const PHASE_LABELS = ['Prompt Rephrasing', 'Topology Design', 'Device Selection', 'Topology Diagram', 'CLI Config'];
+const statusStyles = {
+  draft: 'text-outline',
+  designing: 'text-primary',
+  complete: 'text-tertiary',
+  deployed: 'text-tertiary',
+};
+
 export default function ProposedDesign() {
   const navigate = useNavigate();
   const { projectId } = useParams();
-  const { state, dispatch, loadProject } = useProject();
+  const [searchParams] = useSearchParams();
+  const isFresh = searchParams.get('fresh') === '1';
+  const { state, dispatch, loadProject, getProjectList, deleteProject } = useProject();
   const [events, setEvents] = useState([]);
-  const [wsRef, setWsRef] = useState(null);
-  const [status, setStatus] = useState('idle'); // idle | running | awaiting | complete | error | reconnecting
+  const wsRef = useRef(null);
+  const [status, setStatus] = useState('idle');
   const [currentPhase, setCurrentPhase] = useState(0);
   const [historyLoading, setHistoryLoading] = useState(false);
   const [historyError, setHistoryError] = useState(null);
@@ -35,16 +45,26 @@ export default function ProposedDesign() {
   const [showFeedback, setShowFeedback] = useState(false);
   const [chatInput, setChatInput] = useState('');
   const [sending, setSending] = useState(false);
+  const [sidebarOpen, setSidebarOpen] = useState(true);
+  const [projectList, setProjectList] = useState([]);
+  const [showToolEvents, setShowToolEvents] = useState(false);
   const eventsEndRef = useRef(null);
+  const chatEndRef = useRef(null);
   const hasStarted = useRef(false);
   const retryCountRef = useRef(0);
   const MAX_RETRIES = 3;
+
+  useEffect(() => { setProjectList(getProjectList()); }, [getProjectList]);
+
+  // Refresh project list after workflow status changes
+  useEffect(() => { setProjectList(getProjectList()); }, [state.workflowStatus, getProjectList]);
 
   const scrollToBottom = useCallback(() => {
     eventsEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, []);
 
   useEffect(() => { scrollToBottom(); }, [events, scrollToBottom]);
+  useEffect(() => { chatEndRef.current?.scrollIntoView({ behavior: 'smooth' }); }, [state.chatHistory]);
 
   // Load project state on mount
   useEffect(() => {
@@ -96,7 +116,7 @@ export default function ProposedDesign() {
       const serverState = await getWorkflowState(projectId);
       if (cancelled) return;
 
-      const completedPhases = serverState?.completed_phases || [];
+      const completedPhases = !isFresh ? (serverState?.completed_phases || []) : [];
 
       // Dispatch results from server if any
       if (completedPhases.length > 0) {
@@ -124,9 +144,8 @@ export default function ProposedDesign() {
         setEvents([]);
       }
 
-      runWorkflow(projectId, state.requirements, state.solutionType, (ev) => {
+      const handleEvent = (ev) => {
         setEvents(prev => [...prev, ev]);
-
         switch (ev.type) {
           case 'phase_start':
             setCurrentPhase(ev.phase);
@@ -134,7 +153,7 @@ export default function ProposedDesign() {
             break;
           case 'approval_request':
             setStatus('awaiting');
-            if (ev.ws) setWsRef(ev.ws);
+            wsRef.current = ev.ws;
             break;
           case 'phase_approved':
             setStatus('running');
@@ -143,35 +162,59 @@ export default function ProposedDesign() {
             setStatus('running');
             setShowFeedback(false);
             break;
+          case 'agent_response':
+            if (ev.phase) {
+              switch (ev.phase) {
+                case 1: dispatch({ type: 'SET_REPHRASED', payload: ev.content }); break;
+                case 2: dispatch({ type: 'SET_TOPOLOGY', payload: ev.content }); break;
+                case 3: dispatch({ type: 'SET_DEVICES', payload: ev.content }); break;
+                case 5: dispatch({ type: 'SET_CLI_CONFIG', payload: ev.content }); break;
+              }
+            }
+            break;
+          case 'diagram_ready':
+            dispatch({ type: 'SET_DIAGRAM', payload: { url: ev.url, downloadUrl: ev.download_url } });
+            break;
         }
-      })
-        .then((results) => {
-          setStatus('complete');
-          if (results.rephrased) dispatch({ type: 'SET_REPHRASED', payload: results.rephrased });
-          if (results.topology) dispatch({ type: 'SET_TOPOLOGY', payload: results.topology });
-          if (results.devices) dispatch({ type: 'SET_DEVICES', payload: results.devices });
-          if (results.diagramUrl) {
-            dispatch({ type: 'SET_DIAGRAM', payload: { url: results.diagramUrl, downloadUrl: results.diagramDownloadUrl } });
-          }
-          if (results.cliConfig) {
-            dispatch({ type: 'SET_CLI_CONFIG', payload: results.cliConfig });
-          }
-          dispatch({ type: 'WORKFLOW_COMPLETE' });
-          // Build legacy proposedDesign for BOM page
-          dispatch({
-            type: 'SET_PROPOSED_DESIGN',
-            payload: {
-              summary: (results.rephrased || state.rephrasedPrompt || '')?.substring(0, 200) + '…',
-              topology: { nodes: [], links: [] },
-              bom: [],
-            },
-          });
-        })
-        .catch((err) => {
-          setStatus('error');
-          setEvents(prev => [...prev, { type: 'error', message: err.message }]);
-          dispatch({ type: 'WORKFLOW_ERROR' });
+      };
+
+      const handleComplete = (results) => {
+        setStatus('complete');
+        if (results.rephrased) dispatch({ type: 'SET_REPHRASED', payload: results.rephrased });
+        if (results.topology) dispatch({ type: 'SET_TOPOLOGY', payload: results.topology });
+        if (results.devices) dispatch({ type: 'SET_DEVICES', payload: results.devices });
+        if (results.diagramUrl) {
+          dispatch({ type: 'SET_DIAGRAM', payload: { url: results.diagramUrl, downloadUrl: results.diagramDownloadUrl } });
+        }
+        if (results.cliConfig) {
+          dispatch({ type: 'SET_CLI_CONFIG', payload: results.cliConfig });
+        }
+        dispatch({ type: 'WORKFLOW_COMPLETE' });
+        dispatch({
+          type: 'SET_PROPOSED_DESIGN',
+          payload: {
+            summary: (results.rephrased || state.rephrasedPrompt || '')?.substring(0, 200) + '…',
+            topology: { nodes: [], links: [] },
+            bom: [],
+          },
         });
+      };
+
+      const handleError = (err) => {
+        setStatus('error');
+        setEvents(prev => [...prev, { type: 'error', message: err.message }]);
+        dispatch({ type: 'WORKFLOW_ERROR' });
+      };
+
+      if (completedPhases.length > 0) {
+        resumeWorkflow(projectId, handleEvent)
+          .then(handleComplete)
+          .catch(handleError);
+      } else {
+        runWorkflow(projectId, state.requirements, state.solutionType, handleEvent)
+          .then(handleComplete)
+          .catch(handleError);
+      }
     })();
 
     return () => { cancelled = true; };
@@ -186,14 +229,14 @@ export default function ProposedDesign() {
   }
 
   function handleApprove() {
-    sendApproval(wsRef);
+    sendApproval(wsRef.current);
     setEvents(prev => [...prev, { type: 'user_action', content: '✅ Approved' }]);
     setStatus('running');
   }
 
   function handleRevise() {
     if (!feedbackText.trim()) return;
-    sendRevision(wsRef, feedbackText.trim());
+    sendRevision(wsRef.current, feedbackText.trim());
     setEvents(prev => [...prev, { type: 'user_action', content: feedbackText.trim() }]);
     setFeedbackText('');
     setShowFeedback(false);
@@ -227,53 +270,94 @@ export default function ProposedDesign() {
     );
   }
 
+  const phaseOutputs = [
+    { phase: 1, label: 'Rephrased Prompt', content: state.rephrasedPrompt, icon: 'edit_note' },
+    { phase: 2, label: 'Network Topology', content: state.topologyDesign, icon: 'account_tree' },
+    { phase: 3, label: 'Device Selection & BOM', content: state.deviceSelection, icon: 'inventory_2' },
+    { phase: 4, label: 'Topology Diagram', content: state.diagramUrl, icon: 'schema', isImage: true },
+    { phase: 5, label: 'CLI Configuration', content: state.cliConfig, icon: 'terminal' },
+  ];
+
   return (
     <div className="flex h-full overflow-hidden">
-      {/* Left: Workflow Event Stream */}
+      {/* Left: Recent Chats Sidebar */}
+      <aside className={`${sidebarOpen ? 'w-72' : 'w-0'} transition-all duration-300 border-r border-outline-variant/15 flex flex-col bg-surface-dim overflow-hidden`}>
+        <div className="p-4 border-b border-outline-variant/10">
+          <button onClick={() => navigate('/project/new')}
+            className="w-full flex items-center justify-center gap-2 px-4 py-2.5 bg-primary text-on-primary font-bold rounded-lg hover:brightness-110 transition-all text-sm">
+            <span className="material-symbols-outlined text-lg">add</span>
+            New Chat
+          </button>
+        </div>
+        <div className="flex-1 overflow-y-auto custom-scrollbar p-2 space-y-1">
+          {projectList.map(p => {
+            const active = p.id === projectId;
+            const sClass = statusStyles[p.status] || 'text-outline';
+            const statusIcon = p.status === 'complete' ? 'check_circle' : p.status === 'designing' ? 'pending' : 'draft';
+            return (
+              <button key={p.id} onClick={() => navigate(`/project/${p.id}`)}
+                className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-left text-sm transition-colors ${
+                  active ? 'bg-primary/10 text-primary' : 'hover:bg-surface-container-high text-on-surface'
+                }`}>
+                <span className="material-symbols-outlined text-lg text-outline">folder</span>
+                <span className="flex-1 truncate font-medium">{p.title || 'Untitled'}</span>
+                <span className={`material-symbols-outlined text-xs ${sClass}`}>{statusIcon}</span>
+              </button>
+            );
+          })}
+          {projectList.length === 0 && (
+            <p className="text-xs text-outline text-center py-8">No projects yet</p>
+          )}
+        </div>
+      </aside>
+
+      {/* Main Content */}
       <div className="flex-1 flex flex-col overflow-hidden">
-        <header className="p-6 pb-0">
-          <div className="flex items-center gap-2 text-primary mb-2">
-            <span className="material-symbols-outlined text-sm">auto_awesome</span>
-            <span className="text-xs font-[family-name:var(--font-mono)] uppercase tracking-[0.2em]">AI Workflow</span>
-          </div>
-          <div className="flex items-start justify-between gap-4">
-            <div>
-              <h1 className="text-2xl font-bold font-[family-name:var(--font-headline)] text-on-surface tracking-tight">
-                Network Design Pipeline
+        {/* Top bar with hamburger + header */}
+        <header className="px-6 py-4 border-b border-outline-variant/10 flex items-center gap-4">
+          <button onClick={() => setSidebarOpen(!sidebarOpen)}
+            className="p-1 text-outline hover:text-primary transition-colors">
+            <span className="material-symbols-outlined">{sidebarOpen ? 'menu_open' : 'menu'}</span>
+          </button>
+          <div className="flex-1">
+            <div className="flex items-center gap-2 text-primary">
+              <span className="material-symbols-outlined text-sm">auto_awesome</span>
+              <span className="text-xs font-[family-name:var(--font-mono)] uppercase tracking-[0.2em]">AI Workflow</span>
+            </div>
+            <div className="flex items-center gap-4">
+              <h1 className="text-xl font-bold font-[family-name:var(--font-headline)] text-on-surface tracking-tight">
+                {state.projectTitle || 'Network Design Pipeline'}
               </h1>
-              <p className="text-on-surface-variant text-sm mt-1">
+              <span className="text-xs text-on-surface-variant">
                 {status === 'running' && '⏳ Processing…'}
                 {status === 'awaiting' && '✋ Awaiting your approval'}
-                {status === 'complete' && '✅ Workflow complete'}
+                {status === 'complete' && '✅ Complete'}
                 {status === 'error' && '❌ Connection lost'}
                 {status === 'reconnecting' && '🔄 Reconnecting…'}
                 {status === 'idle' && 'Ready'}
-              </p>
+              </span>
             </div>
-            {status === 'complete' && (
-              <div className="flex gap-3">
-                <button onClick={() => navigate(`/project/${projectId}/bom`)}
-                  className="px-4 py-2 bg-primary text-on-primary font-bold rounded-lg hover:brightness-110 transition-all flex items-center gap-2 text-sm">
-                  <span className="material-symbols-outlined text-lg">receipt_long</span>
-                  View BOM
-                </button>
-                <button onClick={() => navigate(`/project/${projectId}/deployment`)}
-                  className="px-4 py-2 bg-primary text-on-primary font-bold rounded-lg hover:brightness-110 transition-all flex items-center gap-2 text-sm">
-                  Deployment
-                  <span className="material-symbols-outlined text-lg">arrow_forward</span>
-                </button>
-              </div>
-            )}
           </div>
+          {status === 'complete' && (
+            <div className="flex gap-2">
+              <button onClick={() => navigate(`/project/${projectId}/bom`)}
+                className="px-3 py-1.5 bg-primary text-on-primary font-bold rounded-lg hover:brightness-110 transition-all text-xs">
+                BOM
+              </button>
+              <button onClick={() => navigate(`/project/${projectId}/deployment`)}
+                className="px-3 py-1.5 bg-primary text-on-primary font-bold rounded-lg hover:brightness-110 transition-all text-xs">
+                Deploy
+              </button>
+            </div>
+          )}
         </header>
 
         {/* Phase progress bar */}
-        <div className="px-6 py-4 flex gap-2">
-          {['Prompt Rephrasing', 'Topology Design', 'Device Selection', 'Topology Diagram', 'CLI Config'].map((name, i) => {
+        <div className="px-6 py-3 flex gap-2">
+          {PHASE_LABELS.map((name, i) => {
             const phaseNum = i + 1;
-            const isDiagram = i === 3;
-            const isActive = isDiagram ? currentPhase === 'diagram' || currentPhase === 4 : currentPhase === phaseNum;
-            const isPast = isDiagram ? currentPhase > 4 : currentPhase > phaseNum;
+            const isPast = currentPhase > phaseNum;
+            const isActive = currentPhase === phaseNum;
             return (
               <div key={i} className={`flex-1 h-1.5 rounded-full transition-all duration-500 ${
                 isPast ? 'bg-tertiary' : isActive ? 'bg-primary animate-pulse' : 'bg-surface-container-high'
@@ -282,11 +366,52 @@ export default function ProposedDesign() {
           })}
         </div>
 
-        {/* Events stream */}
-        <div className="flex-1 overflow-y-auto px-6 pb-6 space-y-3 custom-scrollbar">
-          {events.map((ev, i) => (
-            <EventCard key={i} event={ev} />
-          ))}
+        {/* Scrollable content area */}
+        <div className="flex-1 overflow-y-auto px-6 pb-4 space-y-4 custom-scrollbar">
+
+          {/* Phase Outputs as text bubbles */}
+          {phaseOutputs.map(p => {
+            if (!p.content) return null;
+            if (p.isImage) {
+              return (
+                <div key={p.phase} className="max-w-[90%]">
+                  <div className="text-[10px] text-outline/50 uppercase tracking-wider mb-1 px-1">Phase {p.phase} — {p.label}</div>
+                  <div className="bg-surface-container-low rounded-lg rounded-tl-none p-3 border border-outline-variant/10">
+                    <img src={p.content} alt={p.label} className="max-w-full max-h-[500px] object-contain rounded" />
+                  </div>
+                </div>
+              );
+            }
+            return (
+              <div key={p.phase} className="max-w-[90%]">
+                <div className="text-[10px] text-outline/50 uppercase tracking-wider mb-1 px-1">Phase {p.phase} — {p.label}</div>
+                <div className="bg-surface-container-low rounded-lg rounded-tl-none px-4 py-3 text-sm md-content border border-outline-variant/10"
+                  dangerouslySetInnerHTML={{ __html: renderMd(p.content) }} />
+              </div>
+            );
+          })}
+
+          {/* Collapsible Event Stream */}
+          {events.length > 0 && (
+            <div className="bg-surface-container-low rounded-xl border border-outline-variant/15 overflow-hidden">
+              <button onClick={() => setShowToolEvents(!showToolEvents)}
+                className="w-full flex items-center justify-between px-5 py-3 text-sm text-left hover:bg-surface-container-high/30 transition-colors">
+                <div className="flex items-center gap-2">
+                  <span className="material-symbols-outlined text-outline text-lg">list_alt</span>
+                  <span className="font-medium text-on-surface">Event Details</span>
+                  <span className="text-[10px] px-2 py-0.5 rounded-full bg-outline/10 text-outline font-medium">{events.length}</span>
+                </div>
+                <span className="text-outline text-sm">{showToolEvents ? '▾' : '▸'}</span>
+              </button>
+              {showToolEvents && (
+                <div className="px-5 py-3 space-y-3 max-h-96 overflow-y-auto custom-scrollbar">
+                  {events.map((ev, i) => (
+                    <EventCard key={i} event={ev} />
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
 
           {/* Approval UI */}
           {status === 'awaiting' && (
@@ -317,7 +442,26 @@ export default function ProposedDesign() {
             </div>
           )}
 
-          {/* History loading indicator */}
+          {/* Inline Chat History */}
+          {state.chatHistory.length > 0 && (
+            <div className="pt-4 border-t border-outline-variant/10 space-y-2">
+              {state.chatHistory.map((msg, i) => (
+                <div key={i} className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}>
+                  <div className={`max-w-[80%] rounded-lg px-4 py-2 text-sm ${
+                    msg.role === 'user'
+                      ? 'bg-primary/10 text-on-surface rounded-tr-none'
+                      : 'bg-surface-container-low border border-outline-variant/10 text-on-surface rounded-tl-none md-content'
+                  }`}
+                    dangerouslySetInnerHTML={msg.role !== 'user' ? { __html: renderMd(msg.content) } : undefined}>
+                    {msg.role === 'user' ? msg.content : undefined}
+                  </div>
+                </div>
+              ))}
+              <div ref={chatEndRef} />
+            </div>
+          )}
+
+          {/* Loading / Error / Reconnect banners */}
           {historyLoading && (
             <div className="flex items-center gap-2 text-on-surface-variant text-sm py-2 justify-center">
               <div className="w-4 h-4 border-2 border-primary border-t-transparent rounded-full animate-spin" />
@@ -329,23 +473,19 @@ export default function ProposedDesign() {
               ⚠️ {historyError}
             </div>
           )}
-
-          {/* Reconnect banner */}
           {status === 'error' && (
             <div className="bg-error/10 border border-error/30 rounded-xl p-4 text-center animate-in fade-in">
               <div className="flex items-center justify-center gap-2 text-error mb-2">
                 <span className="material-symbols-outlined text-lg">cloud_off</span>
                 <span className="text-sm font-bold">Connection lost</span>
               </div>
-              <p className="text-xs text-on-surface-variant mb-3">The WebSocket connection closed unexpectedly. You can retry.</p>
+              <p className="text-xs text-on-surface-variant mb-3">WebSocket closed unexpectedly.</p>
               <button onClick={retryWorkflow}
                 className="px-4 py-2 bg-error text-on-error font-bold rounded-lg text-sm hover:brightness-110 transition-all">
-                🔄 Retry Workflow
+                🔄 Retry
               </button>
             </div>
           )}
-
-          {/* Loading indicator */}
           {status === 'running' && (
             <div className="flex items-center gap-3 text-on-surface-variant text-sm py-2">
               <div className="flex gap-1">
@@ -367,51 +507,18 @@ export default function ProposedDesign() {
         </div>
       </div>
 
-      {/* Right: Copilot Chat */}
-      <aside className="w-96 border-l border-outline-variant/15 flex flex-col bg-surface-dim">
-        <div className="p-4 border-b border-outline-variant/10 flex items-center gap-3">
-          <div className="w-9 h-9 rounded-lg bg-primary/10 flex items-center justify-center">
-            <span className="material-symbols-outlined text-primary">smart_toy</span>
-          </div>
-          <div>
-            <div className="text-sm font-bold text-on-surface">Design Copilot</div>
-            <div className="text-xs text-on-surface-variant">Ask about your network design</div>
-          </div>
-        </div>
-
-        <div className="flex-1 overflow-y-auto p-4 space-y-3 custom-scrollbar">
-          <div className="bg-surface-container-low rounded-lg p-3 border border-outline-variant/10">
-            <p className="text-xs text-on-surface-variant italic">
-              ✅ Your requirements have been loaded. Ask me anything about your design, or request changes.
-            </p>
-          </div>
-          {state.chatHistory.map((msg, i) => (
-            <div key={i} className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}>
-              <div className={`max-w-[85%] rounded-lg px-4 py-3 text-sm ${
-                msg.role === 'user'
-                  ? 'bg-surface-container-high text-on-surface rounded-tr-none'
-                  : 'bg-surface-container-low border border-outline-variant/10 text-on-surface rounded-tl-none md-content'
-              }`}
-                dangerouslySetInnerHTML={msg.role !== 'user' ? { __html: renderMd(msg.content) } : undefined}
-              >
-                {msg.role === 'user' ? msg.content : undefined}
-              </div>
-            </div>
-          ))}
-        </div>
-
-        <form onSubmit={handleChat} className="p-4 border-t border-outline-variant/10">
-          <div className="flex gap-2">
-            <input value={chatInput} onChange={e => setChatInput(e.target.value)} disabled={sending}
-              className="flex-1 bg-surface-container-low border border-outline-variant/20 rounded-lg px-4 py-2.5 text-sm text-on-surface placeholder:text-outline/50 focus:ring-1 focus:ring-primary"
-              placeholder="Ask about your design…" />
-            <button type="submit" disabled={sending}
-              className="w-10 h-10 bg-primary rounded-lg flex items-center justify-center text-on-primary hover:brightness-110 transition-all disabled:opacity-50">
-              <span className="material-symbols-outlined text-lg">send</span>
-            </button>
-          </div>
+      {/* Chat input (sticky bottom) */}
+      <div className="border-t border-outline-variant/10 px-6 py-3 shrink-0">
+        <form onSubmit={handleChat} className="flex gap-2 max-w-3xl mx-auto">
+          <input value={chatInput} onChange={e => setChatInput(e.target.value)} disabled={sending}
+            className="flex-1 bg-surface-container-low border border-outline-variant/20 rounded-lg px-3 py-2 text-sm text-on-surface placeholder:text-outline/50 focus:ring-1 focus:ring-primary"
+            placeholder="Ask about your design…" />
+          <button type="submit" disabled={sending}
+            className="w-9 h-9 bg-primary rounded-lg flex items-center justify-center text-on-primary hover:brightness-110 transition-all disabled:opacity-50 shrink-0">
+            <span className="material-symbols-outlined text-base">send</span>
+          </button>
         </form>
-      </aside>
+      </div>
     </div>
   );
 }

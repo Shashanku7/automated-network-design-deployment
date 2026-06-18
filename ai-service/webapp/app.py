@@ -7,15 +7,15 @@ from pathlib import Path
 # Add parent directory to path so we can import config/search modules
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from fastapi import FastAPI, WebSocket, WebSocketDisconnect
+from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse
 from pydantic import BaseModel
 from webapp.kafka_handler import KafkaManager
 
-# from llama_index.llms.ollama import Ollama
-from llama_index.llms.openrouter import OpenRouter
+from llama_index.llms.ollama import Ollama
+# from llama_index.llms.openrouter import OpenRouter
 from llama_index.core.agent.workflow import (
     AgentWorkflow, FunctionAgent, AgentInput, AgentOutput, ToolCall, ToolCallResult,
 )
@@ -27,10 +27,8 @@ from llama_index.storage.chat_store.postgres import PostgresChatStore
 from config import (
     QDRANT_COLLECTION,
     QDRANT_CONFIG_COLLECTION,
-    OLLAMA_API_KEY,
     OLLAMA_MODEL,
     OLLAMA_BASE_URL,
-    OPENROUTER_API_KEY,
     IMAGE_SERVICE_URL,
     RETRIEVAL_TOP_K,
     MIN_SCORE_THRESHOLD,
@@ -48,34 +46,32 @@ OUTPUT_DIR = Path(__file__).resolve().parent.parent / "output"
 OUTPUT_DIR.mkdir(exist_ok=True)
 
 # ── LLM ─────────────────────────────────────────
-# llm = Ollama(
-#     model=OLLAMA_MODEL, base_url=OLLAMA_BASE_URL,
-#     request_timeout=400.0, context_window=262144,
+llm = Ollama(
+    model=OLLAMA_MODEL, base_url=OLLAMA_BASE_URL,
+    request_timeout=400.0, context_window=262144,
+    is_function_calling_model=True,
+    temperature=0.3,
+)
+
+llm_qwen_coder= Ollama(
+    model="qwen3-coder:480b-cloud", base_url=OLLAMA_BASE_URL,
+    request_timeout=400.0, context_window=262144,
+    is_function_calling_model=True,
+)
+
+# llm = OpenRouter(
+#     api_key=OPENROUTER_API_KEY,
+#     model="google/gemma-4-31b-it:free",
+#     temperature=0.4,
 #     is_function_calling_model=True,
-#     headers={"Authorization": f"Bearer {OLLAMA_API_KEY}"},
-#     temperature=0.3,
+#     context_window=32000,
 # )
 #
-# llm_qwen_coder= Ollama(
-#     model="qwen3-coder:480b-cloud", base_url=OLLAMA_BASE_URL,
-#     request_timeout=400.0, context_window=262144,
+# llm_qwen_coder= OpenRouter(
+#     model="openai/gpt-oss-120b:free",
 #     is_function_calling_model=True,
-#     headers={"Authorization": f"Bearer {OLLAMA_API_KEY}"},
+#     context_window=32000,
 # )
-
-llm = OpenRouter(
-    api_key=OPENROUTER_API_KEY,
-    model="google/gemma-4-31b-it:free",
-    temperature=0.4,
-    is_function_calling_model=True,
-    context_window=32000,
-)
-
-llm_qwen_coder= OpenRouter(
-    model="openai/gpt-oss-120b:free",
-    is_function_calling_model=True,
-    context_window=32000,
-)
 
 # ── Qdrant client ─────────────────────────────────
 _qdrant_client = create_qdrant_client()
@@ -953,7 +949,8 @@ async def _run_phase_kafka(kafka_mgr, project_id, task_id, phase_num, phase_name
     gateway_history = []
     if history:
         for h in history:
-            role = MessageRole.USER if str(h.get("role")) == "user" else MessageRole.ASSISTANT
+            raw_role = str(h.get("role", "")).lower()
+            role = MessageRole.USER if raw_role == "user" else MessageRole.ASSISTANT
             content = h.get("content", "")
             print(f"RUN_PHASE convert history role={role} content={'None' if content is None else ('len=' + str(len(str(content))))}", flush=True)
             gateway_history.append(ChatMessage(role=role, content=content))
@@ -989,9 +986,9 @@ async def _run_phase_kafka(kafka_mgr, project_id, task_id, phase_num, phase_name
             if isinstance(ev, AgentInput):
                 pass # Already sent start event
             elif isinstance(ev, ToolCall):
-                await kafka_mgr.send_event({**base_event, "event_type": "TOOL_CALL", "payload": {"name": ev.tool_name, "args": ev.tool_kwargs}})
+                await kafka_mgr.send_event({**base_event, "event_type": "TOOL_CALL", "data": ev.tool_name, "payload": ev.tool_kwargs})
             elif isinstance(ev, ToolCallResult):
-                await kafka_mgr.send_event({**base_event, "event_type": "TOOL_RESULT", "payload": {"name": ev.tool_name, "output": str(ev.tool_output)}})
+                await kafka_mgr.send_event({**base_event, "event_type": "TOOL_RESULT", "payload": {"output": str(ev.tool_output)}})
             elif isinstance(ev, AgentOutput):
                 if not ev.tool_calls:
                     await kafka_mgr.send_event({**base_event, "event_type": "TOKEN", "data": str(ev.response)})
@@ -1003,6 +1000,42 @@ async def _run_phase_kafka(kafka_mgr, project_id, task_id, phase_num, phase_name
             "project_id": project_id, "task_id": task_id, "agent_name": agent.name,
             "event_type": "FINAL_ANSWER", "data": str(resp), "is_final": True
         })
+
+        # After phase 4, render D2 diagram via Image Service
+        if phase_num == 4:
+            diagram_code = str(resp)
+            try:
+                result = await _generate_diagram_via_service(diagram_code)
+                if result.get("success"):
+                    url = f"{IMAGE_SERVICE_URL}{result['url']}"
+                    await kafka_mgr.send_event({
+                        "project_id": project_id, "task_id": task_id, "agent_name": agent.name,
+                        "event_type": "DIAGRAM_READY", "data": str(resp),
+                        "payload": {
+                            "url": url,
+                            "filename": result.get("filename", ""),
+                            "download_url": f"{IMAGE_SERVICE_URL}{result['url']}/download"
+                        },
+                        "is_final": False
+                    })
+                else:
+                    await kafka_mgr.send_event({
+                        "project_id": project_id, "task_id": task_id, "agent_name": agent.name,
+                        "event_type": "DIAGRAM_ERROR", "data": str(resp),
+                        "payload": {
+                            "message": result.get("error", "Unknown error from image service"),
+                            "diagram_code": diagram_code
+                        },
+                        "is_final": False
+                    })
+            except Exception as img_err:
+                await kafka_mgr.send_event({
+                    "project_id": project_id, "task_id": task_id, "agent_name": agent.name,
+                    "event_type": "DIAGRAM_ERROR", "data": str(resp),
+                    "payload": {"message": f"Image service unavailable: {str(img_err)}"},
+                    "is_final": False
+                })
+
         return str(resp)
     except Exception as e:
         await kafka_mgr.send_event({
@@ -1011,60 +1044,4 @@ async def _run_phase_kafka(kafka_mgr, project_id, task_id, phase_num, phase_name
         })
         raise e
 
-@app.websocket("/ws")
-async def ws_endpoint(ws: WebSocket):
-    await ws.accept()
-    try:
-        data = json.loads(await ws.receive_text())
-        prompt = data["content"]
-        project_id = data.get("project_id", str(uuid.uuid4()))
-        await _send(ws, type="user_echo", content=prompt, project_id=project_id)
-
-        rephrased, tools_1 = await _run_phase(ws, 1, "Prompt Rephrasing", agent1, prompt, model_name=OLLAMA_MODEL, project_id=project_id)
-        topology, tools_2 = await _run_phase(ws, 2, "Network Topology Design", agent2, rephrased, model_name=OLLAMA_MODEL, project_id=project_id)
-        ctx = f"## Refined Requirements\n{rephrased}\n\n## Approved Topology\n{topology}"
-        devices, tools_3 = await _run_phase(ws, 3, "Device Selection & BOM", agent3, ctx, model_name=OLLAMA_MODEL, project_id=project_id)
-
-        # Phase 4: D2 Diagram Generation
-        d2_ctx = f"## Approved Topology\n{topology}\n\n## Bill of Materials\n{devices}"
-        diagram_code, tools_4 = await _run_phase(ws, 4, "D2 Diagram Generation", agent4, d2_ctx, model_name="gpt-oss-120b", project_id=project_id)
-
-        # Render D2 code via Image Generation Service (non-agent step)
-        diagram_url = None
-        await _send(ws, type="phase_start", phase="diagram", name="Rendering Topology Diagram", iteration=1)
-        try:
-            result = await _generate_diagram_via_service(diagram_code)
-            if result.get("success"):
-                diagram_url = f"{IMAGE_SERVICE_URL}{result['url']}"
-                await _send(ws, type="diagram_ready",
-                            url=diagram_url,
-                            filename=result.get("filename", ""),
-                            download_url=f"{IMAGE_SERVICE_URL}{result['url']}/download")
-            else:
-                await _send(ws, type="diagram_error",
-                            message=result.get("error", "Unknown error from image service"),
-                            diagram_code=result.get("diagram_code", ""))
-        except Exception as img_err:
-            await _send(ws, type="diagram_error",
-                        message=f"Image service unavailable: {str(img_err)}")
-
-        # Phase 5: CLI Configuration Generation
-        cli_ctx = (
-            f"## Approved Topology\n{topology}\n\n"
-            f"## Bill of Materials\n{devices}\n\n"
-            f"## D2 Diagram Code\n```d2\n{diagram_code}\n```"
-        )
-        cli_config, tools_5 = await _run_phase(ws, 5, "CLI Configuration Generation", agent5, cli_ctx, model_name="qwen3-coder:480b-cloud", project_id=project_id)
-
-        fp = _save(prompt, rephrased, topology, devices, diagram_code, diagram_url,
-                    tools_1, tools_2, tools_3, tools_4, tools_5, cli_config)
-        await _send(ws, type="workflow_complete", saved_to=str(fp),
-                    diagram_url=diagram_url,
-                    has_cli_config=bool(cli_config))
-    except WebSocketDisconnect:
-        pass
-    except Exception as e:
-        try:
-            await _send(ws, type="error", message=str(e))
-        except:
-            pass
+# Orphaned direct WS endpoint removed — all flows go through Gateway + Kafka

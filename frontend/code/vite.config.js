@@ -7,6 +7,10 @@ export default defineConfig({
   server: {
     host: '0.0.0.0',
     proxy: {
+      '/api/diagrams': {
+        target: 'http://localhost:8001',
+        changeOrigin: true,
+      },
       '/api': {
         target: 'http://localhost:8080',
         changeOrigin: true,
@@ -20,8 +24,6 @@ export default defineConfig({
         ws: true,
       },
     },
-    allowedHosts: [
-      'invitation-bids-questions-fountain.trycloudflare.com'
-    ]  
+    allowedHosts: true,
   },
 })
