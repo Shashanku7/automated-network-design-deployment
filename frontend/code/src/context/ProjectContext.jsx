@@ -50,6 +50,7 @@ const initialState = {
   diagramUrl: null,
   diagramDownloadUrl: null,
   reactCode: null,
+  cliConfig: null,
 
   // Legacy compat
   proposedDesign: null,
@@ -90,6 +91,7 @@ function projectReducer(state, action) {
         diagramUrl: null,
         diagramDownloadUrl: null,
         reactCode: null,
+        cliConfig: null,
       };
 
     case 'WORKFLOW_EVENT':
@@ -129,6 +131,9 @@ function projectReducer(state, action) {
 
     case 'SET_REACT_CODE':
       return { ...state, reactCode: action.payload };
+
+    case 'SET_CLI_CONFIG':
+      return { ...state, cliConfig: action.payload };
 
     default:
       return state;

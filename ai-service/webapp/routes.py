@@ -11,7 +11,7 @@ from llama_index.core.llms import ChatMessage, MessageRole
 from llama_index.core.agent.workflow import AgentWorkflow, AgentInput, AgentOutput, ToolCall, ToolCallResult
 
 from webapp.config import llm, STATIC_DIR, OLLAMA_MODEL, IMAGE_SERVICE_URL
-from webapp.agents import agent1, agent2, agent3, agent4
+from webapp.agents import agent1, agent2, agent3, agent4, agent5
 from webapp.utils import strip_ansi, parse_chunks, generate_diagram_via_service, generate_topology_code, save_run
 from webapp.kafka_provider import kafka_provider
 
@@ -62,10 +62,12 @@ if not logger.handlers:
     logger.addHandler(ch)
 
 
+from typing import Optional
+
 class ChatRequest(BaseModel):
     message: str
-    history: list = []
-    screenContext: str = ""
+    history: Optional[list] = []
+    screenContext: Optional[str] = ""
 
 
 # Global state for task tracking
@@ -123,9 +125,14 @@ async def run_kafka_workflow(task_data: dict):
         if not devices: return
         
         react_code = await _run_phase4_automated(ws, 4, "React Topology Generation", agent4, prompt, topology, devices, OLLAMA_MODEL, run_id=run_id)
+        if not react_code: return
 
-        fp = save_run(prompt, rephrased, topology, devices, react_code=react_code)
-        await _send_kafka(project_id, task_id, type="workflow_complete", saved_to=str(fp), is_final=True)
+        cli_ctx = f"## Approved Topology\n{topology}\n\n## Bill of Materials\n{devices}\n\n## React Topology JSON\n```json\n{react_code}\n```"
+        cli_config = await _run_phase(ws, 5, "CLI Configuration Generation", agent5, cli_ctx, OLLAMA_MODEL, run_id=run_id)
+        if not cli_config: return
+
+        fp = save_run(prompt, rephrased, topology, devices, react_code=react_code, cli_config=cli_config)
+        await _send_kafka(project_id, task_id, type="workflow_complete", saved_to=str(fp), has_cli_config=bool(cli_config), is_final=True)
 
     except Exception as e:
         await _send_kafka(project_id, task_id, type="error", message=str(e))
@@ -381,8 +388,13 @@ async def ws_endpoint(ws: WebSocket):
         
         # Phase 4: React Topology Generation (JSON Template & 4-Layer Gatekeeper validation)
         react_code = await _run_phase4_automated(ws, 4, "React Topology Generation", agent4, prompt, topology, devices, OLLAMA_MODEL, run_id=run_id)
+        if not react_code: return
+        
+        cli_ctx = f"## Approved Topology\n{topology}\n\n## Bill of Materials\n{devices}\n\n## React Topology JSON\n```json\n{react_code}\n```"
+        cli_config = await _run_phase(ws, 5, "CLI Configuration Generation", agent5, cli_ctx, OLLAMA_MODEL, run_id=run_id)
+        if not cli_config: return
 
-        fp = save_run(prompt, rephrased, topology, devices, react_code=react_code)
+        fp = save_run(prompt, rephrased, topology, devices, react_code=react_code, cli_config=cli_config)
         await _send(ws, type="workflow_complete", saved_to=str(fp))
     except WebSocketDisconnect:
         pass

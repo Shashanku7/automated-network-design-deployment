@@ -96,6 +96,7 @@ export default function ProposedDesign() {
           if (ev.phase === 1) dispatch({ type: 'SET_REPHRASED', payload: ev.content });
           if (ev.phase === 2) dispatch({ type: 'SET_TOPOLOGY', payload: ev.content });
           if (ev.phase === 3) dispatch({ type: 'SET_DEVICES', payload: ev.content });
+          if (ev.phase === 5) dispatch({ type: 'SET_CLI_CONFIG', payload: ev.content });
           break;
         case 'approval_request':
           setStatus('awaiting');
@@ -211,7 +212,7 @@ export default function ProposedDesign() {
 
         {/* Phase progress bar */}
         <div className="px-6 py-4 flex gap-2">
-          {['Prompt Rephrasing', 'Topology Design', 'Device Selection', 'Topology Diagram'].map((name, i) => (
+          {['Prompt Rephrasing', 'Topology Design', 'Device Selection', 'Topology Diagram', 'CLI Configuration'].map((name, i) => (
             <div key={i} className={`flex-1 h-1.5 rounded-full transition-all duration-500 ${
               currentPhase > i + 1 ? 'bg-tertiary' : currentPhase === i + 1 ? 'bg-primary animate-pulse' : 'bg-surface-container-high'
             }`} title={name} />
@@ -289,9 +290,8 @@ function EventCard({ event }) {
     case 'user_echo':
       return (
         <div className="flex justify-end">
-          <div className="bg-surface-container-high rounded-xl rounded-tr-none px-4 py-3 text-sm max-w-[80%]">
-            {ev.content}
-          </div>
+          <div className="bg-surface-container-high border border-outline-variant/15 rounded-xl rounded-tr-none px-5 py-4 text-sm md-content max-w-[80%]"
+            dangerouslySetInnerHTML={{ __html: renderMd(ev.content) }} />
         </div>
       );
 

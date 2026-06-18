@@ -25,6 +25,7 @@ load_dotenv(dotenv_path=dotenv_path)
 
 QWEN_EMBEDDING_MODEL = os.getenv("QWEN_EMBEDDING_MODEL", "Qwen/Qwen3-Embedding-8B")
 QDRANT_COLLECTION = os.getenv("QDRANT_COLLECTION", "qwen-tech-docs")
+QDRANT_CONFIG_COLLECTION = os.getenv("QDRANT_CONFIG_COLLECTION", "qwen-config-guides")
 QDRANT_URL = os.getenv("QDRANT_URL")
 QDRANT_API_KEY = os.getenv("QDRANT_API_KEY")
 HUGGINGFACE_TOKEN = os.getenv("HUGGINGFACE_TOKEN")
@@ -49,13 +50,40 @@ MIN_CHUNK_LENGTH = 50           # Drop chunks shorter than this (chars)
 # Embedding model  (singleton — expensive to load)
 # ──────────────────────────────────────────────
 _embedding_model = None
+_embedding_model_checked = False
 
 
 def get_embedding_model():
-    global _embedding_model
-    if _embedding_model is None:
-        print("Loading Nomic embeddings via Ollama...")
-        _embedding_model = OllamaEmbedding(model_name="nomic-embed-text")
+    """
+    Returns the shared HuggingFace embedding model, lazily initialized.
+
+    Auto-detects CUDA GPU availability:
+      - GPU present  → loads the full local Qwen3-AWQ model for proper RAG search.
+      - CPU only     → returns None; callers fall back to fast keyword scroll search.
+    """
+    global _embedding_model, _embedding_model_checked
+    if _embedding_model_checked:
+        return _embedding_model
+    _embedding_model_checked = True
+
+    import torch
+    if not torch.cuda.is_available():
+        print(
+            "[Embedding] No CUDA GPU detected — skipping heavy Qwen3 model. "
+            "Falling back to keyword-based search (fast, CPU-friendly)."
+        )
+        return None
+
+    from llama_index.embeddings.huggingface import HuggingFaceEmbedding
+    print(f"[Embedding] CUDA GPU detected! Loading local model from {QWEN_EMBEDDING_MODEL}...")
+    _embedding_model = HuggingFaceEmbedding(
+        model_name=QWEN_EMBEDDING_MODEL,
+        trust_remote_code=True,
+        token=HUGGINGFACE_TOKEN,
+        device="cuda",
+        embed_batch_size=4,
+        show_progress_bar=True,
+    )
     return _embedding_model
 
 

@@ -26,12 +26,12 @@ def _sparse_query(text: str):
     return _get_bm25_encoder().encode(text)
 
 
-def create_vector_store(qdrant_client):
+def create_vector_store(qdrant_client, collection_name=QDRANT_COLLECTION):
     """Wrap a QdrantClient in a LlamaIndex QdrantVectorStore with hybrid search."""
     from llama_index.vector_stores.qdrant import QdrantVectorStore
     return QdrantVectorStore(
         client=qdrant_client,
-        collection_name=QDRANT_COLLECTION,
+        collection_name=collection_name,
         enable_hybrid=True,
         sparse_doc_fn=_sparse_query,
         sparse_query_fn=_sparse_query,

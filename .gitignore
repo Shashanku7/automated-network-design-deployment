@@ -53,6 +53,7 @@ ai-service/output/
 
 # Temp dev files and archives
 temp/
+firecrawl/
 *.zip
 .gemini/
 

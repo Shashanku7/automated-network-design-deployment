@@ -61,7 +61,7 @@ async def generate_topology_code(llm_output: str, topology_text: str = "", bom_t
         resp.raise_for_status()
         return resp.json()
 
-def save_run(prompt, rephrased, topology, devices, react_code="", diagram_url=None):
+def save_run(prompt, rephrased, topology, devices, react_code="", cli_config="", diagram_url=None):
     ts = datetime.now()
     fp = OUTPUT_DIR / f"{ts:%Y-%m-%d_%H-%M-%S}_run.md"
     content = (
@@ -72,6 +72,8 @@ def save_run(prompt, rephrased, topology, devices, react_code="", diagram_url=No
         f"## Phase 3: Device Selection & BOM\n\n{strip_ansi(devices)}\n\n---\n\n"
         f"## Phase 4: React Topology Code\n\n```jsx\n{strip_ansi(react_code)}\n```\n"
     )
+    if cli_config:
+        content += f"\n---\n\n## Phase 5: CLI Configuration\n\n{strip_ansi(cli_config)}\n"
     if diagram_url:
         content += f"\n---\n\n## Topology Diagram\n\nGenerated diagram: `{diagram_url}`\n"
     fp.write_text(content, encoding="utf-8")

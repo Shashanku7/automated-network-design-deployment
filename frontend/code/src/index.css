@@ -158,6 +158,8 @@ body {
   border-collapse: collapse;
   margin: 8px 0;
   font-size: 12px;
+  display: block;
+  overflow-x: auto;
 }
 
 .md-content th {

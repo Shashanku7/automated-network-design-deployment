@@ -4,10 +4,13 @@
  * Plain-English confirmation checklist (no ACL/VLAN jargon).
  * Simple progress indicators. Technical logs hidden by default.
  */
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useProject } from '../context/ProjectContext';
 import { triggerDeployment } from '../services/api';
+import { marked } from 'marked';
+
+marked.setOptions({ gfm: true, breaks: true });
 
 export default function Deployment() {
   const navigate = useNavigate();
@@ -32,6 +35,41 @@ export default function Deployment() {
     }
     setDeploying(false);
   }
+
+  // Inject Copy Buttons into Markdown Code Blocks
+  useEffect(() => {
+    if (!state.cliConfig) return;
+    
+    // Find all <pre> tags inside our markdown container
+    const preElements = document.querySelectorAll('.md-content pre');
+    preElements.forEach((pre) => {
+      // Prevent adding multiple buttons on re-renders
+      if (pre.querySelector('.copy-btn')) return;
+      
+      pre.style.position = 'relative';
+      
+      const btn = document.createElement('button');
+      btn.className = 'copy-btn material-symbols-outlined absolute top-2 right-2 p-1.5 bg-surface-container-highest text-on-surface-variant hover:text-primary rounded-md text-sm transition-colors shadow-sm border border-outline-variant/30 cursor-pointer';
+      btn.innerText = 'content_copy';
+      btn.title = 'Copy code';
+      
+      btn.onclick = () => {
+        // Find the actual <code> block or just use pre text
+        const codeText = pre.querySelector('code')?.innerText || pre.innerText.replace('content_copy', '');
+        navigator.clipboard.writeText(codeText.trim());
+        
+        // Show success tick
+        btn.innerText = 'check';
+        btn.classList.replace('text-on-surface-variant', 'text-tertiary');
+        setTimeout(() => {
+          btn.innerText = 'content_copy';
+          btn.classList.replace('text-tertiary', 'text-on-surface-variant');
+        }, 2000);
+      };
+      
+      pre.appendChild(btn);
+    });
+  }, [state.cliConfig]);
 
   const isComplete = state.deploymentStatus === 'complete';
 
@@ -68,6 +106,20 @@ export default function Deployment() {
               ))}
             </div>
           </section>
+
+          {/* CLI Configurations */}
+          {state.cliConfig && (
+            <section className="bg-surface-container-low rounded-xl border border-outline-variant/15 p-6">
+              <h3 className="text-lg font-bold font-[family-name:var(--font-headline)] mb-4 flex items-center gap-2">
+                <span className="material-symbols-outlined text-primary">terminal</span>
+                Device Configurations
+              </h3>
+              <div 
+                className="bg-surface-dim rounded-xl border border-outline-variant/10 p-5 text-sm text-on-surface-variant max-h-[600px] overflow-y-auto custom-scrollbar md-content"
+                dangerouslySetInnerHTML={{ __html: marked.parse(state.cliConfig) }}
+              />
+            </section>
+          )}
 
           {/* Technical Logs (hidden by default) */}
           <div>
