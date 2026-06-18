@@ -424,10 +424,10 @@ export default function ProposedDesign() {
           })}
         </div>
 
-{/*         {/* Scrollable content area */} */}
+        {/* Scrollable content area */}
 {/*         <div className="flex-1 overflow-y-auto px-6 pb-4 space-y-4 custom-scrollbar"> */}
 {/**/}
-{/*           {/* Phase Outputs as text bubbles */} */}
+          {/* Phase Outputs as text bubbles */}
 {/*           {phaseOutputs.map(p => { */}
 {/*             if (!p.content) return null; */}
 {/*             if (p.isImage) { */}
@@ -449,7 +449,7 @@ export default function ProposedDesign() {
 {/*             ); */}
 {/*           })} */}
 {/**/}
-{/*           {/* Collapsible Event Stream */} */}
+          {/* Collapsible Event Stream */}
 {/*           {events.length > 0 && ( */}
 {/*             <div className="bg-surface-container-low rounded-xl border border-outline-variant/15 overflow-hidden"> */}
 {/*               <button onClick={() => setShowToolEvents(!showToolEvents)} */}
@@ -574,7 +574,7 @@ export default function ProposedDesign() {
         </div>
       </div>
 
-      {/* {/* Chat input (sticky bottom) */} */}
+      {/* Chat input (sticky bottom) */}
       {/* <div className="border-t border-outline-variant/10 px-6 py-3 shrink-0"> */}
       {/*   <form onSubmit={handleChat} className="flex gap-2 max-w-3xl mx-auto"> */}
       {/*     <input value={chatInput} onChange={e => setChatInput(e.target.value)} disabled={sending} */}

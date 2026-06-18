@@ -199,7 +199,7 @@ function makeWorkflowHandler(results, onEvent, resolve, reject, ws, projectId) {
         reject(new Error(data || 'Unknown error'));
         return;
       }
-    } catch (err) {
+    }} catch (err) {
       console.error('WS parse error:', err);
     }
   };

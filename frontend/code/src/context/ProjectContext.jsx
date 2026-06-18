@@ -133,11 +133,8 @@ function projectReducer(state, action) {
         deviceSelection: null,
         diagramUrl: null,
         diagramDownloadUrl: null,
-<<<<<<< HEAD
         cliConfig: null,
-=======
         reactCode: null,
->>>>>>> 396e2d6 (fixed 3-d topology, added KaTeX for latex rendering)
       };
 
     case 'WORKFLOW_EVENT':
