@@ -12,16 +12,8 @@ public record AgentEvent(
     UUID projectId,
     UUID taskId,
     String agentName,
-    EventType eventType,
+    String eventType,
     String data,
     Map<String, Object> payload,
     boolean isFinal) {
-
-  public enum EventType {
-    TOKEN,
-    TOOL_CALL,
-    TOOL_RESULT,
-    FINAL_ANSWER,
-    ERROR;
-  }
 }

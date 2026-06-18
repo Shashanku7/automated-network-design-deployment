@@ -28,15 +28,19 @@ public class PipelineManager {
 
   public void updateStateAfterPhase(UUID projectId, String output) {
     PipelineState state = getOrCreateState(projectId);
+    int phase = state.getCurrentPhase();
     state.setLastOutput(output);
     state.getHistory().add(new AgentTask.ChatMessage(AgentTask.ChatMessage.Role.ASSISTANT, output));
 
-    switch (state.getCurrentPhase()) {
+    switch (phase) {
       case 1 -> state.setRephrasedPrompt(output);
       case 2 -> state.setTopologyDesign(output);
       case 3 -> state.setBillOfMaterials(output);
       case 4 -> state.setD2Diagram(output);
+      case 5 -> state.setReactCode(output);
+      case 6 -> state.setCliConfig(output);
     }
+    if (phase < 6) state.setCurrentPhase(phase + 1);
   }
 
   private String getAgentTarget(int phase) {
@@ -45,7 +49,8 @@ public class PipelineManager {
       case 2 -> "topology_designer";
       case 3 -> "device_selector";
       case 4 -> "d2_diagram_generator";
-      case 5 -> "cli_config_generator";
+      case 5 -> "react_topology_architect";
+      case 6 -> "cli_config_generator";
       default -> "unknown";
     };
   }

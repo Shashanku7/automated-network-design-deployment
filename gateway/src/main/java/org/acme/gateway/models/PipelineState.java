@@ -15,6 +15,8 @@ public class PipelineState {
   @Getter @Setter private String topologyDesign = "";
   @Getter @Setter private String billOfMaterials = "";
   @Getter @Setter private String d2Diagram = "";
+  @Getter @Setter private String reactCode = "";
+  @Getter @Setter private String cliConfig = "";
 
   public PipelineState(UUID projectId) {
     this.projectId = projectId;
@@ -22,7 +24,7 @@ public class PipelineState {
 
   public String buildInputContext() {
     return switch (currentPhase) {
-      case 1 -> lastOutput; // Initial user prompt
+      case 1 -> lastOutput;
       case 2 -> rephrasedPrompt;
       case 3 ->
           "## Refined Requirements\n"
@@ -39,6 +41,12 @@ public class PipelineState {
               + topologyDesign
               + "\n\n## Bill of Materials\n"
               + billOfMaterials
+              + "\n\n## D2 Diagram Code\n```d2\n"
+              + d2Diagram
+              + "\n```";
+      case 6 ->
+          "## React Topology Code\n"
+              + reactCode
               + "\n\n## D2 Diagram Code\n```d2\n"
               + d2Diagram
               + "\n```";

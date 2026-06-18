@@ -1,10 +1,9 @@
 /**
- * API Service Layer — Real Backend Integration via WebSocket
+ * API Service Layer — Gateway WebSocket Integration
  *
- * The 3-phase AI workflow (rephrase → topology → device selection)
- * runs over a single WebSocket connection with streaming events.
- *
- * The chat copilot also uses WebSocket for follow-up questions.
+ * Connects to gateway at /chat/{projectId}, routes messages
+ * through Kafka pipeline, handles all 6 phases including
+ * React Topology (Phase 5) and CLI Config (Phase 6).
  */
 
 import axios from 'axios';
@@ -21,10 +20,9 @@ function buildPromptFromRequirements(req, solutionType) {
   const isCampus = solutionType !== 'datacenter';
 
   if (isCampus) {
-    // Calculate totals from our new structured building list
     const totalBuildings = req.buildings?.length || 0;
     let totalStudents = 0, totalStaff = 0, totalAdmins = 0, totalVoip = 0, totalIptv = 0, totalPrinters = 0;
-    
+
     req.buildings?.forEach(b => {
       b.departments?.forEach(d => {
         totalStudents += (Number(d.students) || 0);
@@ -39,7 +37,6 @@ function buildPromptFromRequirements(req, solutionType) {
     let prompt = `Design a campus network for an organization with ${totalBuildings} building(s).`;
     prompt += ` Across all buildings, there are approximately ${totalStudents} students/visitors, ${totalStaff} staff/faculty, ${totalAdmins} administrators, ${totalVoip} VoIP phones, ${totalIptv} IPTVs, and ${totalPrinters} printers.\n\n`;
 
-    // Per-building, per-department breakdown
     prompt += `## Building & Department Breakdown\n`;
     req.buildings?.forEach((b, bIdx) => {
       prompt += `\n### Building ${bIdx + 1}: ${b.name || 'Unnamed'} (${b.departmentCount || 0} departments)\n`;
@@ -78,7 +75,6 @@ function buildPromptFromRequirements(req, solutionType) {
     if (req.additionalNotes) prompt += `Additional notes: ${req.additionalNotes}\n`;
     return prompt;
   } else {
-    // Data Center path
     let prompt = `Design a data center network with ${req.dcRacks || 0} server rack(s) and approximately ${req.dcServers || 0} servers.`;
     if (req.specialRoles?.length) prompt += ` Use cases: ${req.specialRoles.join(', ')}.`;
     if (req.sensitiveAreas?.length) prompt += ` Security zones: ${req.sensitiveAreas.join(', ')}.`;
@@ -95,28 +91,36 @@ function buildPromptFromRequirements(req, solutionType) {
 }
 
 /**
- * Submit requirements and run the full 5-phase AI workflow via WebSocket.
+ * Submit requirements and run the full 6-phase AI workflow via Gateway WebSocket.
  *
- * @param {Object} requirements - The form inputs
+ * @param {Object} requirements - Form inputs
  * @param {string} solutionType - 'campus' or 'datacenter'
- * @param {Function} onEvent - Callback for each streaming event: (event) => void
- *   Events: phase_start, agent_input, tool_call, rag_result, config_rag_result,
- *           agent_response, approval_request, phase_approved, phase_revision,
- *           workflow_complete, error
- * @returns {Promise<Object>} - Resolves with { rephrased, topology, devices, cliConfig } when done
+ * @param {Function} onEvent - Callback for each event: (event) => void
+ *   Events: phase_start, agent_input, tool_call, tool_result, agent_response,
+ *           approval_request, phase_approved, diagram_ready, topology_code_ready,
+ *           workflow_complete, error, user_echo
+ * @returns {Promise<Object>} - { rephrased, topology, devices, diagramUrl, diagramDownloadUrl, reactCode, cliConfig }
  */
 export function runWorkflow(requirements, solutionType, onEvent) {
   return new Promise((resolve, reject) => {
     const prompt = buildPromptFromRequirements(requirements, solutionType);
-    const wsUrl = `ws://${window.location.host}/ws`;
+    const projectId = crypto.randomUUID();
+    const wsUrl = `ws://${window.location.host}/chat/${projectId}`;
     const ws = new WebSocket(wsUrl);
 
-    const results = { prompt, rephrased: '', topology: '', devices: '', diagramUrl: '', diagramDownloadUrl: '', cliConfig: '' };
-    let currentPhase = 0;
+    const results = {
+      prompt,
+      rephrased: '',
+      topology: '',
+      devices: '',
+      diagramUrl: '',
+      diagramDownloadUrl: '',
+      reactCode: '',
+      cliConfig: '',
+    };
 
-    // Expose send functions via the onEvent callback's return
-    ws._sendApproval = () => ws.send(JSON.stringify({ approved: true }));
-    ws._sendRevision = (feedback) => ws.send(JSON.stringify({ approved: false, feedback }));
+    let currentPhase = 0;
+    let phaseNameMap = {};
 
     ws.onopen = () => {
       ws.send(JSON.stringify({ content: prompt }));
@@ -124,40 +128,166 @@ export function runWorkflow(requirements, solutionType, onEvent) {
 
     ws.onmessage = (e) => {
       try {
-        const data = JSON.parse(e.data);
+        const agentEvent = JSON.parse(e.data);
+        const { event_type, data, payload, is_final, agent_name } = agentEvent;
 
-        if (data.type === 'phase_start') currentPhase = data.phase;
+        switch (event_type) {
+          case 'TOKEN': {
+            if (data && data.startsWith('Starting phase ')) {
+              const match = data.match(/Starting phase (\d+): (.+)/);
+              if (match) {
+                currentPhase = parseInt(match[1]);
+                phaseNameMap[currentPhase] = match[2];
+                onEvent({ type: 'phase_start', phase: currentPhase, name: match[2] });
+              }
+            }
+            break;
+          }
 
-        // Capture agent responses per phase
-        if (data.type === 'agent_response') {
-          let content = data.content || '';
-          if (content.startsWith('assistant: ')) content = content.slice(11);
-          data.content = content;
+          case 'TOOL_CALL':
+            onEvent({
+              type: 'tool_call',
+              tool_name: payload?.name || 'unknown',
+              tool_kwargs: payload?.args || {},
+            });
+            break;
 
-          if (currentPhase === 1) results.rephrased = content;
-          else if (currentPhase === 2) results.topology = content;
-          else if (currentPhase === 3) results.devices = content;
-          else if (currentPhase === 5) results.cliConfig = content;
+          case 'TOOL_RESULT':
+            onEvent({
+              type: 'tool_result',
+              tool_name: payload?.name || 'unknown',
+              output: payload?.output || '',
+            });
+            break;
+
+          case 'FINAL_ANSWER': {
+            const content = data || '';
+            onEvent({ type: 'agent_response', agent: agent_name || 'system', content, phase: currentPhase });
+
+            if (currentPhase === 1) results.rephrased = content;
+            else if (currentPhase === 2) results.topology = content;
+            else if (currentPhase === 3) results.devices = content;
+            break;
+          }
+
+          case 'DIAGRAM_READY': {
+            let eventData = {};
+            try { eventData = JSON.parse(data || '{}'); } catch {}
+            results.diagramUrl = eventData.url || '';
+            results.diagramDownloadUrl = eventData.download_url || '';
+            onEvent({
+              type: 'diagram_ready',
+              url: eventData.url,
+              download_url: eventData.download_url,
+              filename: eventData.filename,
+            });
+            break;
+          }
+
+          case 'TOPOLOGY_CODE_READY': {
+            let eventData = {};
+            try { eventData = JSON.parse(data || '{}'); } catch {}
+            results.reactCode = eventData.code || '';
+            onEvent({ type: 'topology_code_ready', code: eventData.code });
+            break;
+          }
+
+          case 'WORKFLOW_COMPLETE': {
+            let eventData = {};
+            try { eventData = JSON.parse(data || '{}'); } catch {}
+            if (eventData.diagram_url && !results.diagramUrl) results.diagramUrl = eventData.diagram_url;
+            onEvent({ type: 'workflow_complete' });
+            ws.close();
+            resolve(results);
+            break;
+          }
+
+          case 'USER_ECHO': {
+            let eventData = {};
+            try { eventData = JSON.parse(data || '{}'); } catch {}
+            onEvent({ type: 'user_echo', content: eventData.content || '' });
+            break;
+          }
+
+          case 'APPROVAL_REQUEST': {
+            let eventData = {};
+            try { eventData = JSON.parse(data || '{}'); } catch {}
+            onEvent({
+              type: 'approval_request',
+              message: eventData.message || `Phase ${currentPhase} requires approval`,
+              ws,
+            });
+            break;
+          }
+
+          case 'PHASE_APPROVED':
+            onEvent({ type: 'phase_approved', phase: currentPhase });
+            break;
+
+          case 'PHASE_REVISION':
+            onEvent({ type: 'phase_revision', phase: currentPhase });
+            break;
+
+          case 'DIAGRAM_ERROR': {
+            let eventData = {};
+            try { eventData = JSON.parse(data || '{}'); } catch {}
+            onEvent({ type: 'diagram_error', message: eventData.message || 'Diagram generation failed' });
+            break;
+          }
+
+          case 'TOPOLOGY_CODE_ERROR': {
+            let eventData = {};
+            try { eventData = JSON.parse(data || '{}'); } catch {}
+            onEvent({ type: 'topology_code_error', message: eventData.message || 'Topology code generation failed' });
+            break;
+          }
+
+          case 'CONFIG_RAG_RESULT': {
+            let eventData = {};
+            try { eventData = JSON.parse(data || '{}'); } catch {}
+            onEvent({
+              type: 'config_rag_result',
+              total_chars: eventData.total_chars || 0,
+              output: eventData.output || '',
+            });
+            break;
+          }
+
+          case 'RAG_RESULT': {
+            let eventData = {};
+            try { eventData = JSON.parse(data || '{}'); } catch {}
+            onEvent({
+              type: 'rag_result',
+              total: eventData.total || 0,
+              chunks: eventData.chunks || [],
+              source: eventData.source || '',
+              tool_name: eventData.tool_name || '',
+            });
+            break;
+          }
+
+          case 'ERROR': {
+            const errorMsg = data || 'Unknown workflow error';
+            onEvent({ type: 'error', message: errorMsg });
+            ws.close();
+            reject(new Error(errorMsg));
+            break;
+          }
+
+          default: {
+            if (event_type && data) {
+              let eventData = {};
+              try { eventData = JSON.parse(data || '{}'); } catch {}
+              onEvent({
+                type: event_type.toLowerCase(),
+                ...eventData,
+                agent_name,
+                is_final,
+              });
+            }
+            break;
+          }
         }
-
-        if (data.type === 'diagram_ready') {
-          results.diagramUrl = data.url || '';
-          results.diagramDownloadUrl = data.download_url || '';
-        }
-
-        if (data.type === 'workflow_complete') {
-          if (data.diagram_url && !results.diagramUrl) results.diagramUrl = data.diagram_url;
-          ws.close();
-          resolve(results);
-        }
-
-        if (data.type === 'error') {
-          ws.close();
-          reject(new Error(data.message));
-        }
-
-        // Forward event to UI with ws reference for approval
-        onEvent({ ...data, ws });
       } catch (err) {
         console.error('WS parse error:', err);
       }
@@ -188,14 +318,12 @@ export function sendRevision(ws, feedback) {
 
 /**
  * Send a message to the Grounded Design Copilot (AI chatbot).
- * Uses a separate WebSocket for follow-up chat.
  */
 export async function sendChatMessage(message, history = []) {
   try {
     const res = await API.post('/chat', { message, history });
     return res.data;
   } catch {
-    // Fallback stub if chat endpoint not ready
     return {
       role: 'assistant',
       content: `Thank you for your question. The chat copilot is processing: "${message}"`,
@@ -216,7 +344,6 @@ export async function triggerDeployment(projectId) {
   };
 }
 
-// Keep backward compat — submitRequirements is now handled by runWorkflow
 export async function submitRequirements(requirements) {
   console.warn('[API] submitRequirements is deprecated, use runWorkflow instead');
   return null;

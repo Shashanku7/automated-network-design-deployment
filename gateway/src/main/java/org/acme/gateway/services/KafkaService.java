@@ -34,7 +34,7 @@ public class KafkaService {
 
   @Incoming("agent-events")
   public void consumeEvent(AgentEvent event) {
-    if (event.isFinal() && event.eventType() == AgentEvent.EventType.FINAL_ANSWER) {
+    if (event.isFinal() && "FINAL_ANSWER".equals(event.eventType())) {
       pipelineManager.updateStateAfterPhase(event.projectId(), event.data());
     }
     try {
