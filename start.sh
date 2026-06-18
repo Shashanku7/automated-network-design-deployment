@@ -172,6 +172,7 @@ log "Image Generation Service started (PID $IMG_PID)"
 echo -e "${BOLD}${YELLOW}[3/4] Starting Topology Gatekeeper → http://localhost:8002${RESET}"
 (
     cd "$TOPOLOGY_GEN_DIR"
+    uv pip install -r requirements.txt -q 2>/dev/null
     uv run uvicorn app:app \
         --host 0.0.0.0 \
         --port 8002 \
