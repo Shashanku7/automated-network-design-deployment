@@ -1,208 +1,128 @@
 #!/usr/bin/env bash
-# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-#  Unified launcher for the Network Automation stack
-# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-#
-#  Services started:
-#    1. AI-Service (FastAPI)           → http://localhost:8000
-#    2. Image Generation Service       → http://localhost:8001
-#    3. React Frontend (Vite dev)      → http://localhost:5173
-#
-#  Usage:
-#    ./start.sh           # Start all services
-#    ./start.sh --no-frontend   # Skip React frontend (backend only)
-#    ./start.sh --stop    # Stop all running services
-#
-set -euo pipefail
 
-# ── Resolve paths relative to this script ──────────
-SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
-AI_SERVICE_DIR="$SCRIPT_DIR/ai-service"
-IMAGE_SERVICE_DIR="$SCRIPT_DIR/Image_generation_service"
-FRONTEND_DIR="$SCRIPT_DIR/frontend/code"
+set -e
 
-# ── PID file for cleanup ──────────────────────────
-PID_FILE="$SCRIPT_DIR/.running_pids"
-
-# ── Colors ─────────────────────────────────────────
-RED='\033[0;31m'
-GREEN='\033[0;32m'
-YELLOW='\033[1;33m'
-BLUE='\033[0;34m'
-MAGENTA='\033[0;35m'
-CYAN='\033[0;36m'
-BOLD='\033[1m'
-RESET='\033[0m'
-
-log()   { echo -e "${GREEN}[✓]${RESET} $*"; }
-warn()  { echo -e "${YELLOW}[!]${RESET} $*"; }
-err()   { echo -e "${RED}[✗]${RESET} $*"; }
-info()  { echo -e "${CYAN}[i]${RESET} $*"; }
-
-# ── Stop handler ───────────────────────────────────
-stop_services() {
-    echo ""
-    echo -e "${BOLD}${RED}━━━ Stopping services ━━━${RESET}"
-    if [ -f "$PID_FILE" ]; then
-        while IFS='|' read -r pid name; do
-            if kill -0 "$pid" 2>/dev/null; then
-                kill "$pid" 2>/dev/null && log "Stopped $name (PID $pid)" || warn "Failed to stop $name (PID $pid)"
-            else
-                info "$name (PID $pid) already stopped"
-            fi
-        done < "$PID_FILE"
-        rm -f "$PID_FILE"
-    else
-        warn "No PID file found. Trying to find processes..."
-        # Fallback: kill by port
-        for port in 8000 8001 5173; do
-            pid=$(lsof -ti ":$port" 2>/dev/null || true)
-            if [ -n "$pid" ]; then
-                kill "$pid" 2>/dev/null && log "Killed process on port $port (PID $pid)"
-            fi
-        done
-    fi
-    echo -e "${GREEN}All services stopped.${RESET}"
-    exit 0
-}
-
-# ── Trap Ctrl+C to stop all services ──────────────
-cleanup() {
-    echo ""
-    warn "Caught interrupt signal — shutting down all services..."
-    stop_services
-}
-trap cleanup SIGINT SIGTERM
-
-# ── Handle --stop flag ────────────────────────────
-if [ "${1:-}" = "--stop" ]; then
-    stop_services
-fi
-
-SKIP_FRONTEND=false
-if [ "${1:-}" = "--no-frontend" ]; then
-    SKIP_FRONTEND=true
-fi
-
-# ── Banner ─────────────────────────────────────────
-echo -e "${BOLD}${CYAN}"
-echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-echo "  Network Automation Stack — Unified Launcher"
-echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-echo -e "${RESET}"
-
-# ── Clear old PID file ────────────────────────────
-rm -f "$PID_FILE"
-
-# ── Pre-flight checks ─────────────────────────────
-echo -e "${BOLD}Pre-flight checks...${RESET}"
-
-# Check uv
-if ! command -v uv &>/dev/null; then
-    err "uv not found. Install: https://docs.astral.sh/uv/"
-    exit 1
-fi
-log "uv found: $(uv --version)"
-
-# Check node/npm (for frontend)
-if [ "$SKIP_FRONTEND" = false ]; then
-    if ! command -v node &>/dev/null; then
-        warn "node not found — skipping frontend"
-        SKIP_FRONTEND=true
-    else
-        log "node found: $(node --version)"
-    fi
-fi
-
-# Check directories
-[ -d "$AI_SERVICE_DIR" ]       || { err "ai-service dir not found: $AI_SERVICE_DIR"; exit 1; }
-[ -d "$IMAGE_SERVICE_DIR" ]    || { err "Image service dir not found: $IMAGE_SERVICE_DIR"; exit 1; }
-[ -f "$AI_SERVICE_DIR/.env" ]  || { warn ".env not found in ai-service — defaults will be used"; }
+ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+PYTHON="${PYTHON_EXE:-python}"
+NPM="npm"
 
 echo ""
+echo "========================================"
+echo "  Automated Network Design - Dev Stack  "
+echo "========================================"
+echo ""
 
-# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-#  1. AI-Service (FastAPI backend) — port 8000
-# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-echo -e "${BOLD}${BLUE}[1/3] Starting AI-Service (FastAPI) → http://localhost:8000${RESET}"
+# ─── 0. Firecrawl Web Scraper (Port 3002) ────────────────────────────────────
+echo "[0/4] Starting Firecrawl Docker container..."
+FIRECRAWL_DIR="$ROOT/firecrawl"
+
+if [ ! -d "$FIRECRAWL_DIR" ]; then
+  echo "Cloning Firecrawl repository for the first time..."
+  git clone https://github.com/mendableai/firecrawl.git "$FIRECRAWL_DIR"
+fi
+
 (
-    cd "$AI_SERVICE_DIR"
-    uv run uvicorn webapp.app:app \
-        --host 0.0.0.0 \
-        --port 8000 \
-        --reload \
-        --log-level info \
-        2>&1 | sed "s/^/  ${BLUE}[ai-service]${RESET} /"
+  cd "$FIRECRAWL_DIR"
+  echo "Firecrawl Web Scraper (Port 3002)"
+  echo "Starting Docker containers in background..."
+  docker compose up -d
+  echo "Containers started!"
 ) &
-AI_PID=$!
-echo "${AI_PID}|AI-Service (port 8000)" >> "$PID_FILE"
-log "AI-Service started (PID $AI_PID)"
 
-# Give it a moment to bind
+sleep 3
+
+# ─── 1. Topology Gatekeeper (Port 8002) ──────────────────────────────────────
+echo "[1/4] Starting Topology Gatekeeper on port 8002..."
+TOPO_DIR="$ROOT/topology_generation"
+
+(
+  cd "$TOPO_DIR"
+
+  echo "Topology Gatekeeper (Port 8002)"
+
+  VENV="$TOPO_DIR/.venv"
+  VENV_PY="$VENV/Scripts/python.exe"
+
+  # Linux/Mac venv path fallback
+  if [ ! -f "$VENV/bin/python" ] && [ ! -f "$VENV_PY" ]; then
+    echo "Creating venv for Gatekeeper..."
+    "$PYTHON" -m venv "$VENV"
+  fi
+
+  echo "Installing Gatekeeper dependencies..."
+
+  if [ -f "$VENV/bin/python" ]; then
+    PY_BIN="$VENV/bin/python"
+  else
+    PY_BIN="$VENV_PY"
+  fi
+
+  "$PY_BIN" -m pip install --quiet -r requirements.txt
+  "$PY_BIN" -m uvicorn app:app --port 8002 --reload
+) &
+
 sleep 2
 
-# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-#  2. Image Generation Service — port 8001
-# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-echo -e "${BOLD}${MAGENTA}[2/3] Starting Image Generation Service → http://localhost:8001${RESET}"
+# ─── 2. AI Service (Port 8000) ───────────────────────────────────────────────
+echo "[2/4] Starting AI Service on port 8000..."
+AI_DIR="$ROOT/ai-service"
+AI_SCRIPT="$AI_DIR/start_ai_service.ps1"
+
 (
-    cd "$IMAGE_SERVICE_DIR"
-    # Prefer ai-service's uv venv (shared deps), else use system python
-    VENV_DIR="$AI_SERVICE_DIR/.venv"
-    if [ -d "$VENV_DIR" ]; then
-        source "$VENV_DIR/bin/activate"
-    fi
-    uvicorn app:app \
-        --host 0.0.0.0 \
-        --port 8001 \
-        --reload \
-        --log-level info \
-        2>&1 | sed "s/^/  ${MAGENTA}[image-svc]${RESET} /"
+  cd "$AI_DIR"
+  pwsh -NoExit -ExecutionPolicy Bypass -File "$AI_SCRIPT"
 ) &
-IMG_PID=$!
-echo "${IMG_PID}|Image Generation Service (port 8001)" >> "$PID_FILE"
-log "Image Generation Service started (PID $IMG_PID)"
 
-# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-#  3. React Frontend (Vite dev server) — port 5173
-# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-if [ "$SKIP_FRONTEND" = false ]; then
-    echo -e "${BOLD}${GREEN}[3/3] Starting React Frontend (Vite) → http://localhost:5173${RESET}"
+sleep 2
 
-    # Install deps if needed
-    if [ ! -d "$FRONTEND_DIR/node_modules" ]; then
-        warn "node_modules not found — running npm install..."
-        (cd "$FRONTEND_DIR" && npm install 2>&1 | tail -3)
-    fi
+# ─── 3. Java Gateway (Port 8080) ─────────────────────────────────────────────
+echo "[3/4] Starting Java Gateway on port 8080..."
+GATEWAY_DIR="$ROOT/gateway"
 
-    (
-        cd "$FRONTEND_DIR"
-        npm run dev 2>&1 | sed "s/^/  ${GREEN}[frontend]${RESET}  /"
-    ) &
-    FE_PID=$!
-    echo "${FE_PID}|React Frontend (port 5173)" >> "$PID_FILE"
-    log "React Frontend started (PID $FE_PID)"
-else
-    info "Skipping frontend (--no-frontend or node not found)"
+(
+  cd "$GATEWAY_DIR"
+  echo "Java Gateway (Port 8080)"
+  echo "Starting Quarkus DevServices..."
+  mvn quarkus:dev
+) &
+
+sleep 5
+
+# ─── 4. Frontend Dev Server (Port 5173) ───────────────────────────────────────
+echo "[4/4] Starting Frontend on port 5173..."
+FRONTEND_DIR="$ROOT/frontend/code"
+
+(
+  cd "$FRONTEND_DIR"
+  echo "Frontend Dev Server (Port 5173)"
+
+  if [ ! -d "node_modules" ]; then
+    echo "Installing Node dependencies..."
+    "$NPM" install
+  fi
+
+  "$NPM" run dev
+) &
+
+echo ""
+echo "========================================"
+echo "  All services launched!               "
+echo "----------------------------------------"
+echo "  Firecrawl  : http://localhost:3002   "
+echo "  Gatekeeper : http://localhost:8002   "
+echo "  AI Service : http://localhost:8000   "
+echo "  Gateway    : http://localhost:8080   "
+echo "  Frontend   : http://localhost:5173   "
+echo "========================================"
+echo ""
+echo "Opening browser in 3 seconds..."
+sleep 3
+
+# Cross-platform browser open
+if command -v xdg-open >/dev/null; then
+  xdg-open "http://localhost:5173"
+elif command -v open >/dev/null; then
+  open "http://localhost:5173"
 fi
 
-# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-#  Summary
-# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-echo ""
-echo -e "${BOLD}${CYAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${RESET}"
-echo -e "${BOLD}  All services running!${RESET}"
-echo -e "${CYAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${RESET}"
-echo ""
-echo -e "  ${BLUE}AI-Service:${RESET}       http://localhost:8000"
-echo -e "  ${MAGENTA}Image Service:${RESET}    http://localhost:8001"
-if [ "$SKIP_FRONTEND" = false ]; then
-    echo -e "  ${GREEN}React Frontend:${RESET}   http://localhost:5173"
-fi
-echo ""
-echo -e "  ${YELLOW}Press Ctrl+C to stop all services${RESET}"
-echo -e "  ${YELLOW}Or run: ./start.sh --stop${RESET}"
-echo ""
-
-# ── Wait for all background processes ─────────────
-wait
+echo "Close background jobs or terminal to stop services."
