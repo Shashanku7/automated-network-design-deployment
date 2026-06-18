@@ -14,9 +14,15 @@ public record AgentTask(
     int phase,
     String agentTarget,
     String inputContext,
-    List<ChatMessage> history) {
+    List<ChatMessage> history,
+    @JsonInclude(JsonInclude.Include.NON_NULL) Boolean approved,
+    @JsonInclude(JsonInclude.Include.NON_NULL) String feedback) {
   public AgentTask() {
-    this(null, null, 0, null, null, null);
+    this(null, null, 0, null, null, null, null, null);
+  }
+
+  public AgentTask(UUID projectId, UUID taskId, int phase, String agentTarget, String inputContext, List<ChatMessage> history) {
+    this(projectId, taskId, phase, agentTarget, inputContext, history, null, null);
   }
 
   @JsonInclude(JsonInclude.Include.NON_NULL)

@@ -17,13 +17,22 @@ public class PipelineManager {
 
   public AgentTask createNextTask(UUID projectId) {
     PipelineState state = getOrCreateState(projectId);
+    UUID taskId = UUID.randomUUID();
+    if (state.getOriginalTaskId() == null) {
+      state.setOriginalTaskId(taskId);
+    }
     return new AgentTask(
         projectId,
-        UUID.randomUUID(),
+        taskId,
         state.getCurrentPhase(),
         getAgentTarget(state.getCurrentPhase()),
         state.buildInputContext(),
         state.getHistory());
+  }
+
+  public UUID getOriginalTaskId(UUID projectId) {
+    PipelineState state = states.get(projectId);
+    return state != null ? state.getOriginalTaskId() : null;
   }
 
   public void updateStateAfterPhase(UUID projectId, String output) {

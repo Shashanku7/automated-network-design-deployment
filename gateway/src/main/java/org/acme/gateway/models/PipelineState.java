@@ -17,6 +17,7 @@ public class PipelineState {
   @Getter @Setter private String d2Diagram = "";
   @Getter @Setter private String reactCode = "";
   @Getter @Setter private String cliConfig = "";
+  @Getter @Setter private UUID originalTaskId = null;
 
   public PipelineState(UUID projectId) {
     this.projectId = projectId;
