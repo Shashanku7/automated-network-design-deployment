@@ -56,11 +56,12 @@ kafka_mgr = KafkaManager()
 
 
 async def process_kafka_task(task_data: dict):
-    project_id = task_data.get("project_id")
-    task_id = task_data.get("task_id")
-    phase_idx = task_data.get("phase", 1)
-    input_ctx = task_data.get("input_context")
-    history = task_data.get("history", [])
+    project_id = task_data["project_id"]
+    task_id = task_data["task_id"]
+    phase_idx = task_data["phase"]
+    input_ctx = task_data["input_context"]
+    history = task_data["history"]
+    requested_agent_target = task_data.get("agent_target")
     print(f"PROCESS_TASK project_id={project_id} task_id={task_id} phase={phase_idx}", flush=True)
     print(f"PROCESS_TASK input_context={'None' if input_ctx is None else ('len=' + str(len(str(input_ctx))))}", flush=True)
     print(f"PROCESS_TASK history_len={len(history)}", flush=True)
@@ -74,6 +75,12 @@ async def process_kafka_task(task_data: dict):
         return
 
     _, phase_name, agent = matching_phases[0]
+    if requested_agent_target and requested_agent_target != agent.name:
+        print(
+            f"PROCESS_TASK agent_target_mismatch requested={requested_agent_target} resolved={agent.name} "
+            f"task_id={task_id}",
+            flush=True,
+        )
     await _run_phase_kafka(kafka_mgr, project_id, task_id, phase_idx, phase_name, agent, input_ctx, history, model_name=OLLAMA_MODEL)
 
 

@@ -58,7 +58,7 @@ public class KafkaService {
       }
     }
     log.info("sendTask JSON=" + task.toString());
-    taskEmitter.send(task);
+    emitTask("sendTask", task);
 
     try {
       var convId = ensureConversation(projectId);
@@ -146,7 +146,7 @@ public class KafkaService {
       } catch (Exception e) {
         log.severe("emitNextTask persist error: " + e.getMessage());
       }
-      taskEmitter.send(nextTask);
+      emitTask("emitNextTask", nextTask);
 
       // Notify frontend phase was approved
       try {
@@ -202,7 +202,7 @@ public class KafkaService {
     } catch (Exception e) {
       log.severe("resumeWorkflow persist error: " + e.getMessage());
     }
-    taskEmitter.send(task);
+    emitTask("resumeWorkflow", task);
   }
 
   private String extractContent(String messageJson) {
@@ -212,6 +212,45 @@ public class KafkaService {
       return content != null ? content.asText() : messageJson;
     } catch (Exception e) {
       return messageJson;
+    }
+  }
+
+  private void emitTask(String source, AgentTask task) {
+    try {
+      taskEmitter.send(task).whenComplete((ignored, error) -> {
+        if (error != null) {
+          log.severe(
+              source
+                  + " kafka send failed projectId="
+                  + task.projectId()
+                  + " taskId="
+                  + task.taskId()
+                  + " phase="
+                  + task.phase()
+                  + " error="
+                  + error.getMessage());
+          return;
+        }
+        log.info(
+            source
+                + " kafka send success projectId="
+                + task.projectId()
+                + " taskId="
+                + task.taskId()
+                + " phase="
+                + task.phase());
+      });
+    } catch (Exception e) {
+      log.severe(
+          source
+              + " kafka send invocation failed projectId="
+              + task.projectId()
+              + " taskId="
+              + task.taskId()
+              + " phase="
+              + task.phase()
+              + " error="
+              + e.getMessage());
     }
   }
 }
