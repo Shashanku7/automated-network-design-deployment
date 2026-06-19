@@ -246,7 +246,16 @@ export function runWorkflow(projectId, requirements, solutionType, onEvent) {
     const wsUrl = `${wsProtocol}//${window.location.host}/chat/${projectId}`;
     const ws = new WebSocket(wsUrl);
 
-    const results = { prompt, rephrased: '', topology: '', devices: '', diagramUrl: '', diagramDownloadUrl: '', cliConfig: '' };
+    const results = {
+      prompt,
+      rephrased: '',
+      topology: '',
+      devices: '',
+      diagramCode: '',
+      diagramUrl: '',
+      diagramDownloadUrl: '',
+      cliConfig: '',
+    };
 
     ws.onopen = () => {
       console.log('[WS] open projectId=' + projectId);
@@ -273,7 +282,16 @@ export function resumeWorkflow(projectId, onEvent) {
     const wsUrl = `${wsProtocol}//${window.location.host}/chat/${projectId}`;
     const ws = new WebSocket(wsUrl);
 
-    const results = { prompt: '', rephrased: '', topology: '', devices: '', diagramUrl: '', diagramDownloadUrl: '', cliConfig: '' };
+    const results = {
+      prompt: '',
+      rephrased: '',
+      topology: '',
+      devices: '',
+      diagramCode: '',
+      diagramUrl: '',
+      diagramDownloadUrl: '',
+      cliConfig: '',
+    };
 
     ws.onopen = () => {
       console.log('[WS] resume open projectId=' + projectId);

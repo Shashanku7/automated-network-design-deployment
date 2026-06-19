@@ -71,6 +71,18 @@ def _to_serializable_messages(messages, source_key: str):
     return serializable
 
 
+def _dedupe_messages(messages: list[dict]) -> list[dict]:
+    seen: set[tuple[str, str]] = set()
+    unique = []
+    for msg in messages:
+        key = (str(msg.get("role", "")), str(msg.get("content", "")))
+        if key in seen:
+            continue
+        seen.add(key)
+        unique.append(msg)
+    return unique
+
+
 @router.get("/api/chat-history/{project_id}")
 async def get_chat_history(project_id: str, conversation_id: str = Query(default="default")):
     """Return persistent chat history from PostgresChatStore for frontend replay."""
@@ -104,7 +116,7 @@ async def get_chat_history(project_id: str, conversation_id: str = Query(default
         "conversation_key": conversation_key,
         "conversation_messages": conversation_messages,
         "phase_messages": phase_messages,
-        "merged_messages": merged_messages,
+        "merged_messages": _dedupe_messages(merged_messages),
     }
 
 
@@ -256,6 +268,31 @@ async def _run_phase_kafka(kafka_mgr, project_id, task_id, phase_num, phase_name
         chat_store_key=key,
     )
     chat_history = memory.get()
+    if chat_history:
+        last_user = next(
+            (m for m in reversed(chat_history) if getattr(m, "role", None) == MessageRole.USER),
+            None,
+        )
+        last_assistant = next(
+            (m for m in reversed(chat_history) if getattr(m, "role", None) == MessageRole.ASSISTANT),
+            None,
+        )
+        if last_user and last_assistant and str(getattr(last_user, "content", "")) == str(initial_msg):
+            print(
+                f"RUN_PHASE task_id={task_id} appears_already_processed phase={phase_num}; skipping duplicate run",
+                flush=True,
+            )
+            await kafka_mgr.send_event(
+                {
+                    "project_id": project_id,
+                    "task_id": task_id,
+                    "agent_name": agent.name,
+                    "event_type": "FINAL_ANSWER",
+                    "data": str(getattr(last_assistant, "content", "")),
+                    "is_final": True,
+                }
+            )
+            return str(getattr(last_assistant, "content", ""))
 
     if not chat_history and gateway_history:
         print(f"RUN_PHASE seeding DB with {len(gateway_history)} messages from gateway history", flush=True)
@@ -286,8 +323,19 @@ async def _run_phase_kafka(kafka_mgr, project_id, task_id, phase_num, phase_name
                     await kafka_mgr.send_event({**base_event, "event_type": "TOKEN", "data": str(ev.response)})
 
         resp = await handler
-        memory.put(ChatMessage(role=MessageRole.USER, content=initial_msg))
-        memory.put(ChatMessage(role=MessageRole.ASSISTANT, content=str(resp)))
+        existing_after = memory.get()
+        last_user = next(
+            (m for m in reversed(existing_after) if getattr(m, "role", None) == MessageRole.USER),
+            None,
+        )
+        last_assistant = next(
+            (m for m in reversed(existing_after) if getattr(m, "role", None) == MessageRole.ASSISTANT),
+            None,
+        )
+        if not last_user or str(getattr(last_user, "content", "")) != str(initial_msg):
+            memory.put(ChatMessage(role=MessageRole.USER, content=initial_msg))
+        if not last_assistant or str(getattr(last_assistant, "content", "")) != str(resp):
+            memory.put(ChatMessage(role=MessageRole.ASSISTANT, content=str(resp)))
         await kafka_mgr.send_event({
             "project_id": project_id, "task_id": task_id, "agent_name": agent.name,
             "event_type": "FINAL_ANSWER", "data": str(resp), "is_final": True

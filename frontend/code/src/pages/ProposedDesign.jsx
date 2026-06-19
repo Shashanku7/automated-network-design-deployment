@@ -15,7 +15,6 @@ import { runWorkflow, resumeWorkflow, sendApproval, sendRevision, sendChatMessag
 import { marked } from 'marked';
 import katex from 'katex';
 import 'katex/dist/katex.min.css';
-import ChatbotSidebar from '../components/ChatbotSidebar';
 
 marked.setOptions({ gfm: true, breaks: true });
 
@@ -73,7 +72,7 @@ export default function ProposedDesign() {
   const { projectId } = useParams();
   const [searchParams] = useSearchParams();
   const isFresh = searchParams.get('fresh') === '1';
-  const { state, dispatch, loadProject, getProjectList, deleteProject } = useProject();
+  const { state, dispatch, loadProject, getProjectList } = useProject();
   const wsRef = useRef(null);
   const pendingApprovalRef = useRef(null);
   const [status, setStatus] = useState('idle'); // idle | running | awaiting | complete | error
@@ -85,13 +84,21 @@ export default function ProposedDesign() {
   const [showFeedback, setShowFeedback] = useState(false);
   const [chatInput, setChatInput] = useState('');
   const [sending, setSending] = useState(false);
-  const [sidebarOpen, setSidebarOpen] = useState(true);
+  const [sidebarOpen, setSidebarOpen] = useState(false);
   const [projectList, setProjectList] = useState([]);
   const eventsEndRef = useRef(null);
   const chatEndRef = useRef(null);
   const hasStarted = useRef(false);
   const retryCountRef = useRef(0);
   const MAX_RETRIES = 3;
+
+  useEffect(() => {
+    hasStarted.current = false;
+    pendingApprovalRef.current = null;
+    wsRef.current = null;
+    setCurrentPhase(0);
+    setStatus(state.workflowStatus === 'complete' ? 'complete' : 'idle');
+  }, [projectId]); // reset per project to avoid stale run guard
 
   useEffect(() => { setProjectList(getProjectList()); }, [getProjectList]);
 
@@ -151,6 +158,8 @@ export default function ProposedDesign() {
           }));
           dispatch({ type: 'SET_CHAT_HISTORY', payload: chatMsgs });
           setHistorySource('gateway-db');
+        } else {
+          setHistorySource(null);
         }
       } catch (err) {
         if (!cancelled) setHistoryError('Failed to load conversation history');
@@ -159,7 +168,7 @@ export default function ProposedDesign() {
       }
     })();
     return () => { cancelled = true; };
-  }, [projectId, state.rephrasedPrompt, state.conversationId, dispatch]);
+  }, [projectId, state.conversationId, dispatch]);
 
   // Start workflow on mount if flagged
   useEffect(() => {
@@ -260,6 +269,7 @@ export default function ProposedDesign() {
                 case 1: dispatch({ type: 'SET_REPHRASED', payload: ev.content }); break;
                 case 2: dispatch({ type: 'SET_TOPOLOGY', payload: ev.content }); break;
                 case 3: dispatch({ type: 'SET_DEVICES', payload: ev.content }); break;
+                case 4: dispatch({ type: 'SET_REACT_CODE', payload: ev.content }); break;
                 case 5: dispatch({ type: 'SET_CLI_CONFIG', payload: ev.content }); break;
               }
             }
@@ -277,6 +287,9 @@ export default function ProposedDesign() {
         if (results.devices) dispatch({ type: 'SET_DEVICES', payload: results.devices });
         if (results.diagramUrl) {
           dispatch({ type: 'SET_DIAGRAM', payload: { url: results.diagramUrl, downloadUrl: results.diagramDownloadUrl } });
+        }
+        if (results.diagramCode) {
+          dispatch({ type: 'SET_REACT_CODE', payload: results.diagramCode });
         }
         if (results.cliConfig) {
           dispatch({ type: 'SET_CLI_CONFIG', payload: results.cliConfig });
@@ -309,7 +322,15 @@ export default function ProposedDesign() {
       }
     })();
 
-    return () => { cancelled = true; };
+    return () => {
+      cancelled = true;
+      const ws = wsRef.current;
+      if (ws && ws.readyState === WebSocket.OPEN) {
+        ws.close();
+      }
+      wsRef.current = null;
+      pendingApprovalRef.current = null;
+    };
   }, [state.workflowStatus, state.requirements, state.solutionType, projectId, dispatch]);
 
   function retryWorkflow() {
@@ -332,6 +353,43 @@ export default function ProposedDesign() {
     setFeedbackText('');
     setShowFeedback(false);
     setStatus('running');
+  }
+
+  async function handleChat(e) {
+    e.preventDefault();
+    if (!chatInput.trim() || sending) return;
+
+    const messageToSend = chatInput.trim();
+    setChatInput('');
+    setSending(true);
+
+    dispatch({
+      type: 'ADD_CHAT_MESSAGE',
+      payload: { role: 'user', content: messageToSend, timestamp: new Date().toISOString() },
+    });
+
+    let screenContext = `SYSTEM CONTEXT: User is in AI Workflow Design.`;
+    screenContext += `\nCurrent phase: ${currentPhase || 'unknown'} (${status}).`;
+    screenContext += `\nRephrased Prompt: ${state.rephrasedPrompt || 'None'}`;
+    screenContext += `\nTopology Design: ${state.topologyDesign || 'None'}`;
+    screenContext += `\nDevice Selection: ${state.deviceSelection || 'None'}`;
+    screenContext += `\nCLI Config: ${state.cliConfig || 'None'}`;
+
+    try {
+      const res = await sendChatMessage(messageToSend, state.chatHistory, screenContext);
+      dispatch({ type: 'ADD_CHAT_MESSAGE', payload: res });
+    } catch (err) {
+      dispatch({
+        type: 'ADD_CHAT_MESSAGE',
+        payload: {
+          role: 'assistant',
+          content: 'Unable to reach chat service right now. Please try again.',
+          timestamp: new Date().toISOString(),
+        },
+      });
+    } finally {
+      setSending(false);
+    }
   }
 
   // If no workflow started and no previous results, redirect
@@ -620,20 +678,25 @@ export default function ProposedDesign() {
         </div>
       </div>
 
-      {/* Chat input (sticky bottom) */}
-      {/* <div className="border-t border-outline-variant/10 px-6 py-3 shrink-0"> */}
-      {/*   <form onSubmit={handleChat} className="flex gap-2 max-w-3xl mx-auto"> */}
-      {/*     <input value={chatInput} onChange={e => setChatInput(e.target.value)} disabled={sending} */}
-      {/*       className="flex-1 bg-surface-container-low border border-outline-variant/20 rounded-lg px-3 py-2 text-sm text-on-surface placeholder:text-outline/50 focus:ring-1 focus:ring-primary" */}
-      {/*       placeholder="Ask about your design…" /> */}
-      {/*     <button type="submit" disabled={sending} */}
-      {/*       className="w-9 h-9 bg-primary rounded-lg flex items-center justify-center text-on-primary hover:brightness-110 transition-all disabled:opacity-50 shrink-0"> */}
-      {/*       <span className="material-symbols-outlined text-base">send</span> */}
-      {/*     </button> */}
-      {/*   </form> */}
-      {/* </div> */}
-      {/* Right: Copilot Chat */}
-      <ChatbotSidebar />
+      {/* Inline workflow chat composer */}
+      <div className="border-t border-outline-variant/10 px-6 py-3 shrink-0">
+        <form onSubmit={handleChat} className="flex gap-2 max-w-4xl mx-auto">
+          <input
+            value={chatInput}
+            onChange={e => setChatInput(e.target.value)}
+            disabled={sending}
+            className="flex-1 bg-surface-container-low border border-outline-variant/20 rounded-lg px-3 py-2 text-sm text-on-surface placeholder:text-outline/50 focus:ring-1 focus:ring-primary"
+            placeholder="Ask about your workflow output..."
+          />
+          <button
+            type="submit"
+            disabled={sending}
+            className="w-9 h-9 bg-primary rounded-lg flex items-center justify-center text-on-primary hover:brightness-110 transition-all disabled:opacity-50 shrink-0"
+          >
+            <span className="material-symbols-outlined text-base">send</span>
+          </button>
+        </form>
+      </div>
     </div>
   );
 }
@@ -855,6 +918,7 @@ function EventCard({ event }) {
 /* ─── Workflow Complete Card ─── */
 function WorkflowCompleteCard() {
   const navigate = useNavigate();
+  const { projectId } = useParams();
 
   return (
     <div className="mt-2 bg-tertiary/8 border border-tertiary/30 rounded-xl overflow-hidden animate-in fade-in">
@@ -880,7 +944,7 @@ function WorkflowCompleteCard() {
           </div>
         </div>
         <button
-          onClick={() => navigate('/interactive-topology')}
+          onClick={() => navigate(`/project/${projectId}/interactive-topology`)}
           className="shrink-0 px-5 py-2.5 bg-tertiary text-on-tertiary font-bold rounded-lg hover:brightness-110 transition-all flex items-center gap-2 text-sm shadow-sm"
         >
           View Topology

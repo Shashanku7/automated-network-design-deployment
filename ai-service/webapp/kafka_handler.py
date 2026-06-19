@@ -34,6 +34,9 @@ class KafkaManager:
     def __init__(self):
         self.consumer = None
         self.producer = None
+        self.max_task_retries = 3
+        self.failed_attempts: dict[tuple[str, str, int], int] = {}
+        self.completed_tasks: set[tuple[str, str, int]] = set()
 
     async def start(self):
         self.consumer = AIOKafkaConsumer(
@@ -114,8 +117,22 @@ class KafkaManager:
                         ),
                         flush=True,
                     )
+                    task_key = (
+                        str(task_data["project_id"]),
+                        str(task_data["task_id"]),
+                        int(task_data["phase"]),
+                    )
+                    if task_key in self.completed_tasks:
+                        print(
+                            f"KAFKA_SKIP duplicate_completed task_id={task_data['task_id']} phase={task_data['phase']}",
+                            flush=True,
+                        )
+                        await self.consumer.commit()
+                        continue
                     try:
                         await process_fn(task_data)
+                        self.completed_tasks.add(task_key)
+                        self.failed_attempts.pop(task_key, None)
                         await self.consumer.commit()
                         print(
                             f"KAFKA_COMMIT success partition={msg.partition} offset={msg.offset} "
@@ -123,11 +140,44 @@ class KafkaManager:
                             flush=True,
                         )
                     except Exception as process_error:
+                        attempts = self.failed_attempts.get(task_key, 0) + 1
+                        self.failed_attempts[task_key] = attempts
                         print(
                             f"KAFKA_PROCESS fail partition={msg.partition} offset={msg.offset} "
-                            f"task_id={task_data['task_id']} error={process_error}",
+                            f"task_id={task_data['task_id']} attempt={attempts} error={process_error}",
                             flush=True,
                         )
+                        if attempts >= self.max_task_retries:
+                            try:
+                                await self.send_event(
+                                    {
+                                        "project_id": task_data["project_id"],
+                                        "task_id": task_data["task_id"],
+                                        "agent_name": "system",
+                                        "event_type": "ERROR",
+                                        "data": "Task retries exhausted in ai-service consumer",
+                                        "payload": {
+                                            "phase": task_data["phase"],
+                                            "attempts": attempts,
+                                            "reason": str(process_error),
+                                        },
+                                        "is_final": True,
+                                    }
+                                )
+                            except Exception as send_error:
+                                print(
+                                    f"KAFKA_SEND retries_exhausted_event_failed task_id={task_data['task_id']} "
+                                    f"error={send_error}",
+                                    flush=True,
+                                )
+                            await self.consumer.commit()
+                            self.failed_attempts.pop(task_key, None)
+                            print(
+                                f"KAFKA_COMMIT retries_exhausted partition={msg.partition} offset={msg.offset} "
+                                f"task_id={task_data['task_id']}",
+                                flush=True,
+                            )
+                            continue
                         # Keep offset uncommitted so the message can be retried.
                         continue
             except asyncio.CancelledError:

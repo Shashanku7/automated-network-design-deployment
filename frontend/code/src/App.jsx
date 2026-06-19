@@ -44,6 +44,10 @@ export default function App() {
               element={<DetailedTopology />}
             />
             <Route
+              path="project/:projectId/interactive-topology"
+              element={<InteractiveTopology />}
+            />
+            <Route
               path="project/:projectId/deployment"
               element={<Deployment />}
             />

@@ -16,4 +16,13 @@ public class AgentTaskRepository implements PanacheRepositoryBase<AgentTaskEntit
   public List<AgentTaskEntity> findCompletedByProjectId(UUID projectId) {
     return list("projectId = ?1 and status = 'completed' order by phase", projectId);
   }
+
+  public Optional<AgentTaskEntity> findLatestCompletedByProjectId(UUID projectId) {
+    return find("projectId = ?1 and status = 'completed' order by completedAt desc", projectId)
+        .firstResultOptional();
+  }
+
+  public boolean existsByProjectIdAndPhase(UUID projectId, int phase) {
+    return count("projectId = ?1 and phase = ?2", projectId, phase) > 0;
+  }
 }
