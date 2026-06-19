@@ -382,14 +382,6 @@ export async function getPersistentChatHistory(projectId, conversationId = 'defa
  * Used on page refresh to resume from where the workflow left off.
  */
 /**
- * Create project in backend DB.
- */
-export async function createProjectInDb(title, id) {
-  const res = await API.post('/projects', { title, id });
-  return res.data;
-}
-
-/**
  * Save/update project metadata (solutionType, requirements, chatHistory, workflowStatus) to DB.
  */
 export async function saveProjectToDb(projectId, data) {

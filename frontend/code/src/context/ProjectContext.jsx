@@ -1,5 +1,5 @@
 import { createContext, useContext, useReducer, useEffect, useRef, useCallback } from 'react';
-import { createProjectInDb, saveProjectToDb } from '../services/api';
+import { saveProjectToDb } from '../services/api';
 
 const ProjectContext = createContext(null);
 
@@ -231,9 +231,6 @@ export function ProjectProvider({ children }) {
 
   const createProject = useCallback((title) => {
     const id = crypto.randomUUID();
-    createProjectInDb(title, id).catch(err =>
-      console.warn('[DB] createProjectInDb failed:', err)
-    );
     const now = new Date().toISOString();
     const index = getProjectIndex();
     index.unshift({ id, title, createdAt: now, updatedAt: now, status: 'draft' });
