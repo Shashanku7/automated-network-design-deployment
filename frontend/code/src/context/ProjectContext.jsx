@@ -109,6 +109,7 @@ function projectReducer(state, action) {
           cliConfig: saved.cliConfig ?? null,
           reactCode: saved.reactCode ?? null,
           proposedDesign: saved.proposedDesign ?? null,
+          workflowEvents: saved.workflowEvents ?? [],
           chatHistory: saved.chatHistory ?? [],
           deploymentStatus: saved.deploymentStatus ?? "idle",
         };
@@ -172,8 +173,20 @@ function projectReducer(state, action) {
     case "WORKFLOW_EVENT":
       return {
         ...state,
-        workflowEvents: [...state.workflowEvents, action.payload],
+        workflowEvents: [
+          ...state.workflowEvents,
+          {
+            ...action.payload,
+            timestamp: Date.now(),
+            _id:
+              action.payload._id ||
+              `${action.payload.type}|${action.payload.phase || ""}|${action.payload.content || ""}|${action.payload.tool_name || ""}`,
+          },
+        ],
       };
+
+    case "SET_WORKFLOW_EVENTS":
+      return { ...state, workflowEvents: action.payload };
 
     case "PHASE_START":
       return {
@@ -258,6 +271,7 @@ export function ProjectProvider({ children }) {
       projectTitle: state.projectTitle,
       solutionType: state.solutionType,
       requirements: state.requirements,
+      workflowEvents: state.workflowEvents,
       workflowStatus: state.workflowStatus,
       currentPhase: state.currentPhase,
       currentPhaseName: state.currentPhaseName,

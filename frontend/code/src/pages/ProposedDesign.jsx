@@ -8,7 +8,7 @@
  * - Agent responses with markdown rendering
  * - Approval/revision UI between phases
  */
-import { useState, useEffect, useRef, useCallback, useMemo } from "react";
+import { useState, useEffect, useRef, useMemo } from "react";
 import { useNavigate, useParams, useSearchParams } from "react-router-dom";
 import { useProject } from "../context/ProjectContext";
 import {
@@ -57,15 +57,6 @@ export default function ProposedDesign() {
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [projectList, setProjectList] = useState([]);
   const eventsEndRef = useRef(null);
-  const chatEndRef = useRef(null);
-
-  const dedupedChatHistory = useMemo(() => {
-    return state.chatHistory.filter(
-      (msg, i, arr) =>
-        i ===
-        arr.findIndex((m) => m.role === msg.role && m.content === msg.content),
-    );
-  }, [state.chatHistory]);
 
   const hasStarted = useRef(false);
   const retryCountRef = useRef(0);
@@ -79,16 +70,56 @@ export default function ProposedDesign() {
     setStatus(state.workflowStatus === "complete" ? "complete" : "idle");
   }, [projectId]); // reset per project to avoid stale run guard
 
-  const scrollToBottom = useCallback(() => {
-    eventsEndRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, []);
+  const mergedTimeline = useMemo(() => {
+    const seen = new Set();
+    const events = state.workflowEvents
+      .filter((ev) => {
+        if (!ev.phase) return true;
+        if (
+          status === "running" ||
+          status === "awaiting" ||
+          status === "reconnecting"
+        ) {
+          return ev.phase <= currentPhase;
+        }
+        return true;
+      })
+      .filter((ev) => {
+        const key =
+          ev._id ||
+          `${ev.type}|${ev.phase || ""}|${ev.tool_name || ""}|${ev.content || ""}|${typeof ev.tool_kwargs === "object" ? JSON.stringify(ev.tool_kwargs) : ev.tool_kwargs || ""}`;
+        if (seen.has(key)) return false;
+        seen.add(key);
+        if (ev.type === "agent_response" && ev.content) {
+          seen.add(`chat|assistant|${ev.content}`);
+        }
+        return true;
+      })
+      .map((ev) => ({ _kind: "event", ...ev }));
+
+    const chats = state.chatHistory
+      .filter((msg) => {
+        const key = `chat|${msg.role}|${msg.content}`;
+        if (seen.has(key)) return false;
+        seen.add(key);
+        return true;
+      })
+      .map((msg) => ({
+        _kind: "chat",
+        ...msg,
+        timestamp: msg.timestamp || null,
+      }));
+
+    return [...events, ...chats].sort((a, b) => {
+      const ta = a.timestamp ? new Date(a.timestamp).getTime() : 0;
+      const tb = b.timestamp ? new Date(b.timestamp).getTime() : 0;
+      return ta - tb;
+    });
+  }, [state.workflowEvents, state.chatHistory, status, currentPhase]);
 
   useEffect(() => {
-    scrollToBottom();
-  }, [state.workflowEvents, scrollToBottom]);
-  useEffect(() => {
-    chatEndRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, [dedupedChatHistory]);
+    eventsEndRef.current?.scrollIntoView({ behavior: "smooth" });
+  }, [mergedTimeline]);
 
   // Sync progress bar with persisted workflow state
   useEffect(() => {
@@ -124,7 +155,8 @@ export default function ProposedDesign() {
                   ? "user"
                   : "assistant",
               content: m.content || "",
-              timestamp: new Date().toISOString(),
+              timestamp:
+                m.created_at || m.createdAt || m.timestamp || null,
             }),
           );
           dispatch({ type: "SET_CHAT_HISTORY", payload: persistedMessages });
@@ -143,7 +175,7 @@ export default function ProposedDesign() {
           const chatMsgs = messages.map((m) => ({
             role: m.role,
             content: m.content,
-            timestamp: m.createdAt || new Date().toISOString(),
+            timestamp: m.createdAt || null,
           }));
           dispatch({ type: "SET_CHAT_HISTORY", payload: chatMsgs });
         }
@@ -175,6 +207,11 @@ export default function ProposedDesign() {
 
       // Dispatch results from server if any
       if (completedPhases.length > 0) {
+        const existingApprovedPhases = new Set(
+          state.workflowEvents
+            .filter((ev) => ev.type === "phase_approved")
+            .map((ev) => ev.phase),
+        );
         const phaseEvents = [];
         for (const p of completedPhases) {
           if (p.phase === 1)
@@ -185,7 +222,9 @@ export default function ProposedDesign() {
             dispatch({ type: "SET_DEVICES", payload: p.output });
           else if (p.phase === 5)
             dispatch({ type: "SET_CLI_CONFIG", payload: p.output });
-          phaseEvents.push({ type: "phase_approved", phase: p.phase });
+          if (!existingApprovedPhases.has(p.phase)) {
+            phaseEvents.push({ type: "phase_approved", phase: p.phase });
+          }
         }
         phaseEvents.forEach((ev) =>
           dispatch({ type: "WORKFLOW_EVENT", payload: ev }),
@@ -693,21 +732,33 @@ nded-lg hover:brightness-110 transition-all text-sm"
           <div className="text-[11px] text-outline uppercase tracking-wider px-1">
             Workflow Chat
           </div>
-          {state.workflowEvents
-            .filter((ev) => {
-              if (!ev.phase) return true;
-              if (
-                status === "running" ||
-                status === "awaiting" ||
-                status === "reconnecting"
-              ) {
-                return ev.phase === currentPhase;
-              }
-              return true;
-            })
-            .map((ev, i) => (
-              <EventCard key={i} event={ev} />
-            ))}
+          {/* Merged timeline — chat + events in chronological order */}
+          {mergedTimeline.map((item, i) => {
+            if (item._kind === "chat") {
+              return (
+                <div
+                  key={`c-${i}`}
+                  className={`flex ${item.role === "user" ? "justify-end" : "justify-start"}`}
+                >
+                  <div
+                    className={`max-w-[80%] rounded-lg px-4 py-2 text-sm ${
+                      item.role === "user"
+                        ? "bg-primary/10 text-on-surface rounded-tr-none"
+                        : "bg-surface-container-low border border-outline-variant/10 text-on-surface rounded-tl-none md-content"
+                    }`}
+                    dangerouslySetInnerHTML={
+                      item.role !== "user"
+                        ? { __html: renderMd(item.content) }
+                        : undefined
+                    }
+                  >
+                    {item.role === "user" ? item.content : undefined}
+                  </div>
+                </div>
+              );
+            }
+            return <EventCard key={`e-${i}`} event={item} />;
+          })}
 
           {/* Approval UI */}
           {status === "awaiting" && (
@@ -747,34 +798,6 @@ nded-lg hover:brightness-110 transition-all text-sm"
                   </button>
                 </div>
               )}
-            </div>
-          )}
-
-          {/* Inline Chat History */}
-          {dedupedChatHistory.length > 0 && (
-            <div className="pt-4 border-t border-outline-variant/10 space-y-2">
-              {dedupedChatHistory.map((msg, i) => (
-                <div
-                  key={i}
-                  className={`flex ${msg.role === "user" ? "justify-end" : "justify-start"}`}
-                >
-                  <div
-                    className={`max-w-[80%] rounded-lg px-4 py-2 text-sm ${
-                      msg.role === "user"
-                        ? "bg-primary/10 text-on-surface rounded-tr-none"
-                        : "bg-surface-container-low border border-outline-variant/10 text-on-surface rounded-tl-none md-content"
-                    }`}
-                    dangerouslySetInnerHTML={
-                      msg.role !== "user"
-                        ? { __html: renderMd(msg.content) }
-                        : undefined
-                    }
-                  >
-                    {msg.role === "user" ? msg.content : undefined}
-                  </div>
-                </div>
-              ))}
-              <div ref={chatEndRef} />
             </div>
           )}
 
