@@ -888,6 +888,8 @@ nded-lg hover:brightness-110 transition-all text-sm"
 /* ─── Event Card Component ─── */
 function EventCard({ event }) {
   const [open, setOpen] = useState(false);
+  const navigate = useNavigate();
+  const { projectId } = useParams();
   const ev = event;
 
   switch (ev.type) {
@@ -1118,35 +1120,81 @@ function EventCard({ event }) {
                 Network Topology Diagram
               </span>
               <span className="text-[10px] px-2 py-0.5 rounded-full bg-tertiary/20 text-tertiary font-medium">
-                SVG
+                interactive
               </span>
             </div>
-            <a
-              href={ev.download_url || ev.url}
-              download={ev.filename || "topology.svg"}
-              className="flex items-center gap-1.5 px-3 py-1.5 bg-tertiary/15 text-tertiary text-xs font-bold rounded-lg hover:bg-tertiary/25 transition-colors"
-            >
-              <span className="material-symbols-outlined text-sm">
-                download
-              </span>
-              Download SVG
-            </a>
           </div>
-          <div className="p-4 bg-white rounded-b-xl flex items-center justify-center">
-            <img
-              src={ev.url}
-              alt="Network Topology Diagram"
-              className="max-w-full max-h-[600px] object-contain"
-            />
+          <div className="p-5 bg-surface-container-low rounded-b-xl flex items-center justify-between gap-4">
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 rounded-full bg-tertiary/15 flex items-center justify-center text-tertiary shrink-0">
+                <span className="material-symbols-outlined text-lg">schema</span>
+              </div>
+              <div>
+                <h3 className="text-sm font-bold text-on-surface">
+                  Interactive Topology Ready
+                </h3>
+                <p className="text-xs text-on-surface-variant mt-0.5">
+                  View your network topology diagram.
+                </p>
+              </div>
+            </div>
+            <button
+              onClick={() =>
+                navigate(`/project/${projectId}/interactive-topology`)
+              }
+              className="shrink-0 px-5 py-2.5 bg-tertiary text-on-tertiary font-bold rounded-lg hover:brightness-110 transition-all flex items-center gap-2 text-sm shadow-sm"
+            >
+              View Topology
+              <span className="material-symbols-outlined text-base">
+                open_in_new
+              </span>
+            </button>
           </div>
         </div>
       );
 
     case "diagram_error":
       return (
-        <div className="bg-error/10 border border-error/30 rounded-xl px-4 py-3 text-sm text-error flex items-center gap-2">
-          <span className="material-symbols-outlined text-sm">warning</span>
-          Diagram rendering failed: {ev.message}
+        <div className="border border-tertiary/30 bg-tertiary/5 rounded-xl overflow-hidden">
+          <div className="flex items-center justify-between px-5 py-3 border-b border-tertiary/15">
+            <div className="flex items-center gap-2">
+              <span className="material-symbols-outlined text-tertiary text-lg">
+                schema
+              </span>
+              <span className="text-sm font-bold text-on-surface">
+                Network Topology Diagram
+              </span>
+              <span className="text-[10px] px-2 py-0.5 rounded-full bg-tertiary/20 text-tertiary font-medium">
+                interactive
+              </span>
+            </div>
+          </div>
+          <div className="p-5 bg-surface-container-low rounded-b-xl flex items-center justify-between gap-4">
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 rounded-full bg-tertiary/15 flex items-center justify-center text-tertiary shrink-0">
+                <span className="material-symbols-outlined text-lg">schema</span>
+              </div>
+              <div>
+                <h3 className="text-sm font-bold text-on-surface">
+                  Interactive Topology Ready
+                </h3>
+                <p className="text-xs text-on-surface-variant mt-0.5">
+                  View your network topology diagram.
+                </p>
+              </div>
+            </div>
+            <button
+              onClick={() =>
+                navigate(`/project/${projectId}/interactive-topology`)
+              }
+              className="shrink-0 px-5 py-2.5 bg-tertiary text-on-tertiary font-bold rounded-lg hover:brightness-110 transition-all flex items-center gap-2 text-sm shadow-sm"
+            >
+              View Topology
+              <span className="material-symbols-outlined text-base">
+                open_in_new
+              </span>
+            </button>
+          </div>
         </div>
       );
 
