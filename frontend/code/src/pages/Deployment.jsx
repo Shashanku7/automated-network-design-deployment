@@ -5,12 +5,14 @@
  * Simple progress indicators. Technical logs hidden by default.
  */
 import { useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useParams } from "react-router-dom";
 import { useProject } from "../context/ProjectContext";
 import { triggerDeployment } from "../services/api";
+import { renderMd } from "../utils/renderMd";
 
 export default function Deployment() {
   const navigate = useNavigate();
+  const { projectId } = useParams();
   const { state, dispatch } = useProject();
   const [confirmed, setConfirmed] = useState(false);
   const [showLogs, setShowLogs] = useState(false);
@@ -90,6 +92,26 @@ export default function Deployment() {
                 ))}
               </div>
             </section>
+
+            {/* CLI Config — Phase 5 output */}
+            {state.cliConfig && (
+              <section className="bg-surface-container-low rounded-xl border border-outline-variant/15 overflow-hidden">
+                <div className="p-6">
+                  <h3 className="text-lg font-bold font-[family-name:var(--font-headline)] mb-4 flex items-center gap-2">
+                    <span className="material-symbols-outlined text-primary">
+                      terminal
+                    </span>
+                    CLI Configuration
+                  </h3>
+                  <div
+                    className="md-content text-sm text-on-surface leading-relaxed"
+                    dangerouslySetInnerHTML={{
+                      __html: renderMd(state.cliConfig),
+                    }}
+                  />
+                </div>
+              </section>
+            )}
 
             {/* Technical Logs (hidden by default) */}
             <div>

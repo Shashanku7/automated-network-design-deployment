@@ -312,13 +312,17 @@ function ProjectDashboardView({ projectId, meta }) {
             desc: "Run AI workflow",
             accent: "primary",
           },
-          {
-            label: "Bill of Materials",
-            path: `${projectId}/bom`,
-            icon: "receipt_long",
-            desc: "View equipment list",
-            accent: "primary",
-          },
+          ...(state.deviceSelection
+            ? [
+                {
+                  label: "Bill of Materials",
+                  path: `${projectId}/bom`,
+                  icon: "receipt_long",
+                  desc: "View equipment list",
+                  accent: "primary",
+                },
+              ]
+            : []),
           {
             label: "Topology",
             path: `${projectId}/topology`,
@@ -372,7 +376,7 @@ function ProjectDashboardView({ projectId, meta }) {
             >
               {status === "In Progress" ? "Resume Design" : "Start Design"}
             </button>
-            {state.rephrasedPrompt && (
+            {state.deviceSelection && (
               <button
                 onClick={() => navigate(`/project/${projectId}/bom`)}
                 className="px-4 py-2 border border-outline-variant/30 text-on-surface font-medium rounded-lg hover:bg-surface-container-high transition-all text-sm"
