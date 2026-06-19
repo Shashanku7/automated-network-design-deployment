@@ -142,7 +142,7 @@ const PHASE_MAP = {
   prompt_rephraser: 1,
   topology_designer: 2,
   device_selector: 3,
-  d2_diagram_generator: 4,
+  network_diagram_generator: 4,
   cli_config_generator: 5,
 };
 
