@@ -118,7 +118,7 @@ function projectReducer(state, action) {
 
     case "SET_PROJECT_ID":
       return {
-        ...state,
+        ...initialState,
         projectId: action.payload.projectId,
         projectTitle: action.payload.projectTitle || "",
       };
