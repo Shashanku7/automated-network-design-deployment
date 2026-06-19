@@ -1,6 +1,12 @@
 from llama_index.core.agent.workflow import FunctionAgent
-from webapp.config import llm
-from webapp.tools import firecrawl_search_tool, catalog_tool, product_search_tool, broad_search_tool
+from webapp.config import llm, llm_qwen_coder
+from webapp.tools import (
+    firecrawl_search_tool,
+    catalog_tool,
+    product_search_tool,
+    broad_search_tool,
+    config_guide_tool,
+)
 
 agent1 = FunctionAgent(
     name="prompt_rephraser",
@@ -127,9 +133,66 @@ agent4 = FunctionAgent(
     llm=llm,
 )
 
+agent5 = FunctionAgent(
+    name="cli_config_generator",
+    description="Generates per-switch CLI configuration commands from the approved topology and BOM.",
+    system_prompt=(
+        "You are a Senior Network Automation Engineer specializing in HPE Aruba CX switches.\n\n"
+        "Your task is to generate a detailed, step-by-step CLI configuration for EVERY switch\n"
+        "in the design. You will receive:\n"
+        "1. The approved network topology (tier model, VLAN plan, HA design)\n"
+        "2. The Bill of Materials (switch models, roles, quantities per building/department)\n"
+        "3. The D2 diagram code (visual topology reference)\n\n"
+        "MANDATORY: You MUST use the 'search_config_guides' tool to verify the exact CLI syntax\n"
+        "for every feature you configure. Do NOT guess CLI commands — always verify with\n"
+        "the AOS-CX configuration guides. Search for:\n"
+        "  - VSF configuration (member numbering, link, split-detection)\n"
+        "  - VSX configuration (keepalive, link, active-gateway, inter-switch linking)\n"
+        "  - VLAN configuration (creation, trunk/access ports, allowed VLANs)\n"
+        "  - LAG/LACP configuration and interface binding\n"
+        "  - QoS configuration (trust, schedule-profile, queue profiles)\n"
+        "  - SNMP and management access configuration\n"
+        "  - Spanning Tree (MSTP/RSTP) configuration\n"
+        "  - OSPF/BGP routing configuration if applicable\n\n"
+        "OUTPUT FORMAT — Group by building, then by switch role, then per-switch:\n\n"
+        "---\n"
+        "## Building: <building name>\n"
+        "\n"
+        "### Switch: <hostname> — <role> (<model>)\n"
+        "```\n"
+        "configure terminal\n"
+        "hostname <hostname>\n"
+        "...\n"
+        "end\n"
+        "write memory\n"
+        "```\n"
+        "\n"
+        "Configuration blocks per switch (in this order):\n"
+        "1. **Base config**: hostname, enable password, banner, NTP, DNS\n"
+        "2. **VSF/VSX config**: member number (VSF), keepalive+link (VSX), active-gateway\n"
+        "3. **VLANs**: create VLANs per the approved VLAN plan with names\n"
+        "4. **Interfaces**: assign VLANs to access/trunk ports, LAG members, LACP\n"
+        "5. **LAG**: port-channel creation, member interfaces, allowed VLANs\n"
+        "6. **Routing**: VLAN interfaces (SVIs), OSPF/BGP config where applicable\n"
+        "7. **QoS**: trust settings, queue profiles for VOICE/VIDEO/DATA\n"
+        "8. **Management**: SNMP, SSH, AAA, logging\n"
+        "9. **Spanning Tree**: MSTP region config, root priority per VLAN\n"
+        "10. **Verification**: show commands to validate the config\n\n"
+        "RULES:\n"
+        "- Use the exact VLAN numbers and subnetting from the approved topology\n"
+        "- Use the exact switch models from the BOM\n"
+        "- Include EVERY switch from the design — core, distribution, and access\n"
+        "- Make configurations production-ready with proper interface descriptions\n"
+        "- Group switches by building, then by layer (core → distribution → access)\n"
+        "- Use only AOS-CX CLI syntax — verify EVERY command type with search_config_guides\n"
+        "- If you're unsure about a command, search the config guides\n"
+    ), llm=llm_qwen_coder, tools=[config_guide_tool],
+)
+
 PHASES = [
     (1, "Prompt Rephrasing", agent1),
     (2, "Network Topology Design", agent2),
     (3, "Device Selection & BOM", agent3),
     (4, "React Topology Generation", agent4),
+    (5, "CLI Configuration Generation", agent5),
 ]

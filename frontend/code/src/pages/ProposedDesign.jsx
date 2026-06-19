@@ -74,7 +74,6 @@ export default function ProposedDesign() {
   const [searchParams] = useSearchParams();
   const isFresh = searchParams.get('fresh') === '1';
   const { state, dispatch, loadProject, getProjectList, deleteProject } = useProject();
-  const [events, setEvents] = useState([]);
   const wsRef = useRef(null);
   const [status, setStatus] = useState('idle'); // idle | running | awaiting | complete | error
   const [currentPhase, setCurrentPhase] = useState(0);
@@ -167,7 +166,7 @@ export default function ProposedDesign() {
           else if (p.phase === 5) dispatch({ type: 'SET_CLI_CONFIG', payload: p.output });
           phaseEvents.push({ type: 'phase_approved', phase: p.phase });
         }
-        setEvents(phaseEvents);
+        phaseEvents.forEach(ev => dispatch({ type: 'WORKFLOW_EVENT', payload: ev }));
     // setStatus('running');
     //
     // runWorkflow(state.requirements, state.solutionType, (ev) => {
@@ -211,12 +210,9 @@ export default function ProposedDesign() {
 
       // Otherwise start/resume workflow for remaining phases
       setStatus('running');
-      if (completedPhases.length === 0) {
-        setEvents([]);
-      }
 
       const handleEvent = (ev) => {
-        setEvents(prev => [...prev, ev]);
+        dispatch({ type: 'WORKFLOW_EVENT', payload: ev });
         switch (ev.type) {
           case 'phase_start':
             setCurrentPhase(ev.phase);
@@ -294,21 +290,20 @@ export default function ProposedDesign() {
   function retryWorkflow() {
     hasStarted.current = false;
     retryCountRef.current = 0;
-    setEvents([]);
     setStatus('running');
     dispatch({ type: 'WORKFLOW_START' });
   }
 
   function handleApprove() {
     sendApproval(wsRef.current);
-    setEvents(prev => [...prev, { type: 'user_action', content: '✅ Approved' }]);
+    dispatch({ type: 'WORKFLOW_EVENT', payload: { type: 'user_action', content: '✅ Approved' } });
     setStatus('running');
   }
 
   function handleRevise() {
     if (!feedbackText.trim()) return;
     sendRevision(wsRef.current, feedbackText.trim());
-    setEvents(prev => [...prev, { type: 'user_action', content: feedbackText.trim() }]);
+    dispatch({ type: 'WORKFLOW_EVENT', payload: { type: 'user_action', content: feedbackText.trim() } });
     setFeedbackText('');
     setShowFeedback(false);
     setStatus('running');

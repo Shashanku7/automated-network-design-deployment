@@ -1,408 +1,292 @@
-import json
+"""FastAPI router for the AI service — chat, WebSocket streaming, and Kafka task processing."""
+
 import asyncio
-import re
-import logging
+import json
 from datetime import datetime
-from pathlib import Path
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
-from fastapi.responses import FileResponse
 from pydantic import BaseModel
 from llama_index.core.llms import ChatMessage, MessageRole
 from llama_index.core.agent.workflow import AgentWorkflow, AgentInput, AgentOutput, ToolCall, ToolCallResult
+from llama_index.core.memory import ChatMemoryBuffer
 
-from webapp.config import llm, STATIC_DIR, OLLAMA_MODEL, IMAGE_SERVICE_URL
-from webapp.agents import agent1, agent2, agent3, agent4
-from webapp.utils import strip_ansi, parse_chunks, generate_diagram_via_service, generate_topology_code, save_run
-from webapp.kafka_provider import kafka_provider
+from webapp.config import llm, chat_store, OLLAMA_MODEL, IMAGE_SERVICE_URL, CHAT_TOKEN_LIMIT
+from webapp.agents import PHASES
+from webapp.utils import _strip_ansi, _parse_chunks, _generate_diagram_via_service, _save
+from webapp.kafka_handler import KafkaManager
 
 router = APIRouter()
 
-# ──────────────────────────────────────────────────────────────
-# Observability: Dedicated Log Configuration
-# ──────────────────────────────────────────────────────────────
-LOGS_DIR = Path(__file__).resolve().parent.parent / "logs"
-LOGS_DIR.mkdir(exist_ok=True)
-LOG_FILE = LOGS_DIR / "agent4.log"
-
-DEBUG_DIR = Path(__file__).resolve().parent.parent / "temp_debug"
-DEBUG_DIR.mkdir(exist_ok=True)
-
-def debug_log_io(phase_num, phase_name, iteration, input_msg, output_msg, extra_code="", run_id="default_run"):
-    ts = f"{datetime.now():%H-%M-%S}"
-    try:
-        run_dir = DEBUG_DIR / run_id
-        run_dir.mkdir(exist_ok=True)
-        prefix = f"phase{phase_num}_{phase_name.replace(' ', '_')}_iter{iteration}_{ts}"
-        with open(run_dir / f"{prefix}_input.txt", "w", encoding="utf-8") as f:
-            f.write(input_msg)
-        with open(run_dir / f"{prefix}_output.txt", "w", encoding="utf-8") as f:
-            f.write(output_msg)
-        if extra_code:
-            with open(run_dir / f"{prefix}_react_code.jsx", "w", encoding="utf-8") as f:
-                f.write(extra_code)
-    except Exception as e:
-        logger.error(f"Failed to write debug log: {e}")
-
-logger = logging.getLogger("agent4_logger")
-logger.setLevel(logging.INFO)
-logger.propagate = False
-
-if not logger.handlers:
-    # File Handler
-    fh = logging.FileHandler(LOG_FILE, encoding="utf-8")
-    fh.setLevel(logging.INFO)
-    formatter = logging.Formatter('%(asctime)s - %(levelname)s - %(message)s')
-    fh.setFormatter(formatter)
-    logger.addHandler(fh)
-
-    # Console Handler
-    ch = logging.StreamHandler()
-    ch.setLevel(logging.INFO)
-    ch.setFormatter(formatter)
-    logger.addHandler(ch)
-
-
+# ── Chat model ───────────────────────────────────
 class ChatRequest(BaseModel):
     message: str
     history: list = []
-    screenContext: str = ""
+    conversation_id: str = "default"
+    project_id: str = "default"
 
 
-# Global state for task tracking
-active_tasks = {}
+
+@router.post("/api/chat")
+async def chat_endpoint(req: ChatRequest):
+    """Simple LLM chat endpoint for the copilot sidebar. Persists via PostgresChatStore."""
+    key = f"{req.project_id}:{req.conversation_id}"
+    memory = ChatMemoryBuffer.from_defaults(
+        token_limit=CHAT_TOKEN_LIMIT,
+        chat_store=chat_store,
+        chat_store_key=key,
+    )
+    system_msg = ChatMessage(role=MessageRole.SYSTEM, content=(
+        "You are a Network Design AI Assistant. Answer questions about network design, "
+        "HPE Aruba - CX products, VLANs, QoS, VSF, VSX, LAG, and general networking. "
+        "Be concise and technical."
+    ))
+    messages = [system_msg] + memory.get()
+    messages.append(ChatMessage(role=MessageRole.USER, content=req.message))
+    resp = await llm.achat(messages)
+    memory.put(ChatMessage(role=MessageRole.USER, content=req.message))
+    memory.put(ChatMessage(role=MessageRole.ASSISTANT, content=str(resp.message.content)))
+    return {
+        "role": "assistant",
+        "content": str(resp.message.content),
+        "timestamp": datetime.now().isoformat(),
+    }
+
+
+# ── Kafka task processor ─────────────────────────
+kafka_mgr = KafkaManager()
 
 
 async def process_kafka_task(task_data: dict):
     project_id = task_data.get("project_id")
     task_id = task_data.get("task_id")
-    content = task_data.get("input_context")
+    phase_idx = task_data.get("phase", 1)
+    input_ctx = task_data.get("input_context")
+    history = task_data.get("history", [])
+    print(f"PROCESS_TASK project_id={project_id} task_id={task_id} phase={phase_idx}", flush=True)
+    print(f"PROCESS_TASK input_context={'None' if input_ctx is None else ('len=' + str(len(str(input_ctx))))}", flush=True)
+    print(f"PROCESS_TASK history_len={len(history)}", flush=True)
 
-    # Handle Resume/Feedback
-    if task_id in active_tasks:
-        active_tasks[task_id]["feedback_queue"].put_nowait(task_data)
+    matching_phases = [p for p in PHASES if p[0] == phase_idx]
+    if not matching_phases:
+        await kafka_mgr.send_event({
+            "project_id": project_id, "task_id": task_id, "agent_name": "system",
+            "event_type": "ERROR", "data": f"Invalid phase: {phase_idx}", "is_final": True
+        })
         return
 
-    # Start new workflow
-    asyncio.create_task(run_kafka_workflow(task_data))
+    _, phase_name, agent = matching_phases[0]
+    await _run_phase_kafka(kafka_mgr, project_id, task_id, phase_idx, phase_name, agent, input_ctx, history, model_name=OLLAMA_MODEL)
 
 
-async def run_kafka_workflow(task_data: dict):
-    project_id = task_data.get("project_id")
-    task_id = task_data.get("task_id")
-    prompt = task_data.get("input_context")
-
-    feedback_queue = asyncio.Queue()
-    active_tasks[task_id] = {"feedback_queue": feedback_queue}
-
-    try:
-        await _send_kafka(project_id, task_id, "token", content=f"Echo: {prompt}")
-
-        rephrased = await _run_phase_kafka(project_id, task_id, 1, "Prompt Rephrasing", agent1, prompt, feedback_queue, OLLAMA_MODEL)
-        topology = await _run_phase_kafka(project_id, task_id, 2, "Network Topology Design", agent2, rephrased, feedback_queue, OLLAMA_MODEL)
-        devices = await _run_phase_kafka(project_id, task_id, 3, "Device Selection & BOM", agent3, f"Req: {prompt}\nTopo: {topology}", feedback_queue, OLLAMA_MODEL)
-        diagram_code = await _run_phase_kafka(project_id, task_id, 4, "D2 Diagram Generation", agent4, f"UserReq: {prompt}\nTopo: {topology}\nBOM: {devices}", feedback_queue, OLLAMA_MODEL)
-
-        res = await generate_diagram_via_service(diagram_code)
-        url = f"{IMAGE_SERVICE_URL}{res['url']}" if res.get(
-            "success") else None
-
-        if url:
-            await _send_kafka(project_id, task_id, "final_answer", content=f"Diagram ready: {url}", payload={"diagram_url": url})
-
-        save_run(prompt, rephrased, topology, devices, diagram_code, url)
-        await _send_kafka(project_id, task_id, "final_answer", content="Workflow complete.", is_final=True)
-
-    except Exception as e:
-        await _send_kafka(project_id, task_id, "error", content=str(e))
-    finally:
-        active_tasks.pop(task_id, None)
-
-
-async def _send_kafka(project_id, task_id, event_type, content=None, payload=None, is_final=False):
-    event = {
-        "project_id": project_id,
-        "task_id": task_id,
-        "agent_name": "ai-service",
-        "event_type": event_type,
-        "data": content,
-        "payload": payload,
-        "is_final": is_final
-    }
-    await kafka_provider.send_event(event)
-
-
-async def _run_phase_kafka(project_id, task_id, phase_num, phase_name, agent, initial_msg, feedback_queue, model_name=""):
-    wf = AgentWorkflow(agents=[agent], root_agent=agent.name, timeout=400.0)
-    history: list[ChatMessage] = []
-    msg = initial_msg
-
-    while True:
-        await _send_kafka(project_id, task_id, "token", content=f"Starting Phase {phase_num}: {phase_name}")
-        response_text = ""
-        handler = wf.run(user_msg=msg) if not history else wf.run(
-            chat_history=history + [ChatMessage(role=MessageRole.USER, content=msg)])
-
-        async for ev in handler.stream_events():
-            if isinstance(ev, AgentInput):
-                await _send_kafka(project_id, task_id, "token", content=f"Agent {ev.current_agent_name} running...")
-            elif isinstance(ev, ToolCall):
-                await _send_kafka(project_id, task_id, "tool_call", content=ev.tool_name, payload=ev.tool_kwargs)
-            elif isinstance(ev, ToolCallResult):
-                await _send_kafka(project_id, task_id, "tool_result", content=ev.tool_name, payload={"output": str(ev.tool_output)})
-
-        resp = await handler
-        response_text = str(resp)
-        history.append(ChatMessage(role=MessageRole.USER, content=msg))
-        history.append(ChatMessage(
-            role=MessageRole.ASSISTANT, content=response_text))
-
-        # Approval request via Kafka (Gateway/Frontend must handle this as a task requiring response)
-        await _send_kafka(project_id, task_id, "final_answer", content=f"Phase {phase_num} complete. Awaiting approval.", payload={"phase": phase_num, "awaiting_approval": True})
-
-        # Wait for feedback via Kafka
-        feedback_task = await feedback_queue.get()
-        content = feedback_task.get("input_context", "").lower()
-        approved = "approved" in content or feedback_task.get(
-            "approved", False)
-
-        if approved:
-            return response_text
-        msg = feedback_task.get("input_context", "Please revise.")
-
-
-@router.get("/")
-async def index():
-    return FileResponse(STATIC_DIR / "index.html")
-
-
-@router.post("/api/chat")
-async def chat_endpoint(req: ChatRequest):
-    messages = [ChatMessage(
-        role=MessageRole.SYSTEM, content="Network Design Assistant. Technical and concise.")]
-    
-    if req.screenContext:
-        messages.append(ChatMessage(role=MessageRole.SYSTEM, content=req.screenContext))
-
-    for h in req.history[-10:]:
-        role = MessageRole.USER if h.get(
-            "role") == "user" else MessageRole.ASSISTANT
-        messages.append(ChatMessage(role=role, content=h.get("content", "")))
-    messages.append(ChatMessage(role=MessageRole.USER, content=req.message))
-    resp = await llm.achat(messages)
-    return {"role": "assistant", "content": str(resp.message.content), "timestamp": datetime.now().isoformat()}
-
-
-# ──────────────────────────────────────────────────────────────
-# React Flow Code Generator Template
-# ──────────────────────────────────────────────────────────────
-def build_react_flow_code(nodes_json: str, edges_json: str) -> str:
-    """
-    Combines the nodes and edges JSON lists into a standard, fully functional
-    React Flow application wrapper using custom SVG icon nodes.
-    """
-    return f"""import React from 'react';
-import ReactFlow, {{ Background, Controls, MiniMap }} from 'reactflow';
-import 'reactflow/dist/style.css';
-
-const nodes = {nodes_json};
-const edges = {edges_json};
-
-export default function App() {{
-  return (
-    <div style={{{{width:'100vw',height:'100vh',background:'#fdfdfd'}}}}>
-      <ReactFlow
-        nodes={{nodes}}
-        edges={{edges}}
-        fitView
-        defaultEdgeOptions={{{{ type: 'smoothstep' }}}}
-      >
-        <Background color='#e8e8e8' gap={{20}} />
-        <Controls />
-        <MiniMap nodeStrokeColor='#00A3AD' nodeColor='#e1e4e8' />
-      </ReactFlow>
-    </div>
-  );
-}}"""
-
-
-async def _run_phase4_automated(ws, phase_num, phase_name, agent, prompt, topology, devices, model_name="", run_id="default_run"):
-    wf = AgentWorkflow(agents=[agent], root_agent=agent.name, timeout=400.0)
-    history: list[ChatMessage] = []
-    MAX_CORRECTION_ATTEMPTS = 5
-    
-    msg = f"UserReq: {prompt}\nTopo: {topology}\nBOM: {devices}"
-    react_code = None
-    
-    for attempt in range(1, MAX_CORRECTION_ATTEMPTS + 1):
-        await _send(ws, type="phase_start", phase=phase_num, name=phase_name, iteration=attempt)
-        
-        logger.info(f"=== [Phase 4] Generation Attempt {attempt}/{MAX_CORRECTION_ATTEMPTS} ===")
-        logger.info(f"Input Context Size: {len(msg)} characters")
-        
-        response_text = ""
-        try:
-            handler = wf.run(user_msg=msg) if not history else wf.run(
-                chat_history=history + [ChatMessage(role=MessageRole.USER, content=msg)])
-            async for ev in handler.stream_events():
-                if isinstance(ev, AgentInput):
-                    await _send(ws, type="agent_input", agent=ev.current_agent_name, model=model_name)
-                elif isinstance(ev, ToolCall):
-                    await _send(ws, type="tool_call", tool_name=ev.tool_name, tool_kwargs=ev.tool_kwargs)
-                elif isinstance(ev, ToolCallResult):
-                    await _send(ws, type="tool_result", tool_name=ev.tool_name, output=str(ev.tool_output))
-                elif isinstance(ev, AgentOutput):
-                    response_text = str(ev.response)
-                    # Hide raw JSON from frontend chat log, send a friendly status message
-                    await _send(ws, type="agent_response", agent=ev.current_agent_name, content="Building node coordinates and establishing physical connection paths...")
-            resp = await handler
-            response_text = str(resp)
-            
-            logger.info(f"Response received ({len(response_text)} characters).")
-            logger.info(f"Snippet: {response_text[:300]}...")
-            debug_log_io(phase_num, phase_name, attempt, msg, response_text, run_id=run_id)
-        except Exception as e:
-            await _send(ws, type="error", message=str(e))
-            logger.error(f"Agent run failed: {e}")
-            return None
-
-        # Truncation Check
-        trimmed_text = response_text.strip()
-        cleaned_trimmed = re.sub(r"```(?:json)?\s*", "", trimmed_text).replace("```", "").strip()
-        if cleaned_trimmed.startswith("{") and not cleaned_trimmed.endswith("}"):
-            logger.warning("Response starts with '{' but does not end with '}'. Assuming output truncation.")
-            error_msg = "Your JSON response was truncated/cut off. Please output the complete JSON object, and shorten descriptions if needed."
-            await _send(ws, type="error", message=error_msg)
-            msg = error_msg
-            # Persist history
-            history.append(ChatMessage(role=MessageRole.USER, content=msg))
-            history.append(ChatMessage(role=MessageRole.ASSISTANT, content=response_text))
-            continue
-
-        # Persist history
-        history.append(ChatMessage(role=MessageRole.USER, content=msg))
-        history.append(ChatMessage(role=MessageRole.ASSISTANT, content=response_text))
-
-        # Gatekeeper validation
-        try:
-            logger.info("Sending output to Gatekeeper for 4-layer validation...")
-            gate_result = await generate_topology_code(response_text, topology, devices)
-        except Exception as gate_err:
-            await _send(ws, type="error", message=f"Gatekeeper unreachable: {gate_err}")
-            logger.error(f"Gatekeeper unreachable: {gate_err}")
-            return None
-
-        if gate_result.get("status") == "ok":
-            # Extract JSON and build the React template
-            try:
-                parsed = json.loads(gate_result["code"])
-                nodes_json = json.dumps(parsed.get("nodes", []), indent=2)
-                edges_json = json.dumps(parsed.get("edges", []), indent=2)
-                react_code = build_react_flow_code(nodes_json, edges_json)
-                logger.info("JSON successfully wrapped in React Flow template.")
-                debug_log_io(phase_num, phase_name, attempt, msg, response_text, react_code, run_id=run_id)
-            except Exception as parse_err:
-                logger.error(f"Failed to format React template: {parse_err}")
-                await _send(ws, type="error", message=f"Template formatting error: {parse_err}")
-                return None
-
-            await _send(ws, type="topology_code_ready", code=react_code)
-            
-            # Wait for User Approval OR Sandpack Runtime Error
-            await _send(ws, type="approval_request", phase=phase_num, name=phase_name)
-            data = json.loads(await ws.receive_text())
-            
-            if data.get("approved"):
-                logger.info("React Flow diagram approved by the user.")
-                return react_code
-            
-            # If not approved, it means it crashed in Sandpack or user requested a change
-            error_msg = data.get("feedback", "Please revise.")
-            logger.warning(f"Sandpack Runtime Error / User Feedback: {error_msg}")
-            msg = (
-                f"Your previous network topology JSON had a runtime rendering error or needed revision:\n{error_msg}\n\n"
-                "Please fix the error and output the corrected JSON."
-            )
-        else:
-            # Gatekeeper validation error
-            error_msg = gate_result.get("message", "Unknown validation error.")
-            logger.warning(f"Gatekeeper validation failed: {error_msg}")
-            msg = (
-                f"Your previous network topology JSON had a validation error:\n{error_msg}\n\n"
-                "Please correct the issues and output the corrected JSON."
-            )
-
-        if attempt == MAX_CORRECTION_ATTEMPTS:
-            await _send(ws, type="error", message=f"Topology generation failed after {MAX_CORRECTION_ATTEMPTS} attempts: {error_msg}")
-            logger.error(f"Topology generation failed after {MAX_CORRECTION_ATTEMPTS} attempts.")
-            return None
-
-    return react_code
-
-
+# ── WebSocket streaming helpers ──────────────────
 async def _send(ws, **kw):
     await ws.send_text(json.dumps(kw))
 
 
-async def _run_phase(ws, phase_num, phase_name, agent, initial_msg, model_name="", run_id="default_run"):
+async def _run_phase(ws, phase_num, phase_name, agent, initial_msg, model_name="", project_id="default"):
+    """Run one agent phase with event streaming, HITL approval, and persistent memory."""
+    key = f"{project_id}:phase{phase_num}"
+    memory = ChatMemoryBuffer.from_defaults(
+        token_limit=CHAT_TOKEN_LIMIT,
+        chat_store=chat_store,
+        chat_store_key=key,
+    )
     wf = AgentWorkflow(agents=[agent], root_agent=agent.name, timeout=400.0)
-    history: list[ChatMessage] = []
     msg = initial_msg
     iteration = 0
+    tool_events: list[dict] = []
+
     while True:
         iteration += 1
         await _send(ws, type="phase_start", phase=phase_num, name=phase_name, iteration=iteration)
+        history = memory.get()
+
+        max_retries = 3
         response_text = ""
-        try:
-            handler = wf.run(user_msg=msg) if not history else wf.run(
-                chat_history=history + [ChatMessage(role=MessageRole.USER, content=msg)])
-            async for ev in handler.stream_events():
-                if isinstance(ev, AgentInput):
-                    await _send(ws, type="agent_input", agent=ev.current_agent_name, model=model_name)
-                elif isinstance(ev, ToolCall):
-                    await _send(ws, type="tool_call", tool_name=ev.tool_name, tool_kwargs=ev.tool_kwargs)
-                elif isinstance(ev, ToolCallResult):
-                    out = str(ev.tool_output)
-                    if ev.tool_name in ("search_product_specs", "search_across_products"):
-                        chunks = parse_chunks(out)
-                        await _send(ws, type="rag_result", tool_name=ev.tool_name, chunks=chunks, total=len(chunks))
-                    else:
-                        await _send(ws, type="tool_result", tool_name=ev.tool_name, output=out)
-                elif isinstance(ev, AgentOutput):
-                    response_text = str(ev.response)
-                    await _send(ws, type="agent_response", agent=ev.current_agent_name, content=response_text)
-            resp = await handler
-            response_text = str(resp)
-            debug_log_io(phase_num, phase_name, iteration, msg, response_text, run_id=run_id)
-        except Exception as e:
-            await _send(ws, type="error", message=str(e))
-            return ""
-        history.append(ChatMessage(role=MessageRole.USER, content=msg))
-        history.append(ChatMessage(
-            role=MessageRole.ASSISTANT, content=response_text))
+        for attempt in range(1, max_retries + 1):
+            try:
+                if history:
+                    handler = wf.run(chat_history=history + [ChatMessage(role=MessageRole.USER, content=msg)])
+                else:
+                    handler = wf.run(user_msg=msg)
+
+                async for ev in handler.stream_events():
+                    if isinstance(ev, AgentInput):
+                        await _send(ws, type="agent_input", agent=ev.current_agent_name, model=model_name)
+                    elif isinstance(ev, ToolCall):
+                        await _send(ws, type="tool_call", tool_name=ev.tool_name, tool_kwargs=ev.tool_kwargs)
+                    elif isinstance(ev, ToolCallResult):
+                        out = str(ev.tool_output)
+                        tool_events.append({
+                            "tool_name": ev.tool_name,
+                            "input": str(getattr(ev, "tool_kwargs", ev.tool_name)),
+                            "output": out,
+                        })
+                        if ev.tool_name in ("search_product_specs", "search_across_products"):
+                            chunks = _parse_chunks(out)
+                            await _send(ws, type="rag_result", tool_name=ev.tool_name, chunks=chunks, total=len(chunks))
+                        elif ev.tool_name == "search_config_guides":
+                            await _send(ws, type="config_rag_result", tool_name=ev.tool_name, output=out, total_chars=len(out))
+                        else:
+                            await _send(ws, type="tool_result", tool_name=ev.tool_name, output=out)
+                    elif isinstance(ev, AgentOutput):
+                        response_text = str(ev.response)
+                        if ev.tool_calls:
+                            for tc in ev.tool_calls:
+                                await _send(ws, type="tool_call", tool_name=tc.tool_name, tool_kwargs=tc.tool_kwargs)
+                        else:
+                            await _send(ws, type="agent_response", agent=ev.current_agent_name, content=response_text)
+
+                resp = await handler
+                response_text = str(resp)
+                break
+            except Exception as llm_err:
+                import traceback
+                traceback.print_exc()
+                if attempt < max_retries:
+                    await _send(ws, type="agent_response", agent=agent.name,
+                                content=f"⚠️ LLM error (attempt {attempt}/{max_retries}): {str(llm_err)[:200]}. Retrying in 5s…")
+                    await asyncio.sleep(5)
+                else:
+                    await _send(ws, type="agent_response", agent=agent.name,
+                                content=f"❌ LLM failed after {max_retries} attempts: {str(llm_err)[:300]}. Approving with partial result.")
+        memory.put(ChatMessage(role=MessageRole.USER, content=msg))
+        memory.put(ChatMessage(role=MessageRole.ASSISTANT, content=response_text))
+
         await _send(ws, type="approval_request", phase=phase_num, name=phase_name)
         data = json.loads(await ws.receive_text())
+
         if data.get("approved"):
-            return response_text
-        msg = data.get("feedback", "Please revise.")
+            await _send(ws, type="phase_approved", phase=phase_num, name=phase_name)
+            return response_text, tool_events
+        else:
+            msg = data.get("feedback", "Please revise.")
+            tool_events.append({
+                "tool_name": "__revision_request__",
+                "input": msg,
+                "output": f"Phase {phase_num} revised with feedback",
+            })
+            await _send(ws, type="phase_revision", phase=phase_num, feedback=msg)
 
 
+async def _run_phase_kafka(kafka_mgr, project_id, task_id, phase_num, phase_name, agent, initial_msg, history=None, model_name=""):
+    """Run one agent phase and stream events to Kafka. Uses PostgresChatStore for memory."""
+    print(f"\n=== START PHASE {phase_num}: {phase_name} ===", flush=True)
+    print(f"Project: {project_id}", flush=True)
+    print(f"Task: {task_id}", flush=True)
+    print(f"Agent: {agent.name}", flush=True)
+    print(f"initial_msg={'None' if initial_msg is None else ('len=' + str(len(str(initial_msg))))}", flush=True)
+    wf = AgentWorkflow(agents=[agent], root_agent=agent.name, timeout=400.0)
+    gateway_history = []
+    if history:
+        for h in history:
+            raw_role = str(h.get("role", "")).lower()
+            role = MessageRole.USER if raw_role == "user" else MessageRole.ASSISTANT
+            content = h.get("content", "")
+            print(f"RUN_PHASE convert history role={role} content={'None' if content is None else ('len=' + str(len(str(content))))}", flush=True)
+            gateway_history.append(ChatMessage(role=role, content=content))
+
+    key = f"{project_id}:phase{phase_num}"
+    memory = ChatMemoryBuffer.from_defaults(
+        token_limit=CHAT_TOKEN_LIMIT,
+        chat_store=chat_store,
+        chat_store_key=key,
+    )
+    chat_history = memory.get()
+
+    if not chat_history and gateway_history:
+        print(f"RUN_PHASE seeding DB with {len(gateway_history)} messages from gateway history", flush=True)
+        chat_store.set_messages(key, gateway_history)
+        chat_history = gateway_history
+
+    await kafka_mgr.send_event({
+        "project_id": project_id, "task_id": task_id, "agent_name": agent.name,
+        "event_type": "TOKEN", "data": f"Starting phase {phase_num}: {phase_name}", "is_final": False
+    })
+
+    try:
+        if chat_history:
+            handler = wf.run(chat_history=chat_history + [ChatMessage(role=MessageRole.USER, content=initial_msg)])
+        else:
+            handler = wf.run(user_msg=initial_msg)
+
+        async for ev in handler.stream_events():
+            base_event = {"project_id": project_id, "task_id": task_id, "agent_name": agent.name, "is_final": False}
+            if isinstance(ev, AgentInput):
+                pass
+            elif isinstance(ev, ToolCall):
+                await kafka_mgr.send_event({**base_event, "event_type": "TOOL_CALL", "data": ev.tool_name, "payload": ev.tool_kwargs})
+            elif isinstance(ev, ToolCallResult):
+                await kafka_mgr.send_event({**base_event, "event_type": "TOOL_RESULT", "payload": {"output": str(ev.tool_output)}})
+            elif isinstance(ev, AgentOutput):
+                if not ev.tool_calls:
+                    await kafka_mgr.send_event({**base_event, "event_type": "TOKEN", "data": str(ev.response)})
+
+        resp = await handler
+        memory.put(ChatMessage(role=MessageRole.USER, content=initial_msg))
+        memory.put(ChatMessage(role=MessageRole.ASSISTANT, content=str(resp)))
+        await kafka_mgr.send_event({
+            "project_id": project_id, "task_id": task_id, "agent_name": agent.name,
+            "event_type": "FINAL_ANSWER", "data": str(resp), "is_final": True
+        })
+
+        if phase_num == 4:
+            diagram_code = str(resp)
+            try:
+                result = await _generate_diagram_via_service(diagram_code)
+                if result.get("success"):
+                    url = f"{IMAGE_SERVICE_URL}{result['url']}"
+                    await kafka_mgr.send_event({
+                        "project_id": project_id, "task_id": task_id, "agent_name": agent.name,
+                        "event_type": "DIAGRAM_READY", "data": str(resp),
+                        "payload": {
+                            "url": url,
+                            "filename": result.get("filename", ""),
+                            "download_url": f"{IMAGE_SERVICE_URL}{result['url']}/download"
+                        },
+                        "is_final": False
+                    })
+                else:
+                    await kafka_mgr.send_event({
+                        "project_id": project_id, "task_id": task_id, "agent_name": agent.name,
+                        "event_type": "DIAGRAM_ERROR", "data": str(resp),
+                        "payload": {
+                            "message": result.get("error", "Unknown error from image service"),
+                            "diagram_code": diagram_code
+                        },
+                        "is_final": False
+                    })
+            except Exception as img_err:
+                await kafka_mgr.send_event({
+                    "project_id": project_id, "task_id": task_id, "agent_name": agent.name,
+                    "event_type": "DIAGRAM_ERROR", "data": str(resp),
+                    "payload": {"message": f"Image service unavailable: {str(img_err)}"},
+                    "is_final": False
+                })
+
+        return str(resp)
+    except Exception as e:
+        await kafka_mgr.send_event({
+            "project_id": project_id, "task_id": task_id, "agent_name": agent.name,
+            "event_type": "ERROR", "data": str(e), "is_final": True
+        })
+        raise e
+
+
+# WebSocket endpoint — currently unused (all flows go through Gateway + Kafka)
 @router.websocket("/ws")
 async def ws_endpoint(ws: WebSocket):
     await ws.accept()
-    import time
-    run_id = f"run_{datetime.now():%Y-%m-%d_%H-%M-%S}"
     try:
         data = json.loads(await ws.receive_text())
         prompt = data["content"]
         await _send(ws, type="user_echo", content=prompt)
-        rephrased = await _run_phase(ws, 1, "Prompt Rephrasing", agent1, prompt, OLLAMA_MODEL, run_id=run_id)
-        topology = await _run_phase(ws, 2, "Network Topology Design", agent2, rephrased, OLLAMA_MODEL, run_id=run_id)
-        devices = await _run_phase(ws, 3, "Device Selection & BOM", agent3, f"Req: {prompt}\nTopo: {topology}", OLLAMA_MODEL, run_id=run_id)
-        
-        # Phase 4: React Topology Generation (JSON Template & 4-Layer Gatekeeper validation)
-        react_code = await _run_phase4_automated(ws, 4, "React Topology Generation", agent4, prompt, topology, devices, OLLAMA_MODEL, run_id=run_id)
 
-        fp = save_run(prompt, rephrased, topology, devices, react_code=react_code)
+        rephrased, _ = await _run_phase(ws, 1, "Prompt Rephrasing", PHASES[0][2], prompt, OLLAMA_MODEL)
+        topology, _ = await _run_phase(ws, 2, "Network Topology Design", PHASES[1][2], rephrased, OLLAMA_MODEL)
+        devices, _ = await _run_phase(ws, 3, "Device Selection & BOM", PHASES[2][2], f"Req: {prompt}\nTopo: {topology}", OLLAMA_MODEL)
+        react_code, _ = await _run_phase(ws, 4, "React Topology Generation", PHASES[3][2], f"UserReq: {prompt}\nTopo: {topology}\nBOM: {devices}", OLLAMA_MODEL)
+
+        fp = _save(prompt, rephrased, topology, devices, react_code)
         await _send(ws, type="workflow_complete", saved_to=str(fp))
     except WebSocketDisconnect:
         pass

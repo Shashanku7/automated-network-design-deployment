@@ -1,14 +1,19 @@
 import os, sys
 from pathlib import Path
+
 from llama_index.llms.ollama import Ollama
+from llama_index.storage.chat_store.postgres import PostgresChatStore
 from config import (
     OLLAMA_API_KEY,
     OLLAMA_MODEL,
     OLLAMA_BASE_URL,
     IMAGE_SERVICE_URL,
+    POSTGRES_URI,
+    CHAT_TOKEN_LIMIT,
+    create_qdrant_client,
 )
 
-# Paths
+# Webapp paths
 WEBAPP_DIR = Path(__file__).resolve().parent
 ROOT_DIR = WEBAPP_DIR.parent
 OUTPUT_DIR = ROOT_DIR / "output"
@@ -17,19 +22,25 @@ STATIC_DIR = WEBAPP_DIR / "static"
 
 # LLM Init
 llm = Ollama(
-    model=OLLAMA_MODEL, 
+    model=OLLAMA_MODEL,
     base_url=OLLAMA_BASE_URL,
-    request_timeout=400.0, 
+    request_timeout=400.0,
     context_window=262144,
     is_function_calling_model=True,
     headers={"Authorization": f"Bearer {OLLAMA_API_KEY}"},
 )
 
 llm_qwen_coder = Ollama(
-    model="qwen3-coder:480b-cloud", 
+    model="qwen3-coder:480b-cloud",
     base_url=OLLAMA_BASE_URL,
-    request_timeout=400.0, 
+    request_timeout=400.0,
     context_window=262144,
     is_function_calling_model=True,
     headers={"Authorization": f"Bearer {OLLAMA_API_KEY}"},
 )
+
+# Qdrant client (singleton)
+_qdrant_client = create_qdrant_client()
+
+# PostgresChatStore (persistent chat/phase memory)
+chat_store = PostgresChatStore.from_uri(uri=POSTGRES_URI)

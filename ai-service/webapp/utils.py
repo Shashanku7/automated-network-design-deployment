@@ -1,15 +1,19 @@
-import re, json, os
+"""Utility functions for the AI service."""
+
+import re
+import json
 from datetime import datetime
+from pathlib import Path
+
 from webapp.config import OUTPUT_DIR, IMAGE_SERVICE_URL, OLLAMA_MODEL
 
-TOPOLOGY_SERVICE_URL = os.getenv("TOPOLOGY_SERVICE_URL", "http://localhost:8002")
 
-def strip_ansi(t):
+def _strip_ansi(t):
     return re.sub(r"\033\[[0-9;]*m", "", t)
 
-def parse_chunks(raw):
+
+def _parse_chunks(raw):
     chunks = []
-    # Pattern 1: Product-specific
     pattern_ranked = r"--- (?:.*?)Chunk (\d+)(?: \(score: ([\d.]+)\))? ---\nSource: (.+?)\n(.*?)(?=--- (?:.*?)Chunk |\Z)"
     for m in re.finditer(pattern_ranked, raw, re.DOTALL):
         chunks.append({
@@ -18,7 +22,6 @@ def parse_chunks(raw):
             "source": m.group(3).strip(),
             "text": m.group(4).strip()[:500],
         })
-    # Pattern 2: Cross-product
     if not chunks:
         pattern_cross = r"--- Chunk (\d+) \[(.+?)\](?: \(score: ([\d.]+)\))? ---\nSource: (.+?)\n(.*?)(?=--- Chunk |\Z)"
         for m in re.finditer(pattern_cross, raw, re.DOTALL):
@@ -30,7 +33,8 @@ def parse_chunks(raw):
             })
     return chunks
 
-async def generate_diagram_via_service(diagram_code: str) -> dict:
+
+async def _generate_diagram_via_service(diagram_code: str) -> dict:
     import httpx
     async with httpx.AsyncClient(timeout=90.0) as client:
         resp = await client.post(
@@ -41,38 +45,36 @@ async def generate_diagram_via_service(diagram_code: str) -> dict:
         return resp.json()
 
 
-async def generate_topology_code(llm_output: str, topology_text: str = "", bom_text: str = "") -> dict:
-    """Send Agent 4's raw LLM output to the topology_generation gatekeeper.
-    
-    Returns dict with:
-      {'status': 'ok',    'code': '<clean React Flow JSON string>'}   on success
-      {'status': 'error', 'message': '<error details>'}               on failure
-    """
-    import httpx
-    async with httpx.AsyncClient(timeout=30.0) as client:
-        resp = await client.post(
-            f"{TOPOLOGY_SERVICE_URL}/api/validate-topology",
-            json={
-                "llm_output": llm_output,
-                "topology_text": topology_text,
-                "bom_text": bom_text
-            },
-        )
-        resp.raise_for_status()
-        return resp.json()
+def _format_tool_events(events: list[dict]) -> str:
+    if not events:
+        return "_(no tool calls)_\n"
+    lines: list[str] = []
+    for ev in events:
+        name = ev.get("tool_name", "?")
+        inp = ev.get("input", "")
+        out = ev.get("output", "")
+        lines.append(f"### {name}\n")
+        lines.append(f"**Input:**\n```\n{inp}\n```\n")
+        lines.append(f"**Output:**\n```\n{_strip_ansi(out)}\n```\n")
+    return "\n".join(lines)
 
-def save_run(prompt, rephrased, topology, devices, react_code="", diagram_url=None):
+
+def _save(prompt, rephrased, topology, devices, diagram_code="", diagram_url=None,
+          tools_1=None, tools_2=None, tools_3=None, tools_4=None, tools_5=None,
+          cli_config=""):
     ts = datetime.now()
     fp = OUTPUT_DIR / f"{ts:%Y-%m-%d_%H-%M-%S}_run.md"
     content = (
         f"# Network Automation Run\n\n**Date:** {ts:%Y-%m-%d %H:%M:%S}  \n"
         f"**Model:** {OLLAMA_MODEL}\n\n---\n\n## User Prompt\n\n{prompt}\n\n---\n\n"
-        f"## Phase 1: Rephrased Prompt\n\n{strip_ansi(rephrased)}\n\n---\n\n"
-        f"## Phase 2: Network Topology\n\n{strip_ansi(topology)}\n\n---\n\n"
-        f"## Phase 3: Device Selection & BOM\n\n{strip_ansi(devices)}\n\n---\n\n"
-        f"## Phase 4: React Topology Code\n\n```jsx\n{strip_ansi(react_code)}\n```\n"
+        f"## Phase 1: Rephrased Prompt\n\n{_strip_ansi(rephrased)}\n\n---\n\n"
+        f"## Phase 2: Network Topology\n\n{_strip_ansi(topology)}\n\n---\n\n"
+        f"## Phase 3: Device Selection & BOM\n\n{_strip_ansi(devices)}\n\n---\n\n"
+        f"## Phase 4: Topology Code\n\n```\n{_strip_ansi(diagram_code)}\n```\n"
     )
     if diagram_url:
         content += f"\n---\n\n## Topology Diagram\n\nGenerated diagram: `{diagram_url}`\n"
+    if cli_config:
+        content += f"\n---\n\n## Phase 5: CLI Configuration\n\n{_strip_ansi(cli_config)}\n"
     fp.write_text(content, encoding="utf-8")
     return fp
