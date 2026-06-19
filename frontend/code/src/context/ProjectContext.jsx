@@ -1,13 +1,23 @@
-import { createContext, useContext, useReducer, useEffect, useRef, useCallback } from 'react';
-import { saveProjectToDb } from '../services/api';
+import {
+  createContext,
+  useContext,
+  useReducer,
+  useEffect,
+  useRef,
+  useCallback,
+} from "react";
+import { saveProjectToDb } from "../services/api";
 
 const ProjectContext = createContext(null);
 
-const INDEX_KEY = 'project_index';
+const INDEX_KEY = "project_index";
 
 function getProjectIndex() {
-  try { return JSON.parse(localStorage.getItem(INDEX_KEY) || '[]'); }
-  catch { return []; }
+  try {
+    return JSON.parse(localStorage.getItem(INDEX_KEY) || "[]");
+  } catch {
+    return [];
+  }
 }
 
 function saveProjectIndex(index) {
@@ -18,32 +28,40 @@ function loadProjectState(projectId) {
   try {
     const raw = localStorage.getItem(`project_${projectId}`);
     return raw ? JSON.parse(raw) : null;
-  } catch { return null; }
+  } catch {
+    return null;
+  }
 }
 
 const initialState = {
   projectId: null,
   conversationId: null,
-  projectTitle: '',
+  projectTitle: "",
   solutionType: null,
 
   requirements: {
-    buildingCount: '',
+    buildingCount: "",
     buildings: [],
-    dcRacks: '',
-    dcServers: '',
+    dcRacks: "",
+    dcServers: "",
     specialRoles: [],
-    devices: { laptops: false, printers: false, phones: false, cameras: false, wifi: true },
+    devices: {
+      laptops: false,
+      printers: false,
+      phones: false,
+      cameras: false,
+      wifi: true,
+    },
     sensitiveAreas: [],
-    uptimeLevel: 'standard',
+    uptimeLevel: "standard",
     expectGrowth: false,
-    growthAmount: '',
-    additionalNotes: '',
+    growthAmount: "",
+    additionalNotes: "",
   },
 
-  workflowStatus: 'idle',
+  workflowStatus: "idle",
   currentPhase: 0,
-  currentPhaseName: '',
+  currentPhaseName: "",
   workflowEvents: [],
   wsRef: null,
 
@@ -57,30 +75,32 @@ const initialState = {
 
   proposedDesign: null,
   chatHistory: [],
-  deploymentStatus: 'idle',
+  deploymentStatus: "idle",
 };
 
 function projectReducer(state, action) {
   switch (action.type) {
-    case 'LOAD_PROJECT': {
+    case "LOAD_PROJECT": {
       const projectId = action.payload;
       const index = getProjectIndex();
-      const meta = index.find(p => p.id === projectId);
+      const meta = index.find((p) => p.id === projectId);
       const saved = loadProjectState(projectId);
       const base = {
         ...initialState,
         projectId,
-        projectTitle: meta?.title || saved?.projectTitle || '',
+        projectTitle: meta?.title || saved?.projectTitle || "",
         conversationId: saved?.conversationId || null,
       };
       if (saved) {
         return {
           ...base,
           solutionType: saved.solutionType ?? null,
-          requirements: saved.requirements ? { ...base.requirements, ...saved.requirements } : base.requirements,
-          workflowStatus: saved.workflowStatus ?? 'idle',
+          requirements: saved.requirements
+            ? { ...base.requirements, ...saved.requirements }
+            : base.requirements,
+          workflowStatus: saved.workflowStatus ?? "idle",
           currentPhase: saved.currentPhase ?? 0,
-          currentPhaseName: saved.currentPhaseName ?? '',
+          currentPhaseName: saved.currentPhaseName ?? "",
           rephrasedPrompt: saved.rephrasedPrompt ?? null,
           topologyDesign: saved.topologyDesign ?? null,
           deviceSelection: saved.deviceSelection ?? null,
@@ -90,43 +110,54 @@ function projectReducer(state, action) {
           reactCode: saved.reactCode ?? null,
           proposedDesign: saved.proposedDesign ?? null,
           chatHistory: saved.chatHistory ?? [],
-          deploymentStatus: saved.deploymentStatus ?? 'idle',
+          deploymentStatus: saved.deploymentStatus ?? "idle",
         };
       }
       return base;
     }
 
-    case 'SET_PROJECT_ID':
-      return { ...state, projectId: action.payload.projectId, projectTitle: action.payload.projectTitle || '' };
-
-    case 'SET_CONVERSATION_ID':
-      return { ...state, conversationId: action.payload };
-
-    case 'SET_SOLUTION_TYPE':
-      return { ...state, solutionType: action.payload };
-
-    case 'UPDATE_REQUIREMENTS':
-      return { ...state, requirements: { ...state.requirements, ...action.payload } };
-
-    case 'SET_PROPOSED_DESIGN':
-      return { ...state, proposedDesign: action.payload, deploymentStatus: 'ready' };
-
-    case 'SET_CHAT_HISTORY':
-      return { ...state, chatHistory: action.payload };
-
-    case 'ADD_CHAT_MESSAGE':
-      return { ...state, chatHistory: [...state.chatHistory, action.payload] };
-
-    case 'SET_DEPLOYMENT_STATUS':
-      return { ...state, deploymentStatus: action.payload };
-
-    case 'RESET_PROJECT':
-      return { ...initialState };
-
-    case 'WORKFLOW_START':
+    case "SET_PROJECT_ID":
       return {
         ...state,
-        workflowStatus: 'running',
+        projectId: action.payload.projectId,
+        projectTitle: action.payload.projectTitle || "",
+      };
+
+    case "SET_CONVERSATION_ID":
+      return { ...state, conversationId: action.payload };
+
+    case "SET_SOLUTION_TYPE":
+      return { ...state, solutionType: action.payload };
+
+    case "UPDATE_REQUIREMENTS":
+      return {
+        ...state,
+        requirements: { ...state.requirements, ...action.payload },
+      };
+
+    case "SET_PROPOSED_DESIGN":
+      return {
+        ...state,
+        proposedDesign: action.payload,
+        deploymentStatus: "ready",
+      };
+
+    case "SET_CHAT_HISTORY":
+      return { ...state, chatHistory: action.payload };
+
+    case "ADD_CHAT_MESSAGE":
+      return { ...state, chatHistory: [...state.chatHistory, action.payload] };
+
+    case "SET_DEPLOYMENT_STATUS":
+      return { ...state, deploymentStatus: action.payload };
+
+    case "RESET_PROJECT":
+      return { ...initialState };
+
+    case "WORKFLOW_START":
+      return {
+        ...state,
+        workflowStatus: "running",
         currentPhase: 0,
         workflowEvents: [],
         rephrasedPrompt: null,
@@ -138,37 +169,53 @@ function projectReducer(state, action) {
         reactCode: null,
       };
 
-    case 'WORKFLOW_EVENT':
-      return { ...state, workflowEvents: [...state.workflowEvents, action.payload] };
+    case "WORKFLOW_EVENT":
+      return {
+        ...state,
+        workflowEvents: [...state.workflowEvents, action.payload],
+      };
 
-    case 'PHASE_START':
-      return { ...state, currentPhase: action.payload.phase, currentPhaseName: action.payload.name, workflowStatus: 'running' };
+    case "PHASE_START":
+      return {
+        ...state,
+        currentPhase: action.payload.phase,
+        currentPhaseName: action.payload.name,
+        workflowStatus: "running",
+      };
 
-    case 'SET_REPHRASED':
+    case "SET_REPHRASED":
       return { ...state, rephrasedPrompt: action.payload };
 
-    case 'SET_TOPOLOGY':
+    case "SET_TOPOLOGY":
       return { ...state, topologyDesign: action.payload };
 
-    case 'SET_DEVICES':
+    case "SET_DEVICES":
       return { ...state, deviceSelection: action.payload };
 
-    case 'AWAITING_APPROVAL':
-      return { ...state, workflowStatus: 'awaiting_approval', wsRef: action.payload.ws };
+    case "AWAITING_APPROVAL":
+      return {
+        ...state,
+        workflowStatus: "awaiting_approval",
+        wsRef: action.payload.ws,
+      };
 
-    case 'SET_DIAGRAM':
-      return { ...state, diagramUrl: action.payload.url, diagramDownloadUrl: action.payload.downloadUrl };
+    case "SET_DIAGRAM":
+      return {
+        ...state,
+        diagramUrl: action.payload.url,
+        diagramDownloadUrl: action.payload.downloadUrl,
+      };
 
-    case 'SET_CLI_CONFIG':
+    case "SET_CLI_CONFIG":
       return { ...state, cliConfig: action.payload };
 
-    case 'WORKFLOW_COMPLETE':
-      return { ...state, workflowStatus: 'complete', wsRef: null };
+    case "WORKFLOW_COMPLETE":
+      return { ...state, workflowStatus: "complete", wsRef: null };
 
-    case 'WORKFLOW_ERROR':
-      return { ...state, workflowStatus: 'error', wsRef: null };
+    case "WORKFLOW_ERROR":
+      return { ...state, workflowStatus: "error", wsRef: null };
 
-    case 'SET_REACT_CODE':
+    case "SET_REACT_CODE":
       return { ...state, reactCode: action.payload };
 
     default:
@@ -178,17 +225,26 @@ function projectReducer(state, action) {
 
 export function ProjectProvider({ children }) {
   const [state, dispatch] = useReducer(projectReducer, initialState);
-  const lastSavedRef = useRef('');
+  const lastSavedRef = useRef("");
 
   const updateProjectMeta = useCallback((id, updates) => {
-    const index = getProjectIndex().map(p => p.id === id ? { ...p, ...updates, updatedAt: new Date().toISOString() } : p);
+    const index = getProjectIndex().map((p) =>
+      p.id === id
+        ? { ...p, ...updates, updatedAt: new Date().toISOString() }
+        : p,
+    );
     saveProjectIndex(index);
   }, []);
 
   // Sync workflowStatus to project index for dashboard
   useEffect(() => {
     if (!state.projectId) return;
-    const map = { running: 'designing', awaiting_approval: 'designing', complete: 'complete', error: 'designing' };
+    const map = {
+      running: "designing",
+      awaiting_approval: "designing",
+      complete: "complete",
+      error: "designing",
+    };
     const s = map[state.workflowStatus];
     if (s) updateProjectMeta(state.projectId, { status: s });
   }, [state.workflowStatus, state.projectId, updateProjectMeta]);
@@ -235,27 +291,49 @@ export function ProjectProvider({ children }) {
     const id = crypto.randomUUID();
     const now = new Date().toISOString();
     const index = getProjectIndex();
-    index.unshift({ id, title, createdAt: now, updatedAt: now, status: 'draft' });
+    index.unshift({
+      id,
+      title,
+      createdAt: now,
+      updatedAt: now,
+      status: "draft",
+    });
     saveProjectIndex(index);
-    dispatch({ type: 'SET_PROJECT_ID', payload: { projectId: id, projectTitle: title } });
+    dispatch({
+      type: "SET_PROJECT_ID",
+      payload: { projectId: id, projectTitle: title },
+    });
     return id;
   }, []);
 
   const loadProject = useCallback((id) => {
-    dispatch({ type: 'LOAD_PROJECT', payload: id });
+    dispatch({ type: "LOAD_PROJECT", payload: id });
   }, []);
 
   const getProjectList = useCallback(() => getProjectIndex(), []);
 
-  const deleteProject = useCallback((id) => {
-    const index = getProjectIndex().filter(p => p.id !== id);
-    saveProjectIndex(index);
-    localStorage.removeItem(`project_${id}`);
-    if (state.projectId === id) dispatch({ type: 'RESET_PROJECT' });
-  }, [state.projectId]);
+  const deleteProject = useCallback(
+    (id) => {
+      const index = getProjectIndex().filter((p) => p.id !== id);
+      saveProjectIndex(index);
+      localStorage.removeItem(`project_${id}`);
+      if (state.projectId === id) dispatch({ type: "RESET_PROJECT" });
+    },
+    [state.projectId],
+  );
 
   return (
-    <ProjectContext.Provider value={{ state, dispatch, createProject, loadProject, getProjectList, deleteProject, updateProjectMeta }}>
+    <ProjectContext.Provider
+      value={{
+        state,
+        dispatch,
+        createProject,
+        loadProject,
+        getProjectList,
+        deleteProject,
+        updateProjectMeta,
+      }}
+    >
       {children}
     </ProjectContext.Provider>
   );
@@ -263,6 +341,7 @@ export function ProjectProvider({ children }) {
 
 export function useProject() {
   const context = useContext(ProjectContext);
-  if (!context) throw new Error('useProject must be used within a ProjectProvider');
+  if (!context)
+    throw new Error("useProject must be used within a ProjectProvider");
   return context;
 }

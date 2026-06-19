@@ -1,14 +1,14 @@
 /**
  * AppLayout — Shared layout wrapper for all pages
- * 
+ *
  * Renders the persistent Sidebar + TopBar,
  * and an <Outlet /> for the current page.
  * The sidebar stays static during page transitions.
  */
 
-import { Outlet } from 'react-router-dom';
-import Sidebar from '../components/Sidebar';
-import TopBar from '../components/TopBar';
+import { Outlet } from "react-router-dom";
+import Sidebar from "../components/Sidebar";
+import TopBar from "../components/TopBar";
 
 export default function AppLayout() {
   return (
