@@ -72,7 +72,7 @@ export default function ProposedDesign() {
   const { projectId } = useParams();
   const [searchParams] = useSearchParams();
   const isFresh = searchParams.get('fresh') === '1';
-  const { state, dispatch, loadProject, getProjectList } = useProject();
+  const { state, dispatch, loadProject } = useProject();
   const wsRef = useRef(null);
   const pendingApprovalRef = useRef(null);
   const [status, setStatus] = useState('idle'); // idle | running | awaiting | complete | error
@@ -106,10 +106,7 @@ export default function ProposedDesign() {
     setStatus(state.workflowStatus === 'complete' ? 'complete' : 'idle');
   }, [projectId]); // reset per project to avoid stale run guard
 
-  useEffect(() => { setProjectList(getProjectList()); }, [getProjectList]);
 
-  // Refresh project list after workflow status changes
-  useEffect(() => { setProjectList(getProjectList()); }, [state.workflowStatus, getProjectList]);
 
   const scrollToBottom = useCallback(() => {
     eventsEndRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -196,38 +193,38 @@ export default function ProposedDesign() {
           phaseEvents.push({ type: 'phase_approved', phase: p.phase });
         }
         phaseEvents.forEach(ev => dispatch({ type: 'WORKFLOW_EVENT', payload: ev }));
-    // setStatus('running');
-    //
-    // runWorkflow(state.requirements, state.solutionType, (ev) => {
-    //   dispatch({ type: 'WORKFLOW_EVENT', payload: ev });
-    //
-    //   switch (ev.type) {
-    //     case 'phase_start':
-    //       setCurrentPhase(ev.phase);
-    //       setShowFeedback(false);
-    //       break;
-    //     case 'agent_response':
-    //       if (ev.ws) setWsRef(ev.ws);
-    //       if (ev.phase === 1) dispatch({ type: 'SET_REPHRASED', payload: ev.content });
-    //       if (ev.phase === 2) dispatch({ type: 'SET_TOPOLOGY', payload: ev.content });
-    //       if (ev.phase === 3) dispatch({ type: 'SET_DEVICES', payload: ev.content });
-    //       break;
-    //     case 'approval_request':
-    //       setStatus('awaiting');
-    //       if (ev.ws) setWsRef(ev.ws);
-    //       break;
-    //     case 'topology_code_ready':
-    //       if (ev.code) {
-    //         dispatch({ type: 'SET_REACT_CODE', payload: ev.code });
-    //       }
-    //       break;
-    //     case 'phase_approved':
-    //       setStatus('running');
-    //       break;
-    //     case 'phase_revision':
-    //       setStatus('running');
-    //       setShowFeedback(false);
-    //       break;
+        // setStatus('running');
+        //
+        // runWorkflow(state.requirements, state.solutionType, (ev) => {
+        //   dispatch({ type: 'WORKFLOW_EVENT', payload: ev });
+        //
+        //   switch (ev.type) {
+        //     case 'phase_start':
+        //       setCurrentPhase(ev.phase);
+        //       setShowFeedback(false);
+        //       break;
+        //     case 'agent_response':
+        //       if (ev.ws) setWsRef(ev.ws);
+        //       if (ev.phase === 1) dispatch({ type: 'SET_REPHRASED', payload: ev.content });
+        //       if (ev.phase === 2) dispatch({ type: 'SET_TOPOLOGY', payload: ev.content });
+        //       if (ev.phase === 3) dispatch({ type: 'SET_DEVICES', payload: ev.content });
+        //       break;
+        //     case 'approval_request':
+        //       setStatus('awaiting');
+        //       if (ev.ws) setWsRef(ev.ws);
+        //       break;
+        //     case 'topology_code_ready':
+        //       if (ev.code) {
+        //         dispatch({ type: 'SET_REACT_CODE', payload: ev.code });
+        //       }
+        //       break;
+        //     case 'phase_approved':
+        //       setStatus('running');
+        //       break;
+        //     case 'phase_revision':
+        //       setStatus('running');
+        //       setShowFeedback(false);
+        //       break;
       }
 
       // If all phases complete, stop here
@@ -410,45 +407,10 @@ export default function ProposedDesign() {
 
   return (
     <div className="flex h-full overflow-hidden">
-      {/* Left: Recent Chats Sidebar */}
-      <aside className={`${sidebarOpen ? 'w-72' : 'w-0'} transition-all duration-300 border-r border-outline-variant/15 flex flex-col bg-surface-dim overflow-hidden`}>
-        <div className="p-4 border-b border-outline-variant/10">
-          <button onClick={() => navigate('/project/new')}
-            className="w-full flex items-center justify-center gap-2 px-4 py-2.5 bg-primary text-on-primary font-bold rounded-lg hover:brightness-110 transition-all text-sm">
-            <span className="material-symbols-outlined text-lg">add</span>
-            New Chat
-          </button>
-        </div>
-        <div className="flex-1 overflow-y-auto custom-scrollbar p-2 space-y-1">
-          {projectList.map(p => {
-            const active = p.id === projectId;
-            const sClass = statusStyles[p.status] || 'text-outline';
-            const statusIcon = p.status === 'complete' ? 'check_circle' : p.status === 'designing' ? 'pending' : 'draft';
-            return (
-              <button key={p.id} onClick={() => navigate(`/project/${p.id}`)}
-                className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-left text-sm transition-colors ${
-                  active ? 'bg-primary/10 text-primary' : 'hover:bg-surface-container-high text-on-surface'
-                }`}>
-                <span className="material-symbols-outlined text-lg text-outline">folder</span>
-                <span className="flex-1 truncate font-medium">{p.title || 'Untitled'}</span>
-                <span className={`material-symbols-outlined text-xs ${sClass}`}>{statusIcon}</span>
-              </button>
-            );
-          })}
-          {projectList.length === 0 && (
-            <p className="text-xs text-outline text-center py-8">No projects yet</p>
-          )}
-        </div>
-      </aside>
-
       {/* Main Content */}
       <div className="flex-1 flex flex-col overflow-hidden">
         {/* Top bar with hamburger + header */}
         <header className="px-6 py-4 border-b border-outline-variant/10 flex items-center gap-4">
-          <button onClick={() => setSidebarOpen(!sidebarOpen)}
-            className="p-1 text-outline hover:text-primary transition-colors">
-            <span className="material-symbols-outlined">{sidebarOpen ? 'menu_open' : 'menu'}</span>
-          </button>
           <div className="flex-1">
             <div className="flex items-center gap-2 text-primary">
               <span className="material-symbols-outlined text-sm">auto_awesome</span>
@@ -489,9 +451,8 @@ export default function ProposedDesign() {
             const isPast = currentPhase > phaseNum;
             const isActive = currentPhase === phaseNum;
             return (
-              <div key={i} className={`flex-1 h-1.5 rounded-full transition-all duration-500 ${
-                isPast ? 'bg-tertiary' : isActive ? 'bg-primary animate-pulse' : 'bg-surface-container-high'
-              }`} title={name} />
+              <div key={i} className={`flex-1 h-1.5 rounded-full transition-all duration-500 ${isPast ? 'bg-tertiary' : isActive ? 'bg-primary animate-pulse' : 'bg-surface-container-high'
+                }`} title={name} />
             );
           })}
         </div>
@@ -515,51 +476,51 @@ export default function ProposedDesign() {
         )}
 
         {/* Scrollable content area */}
-{/*         <div className="flex-1 overflow-y-auto px-6 pb-4 space-y-4 custom-scrollbar"> */}
-{/**/}
-          {/* Phase Outputs as text bubbles */}
-{/*           {phaseOutputs.map(p => { */}
-{/*             if (!p.content) return null; */}
-{/*             if (p.isImage) { */}
-{/*               return ( */}
-{/*                 <div key={p.phase} className="max-w-[90%]"> */}
-{/*                   <div className="text-[10px] text-outline/50 uppercase tracking-wider mb-1 px-1">Phase {p.phase} — {p.label}</div> */}
-{/*                   <div className="bg-surface-container-low rounded-lg rounded-tl-none p-3 border border-outline-variant/10"> */}
-{/*                     <img src={p.content} alt={p.label} className="max-w-full max-h-[500px] object-contain rounded" /> */}
-{/*                   </div> */}
-{/*                 </div> */}
-{/*               ); */}
-{/*             } */}
-{/*             return ( */}
-{/*               <div key={p.phase} className="max-w-[90%]"> */}
-{/*                 <div className="text-[10px] text-outline/50 uppercase tracking-wider mb-1 px-1">Phase {p.phase} — {p.label}</div> */}
-{/*                 <div className="bg-surface-container-low rounded-lg rounded-tl-none px-4 py-3 text-sm md-content border border-outline-variant/10" */}
-{/*                   dangerouslySetInnerHTML={{ __html: renderMd(p.content) }} /> */}
-{/*               </div> */}
-{/*             ); */}
-{/*           })} */}
-{/**/}
-          {/* Collapsible Event Stream */}
-{/*           {events.length > 0 && ( */}
-{/*             <div className="bg-surface-container-low rounded-xl border border-outline-variant/15 overflow-hidden"> */}
-{/*               <button onClick={() => setShowToolEvents(!showToolEvents)} */}
-{/*                 className="w-full flex items-center justify-between px-5 py-3 text-sm text-left hover:bg-surface-container-high/30 transition-colors"> */}
-{/*                 <div className="flex items-center gap-2"> */}
-{/*                   <span className="material-symbols-outlined text-outline text-lg">list_alt</span> */}
-{/*                   <span className="font-medium text-on-surface">Event Details</span> */}
-{/*                   <span className="text-[10px] px-2 py-0.5 rounded-full bg-outline/10 text-outline font-medium">{events.length}</span> */}
-{/*                 </div> */}
-{/*                 <span className="text-outline text-sm">{showToolEvents ? '▾' : '▸'}</span> */}
-{/*               </button> */}
-{/*               {showToolEvents && ( */}
-{/*                 <div className="px-5 py-3 space-y-3 max-h-96 overflow-y-auto custom-scrollbar"> */}
-{/*                   {events.map((ev, i) => ( */}
-{/*                     <EventCard key={i} event={ev} /> */}
-{/*                   ))} */}
-{/*                 </div> */}
-{/*               )} */}
-{/*             </div> */}
-{/*           )} */}
+        {/*         <div className="flex-1 overflow-y-auto px-6 pb-4 space-y-4 custom-scrollbar"> */}
+        {/**/}
+        {/* Phase Outputs as text bubbles */}
+        {/*           {phaseOutputs.map(p => { */}
+        {/*             if (!p.content) return null; */}
+        {/*             if (p.isImage) { */}
+        {/*               return ( */}
+        {/*                 <div key={p.phase} className="max-w-[90%]"> */}
+        {/*                   <div className="text-[10px] text-outline/50 uppercase tracking-wider mb-1 px-1">Phase {p.phase} — {p.label}</div> */}
+        {/*                   <div className="bg-surface-container-low rounded-lg rounded-tl-none p-3 border border-outline-variant/10"> */}
+        {/*                     <img src={p.content} alt={p.label} className="max-w-full max-h-[500px] object-contain rounded" /> */}
+        {/*                   </div> */}
+        {/*                 </div> */}
+        {/*               ); */}
+        {/*             } */}
+        {/*             return ( */}
+        {/*               <div key={p.phase} className="max-w-[90%]"> */}
+        {/*                 <div className="text-[10px] text-outline/50 uppercase tracking-wider mb-1 px-1">Phase {p.phase} — {p.label}</div> */}
+        {/*                 <div className="bg-surface-container-low rounded-lg rounded-tl-none px-4 py-3 text-sm md-content border border-outline-variant/10" */}
+        {/*                   dangerouslySetInnerHTML={{ __html: renderMd(p.content) }} /> */}
+        {/*               </div> */}
+        {/*             ); */}
+        {/*           })} */}
+        {/**/}
+        {/* Collapsible Event Stream */}
+        {/*           {events.length > 0 && ( */}
+        {/*             <div className="bg-surface-container-low rounded-xl border border-outline-variant/15 overflow-hidden"> */}
+        {/*               <button onClick={() => setShowToolEvents(!showToolEvents)} */}
+        {/*                 className="w-full flex items-center justify-between px-5 py-3 text-sm text-left hover:bg-surface-container-high/30 transition-colors"> */}
+        {/*                 <div className="flex items-center gap-2"> */}
+        {/*                   <span className="material-symbols-outlined text-outline text-lg">list_alt</span> */}
+        {/*                   <span className="font-medium text-on-surface">Event Details</span> */}
+        {/*                   <span className="text-[10px] px-2 py-0.5 rounded-full bg-outline/10 text-outline font-medium">{events.length}</span> */}
+        {/*                 </div> */}
+        {/*                 <span className="text-outline text-sm">{showToolEvents ? '▾' : '▸'}</span> */}
+        {/*               </button> */}
+        {/*               {showToolEvents && ( */}
+        {/*                 <div className="px-5 py-3 space-y-3 max-h-96 overflow-y-auto custom-scrollbar"> */}
+        {/*                   {events.map((ev, i) => ( */}
+        {/*                     <EventCard key={i} event={ev} /> */}
+        {/*                   ))} */}
+        {/*                 </div> */}
+        {/*               )} */}
+        {/*             </div> */}
+        {/*           )} */}
         {/* Interactive Topology View Button has been moved to the bottom
              of the event stream (inside the workflow_complete EventCard)
              for a more natural, chronological workflow UX. */}
@@ -576,8 +537,8 @@ export default function ProposedDesign() {
               return true;
             })
             .map((ev, i) => (
-            <EventCard key={i} event={ev} />
-          ))}
+              <EventCard key={i} event={ev} />
+            ))}
 
           {/* Approval UI */}
           {status === 'awaiting' && (
@@ -655,9 +616,9 @@ export default function ProposedDesign() {
           {status === 'running' && (
             <div className="flex items-center gap-3 text-on-surface-variant text-sm py-2">
               <div className="flex gap-1">
-                <span className="w-2 h-2 rounded-full bg-primary animate-bounce" style={{animationDelay: '0s'}} />
-                <span className="w-2 h-2 rounded-full bg-primary animate-bounce" style={{animationDelay: '0.15s'}} />
-                <span className="w-2 h-2 rounded-full bg-primary animate-bounce" style={{animationDelay: '0.3s'}} />
+                <span className="w-2 h-2 rounded-full bg-primary animate-bounce" style={{ animationDelay: '0s' }} />
+                <span className="w-2 h-2 rounded-full bg-primary animate-bounce" style={{ animationDelay: '0.15s' }} />
+                <span className="w-2 h-2 rounded-full bg-primary animate-bounce" style={{ animationDelay: '0.3s' }} />
               </div>
               Agent is thinking…
             </div>
@@ -671,26 +632,26 @@ export default function ProposedDesign() {
 
           <div ref={eventsEndRef} />
         </div>
-      </div>
 
-      {/* Inline workflow chat composer */}
-      <div className="border-t border-outline-variant/10 px-6 py-3 shrink-0">
-        <form onSubmit={handleChat} className="flex gap-2 max-w-4xl mx-auto">
-          <input
-            value={chatInput}
-            onChange={e => setChatInput(e.target.value)}
-            disabled={sending}
-            className="flex-1 bg-surface-container-low border border-outline-variant/20 rounded-lg px-3 py-2 text-sm text-on-surface placeholder:text-outline/50 focus:ring-1 focus:ring-primary"
-            placeholder="Ask about your workflow output..."
-          />
-          <button
-            type="submit"
-            disabled={sending}
-            className="w-9 h-9 bg-primary rounded-lg flex items-center justify-center text-on-primary hover:brightness-110 transition-all disabled:opacity-50 shrink-0"
-          >
-            <span className="material-symbols-outlined text-base">send</span>
-          </button>
-        </form>
+        {/* Inline workflow chat composer */}
+        <div className="border-t border-outline-variant/10 px-6 py-3 shrink-0">
+          <form onSubmit={handleChat} className="flex gap-2 max-w-4xl mx-auto">
+            <input
+              value={chatInput}
+              onChange={e => setChatInput(e.target.value)}
+              disabled={sending}
+              className="flex-1 bg-surface-container-low border border-outline-variant/20 rounded-lg px-3 py-2 text-sm text-on-surface placeholder:text-outline/50 focus:ring-1 focus:ring-primary"
+              placeholder="Ask about your workflow output..."
+            />
+            <button
+              type="submit"
+              disabled={sending}
+              className="w-9 h-9 bg-primary rounded-lg flex items-center justify-center text-on-primary hover:brightness-110 transition-all disabled:opacity-50 shrink-0"
+            >
+              <span className="material-symbols-outlined text-base">send</span>
+            </button>
+          </form>
+        </div>
       </div>
     </div>
   );
@@ -734,21 +695,21 @@ function EventCard({ event }) {
       return (
         <div className="flex justify-start">
           <div className="w-full max-w-[92%] border border-outline-variant/20 bg-surface-container-low rounded-xl overflow-hidden">
-          <button onClick={() => setOpen(!open)}
-            className="w-full flex items-center gap-2 px-4 py-2.5 text-sm text-left hover:bg-surface-container-high/40 transition-colors">
-            <span className="material-symbols-outlined text-outline text-base">build</span>
-            <span className="font-medium text-on-surface flex-1">Tool call: {ev.tool_name}</span>
-            <span className="text-[10px] px-2 py-0.5 rounded-full bg-outline/15 text-on-surface-variant font-medium">system</span>
-            <span className="text-outline text-sm">{open ? '▾' : '▸'}</span>
-          </button>
-          {open && (
-            <div className="px-4 pb-3 text-xs text-on-surface-variant">
-              <pre className="bg-surface-container rounded-lg p-3 overflow-x-auto font-[family-name:var(--font-mono)]">
-                {JSON.stringify(ev.tool_kwargs, null, 2)}
-              </pre>
-            </div>
-          )}
-        </div>
+            <button onClick={() => setOpen(!open)}
+              className="w-full flex items-center gap-2 px-4 py-2.5 text-sm text-left hover:bg-surface-container-high/40 transition-colors">
+              <span className="material-symbols-outlined text-outline text-base">build</span>
+              <span className="font-medium text-on-surface flex-1">Tool call: {ev.tool_name}</span>
+              <span className="text-[10px] px-2 py-0.5 rounded-full bg-outline/15 text-on-surface-variant font-medium">system</span>
+              <span className="text-outline text-sm">{open ? '▾' : '▸'}</span>
+            </button>
+            {open && (
+              <div className="px-4 pb-3 text-xs text-on-surface-variant">
+                <pre className="bg-surface-container rounded-lg p-3 overflow-x-auto font-[family-name:var(--font-mono)]">
+                  {JSON.stringify(ev.tool_kwargs, null, 2)}
+                </pre>
+              </div>
+            )}
+          </div>
         </div>
       );
 
@@ -790,24 +751,24 @@ function EventCard({ event }) {
       return (
         <div className="flex justify-start">
           <div className={`w-full max-w-[92%] border rounded-xl overflow-hidden ${isCatalog ? 'border-cyan-500/20 bg-cyan-500/5' : 'border-outline-variant/20 bg-surface-container-low'}`}>
-          <button onClick={() => setOpen(!open)}
-            className="w-full flex items-center gap-2 px-4 py-2 text-xs text-left hover:bg-surface-container-high/30 transition-colors">
-            <span className="material-symbols-outlined text-outline text-sm">
-              {isCatalog ? 'inventory_2' : 'output'}
-            </span>
-            <span className="text-on-surface-variant flex-1">
-              {isCatalog ? 'Product Catalog' : `Tool result: ${ev.tool_name}`} ({ev.output?.length || 0} chars)
-            </span>
-            <span className="text-outline text-sm">{open ? '▾' : '▸'}</span>
-          </button>
-          {open && (
-            <div className="px-4 pb-3 text-xs text-on-surface-variant">
-              <pre className="bg-surface-container rounded-lg p-3 overflow-x-auto font-[family-name:var(--font-mono)] whitespace-pre-wrap">
-                {ev.output}
-              </pre>
-            </div>
-          )}
-        </div>
+            <button onClick={() => setOpen(!open)}
+              className="w-full flex items-center gap-2 px-4 py-2 text-xs text-left hover:bg-surface-container-high/30 transition-colors">
+              <span className="material-symbols-outlined text-outline text-sm">
+                {isCatalog ? 'inventory_2' : 'output'}
+              </span>
+              <span className="text-on-surface-variant flex-1">
+                {isCatalog ? 'Product Catalog' : `Tool result: ${ev.tool_name}`} ({ev.output?.length || 0} chars)
+              </span>
+              <span className="text-outline text-sm">{open ? '▾' : '▸'}</span>
+            </button>
+            {open && (
+              <div className="px-4 pb-3 text-xs text-on-surface-variant">
+                <pre className="bg-surface-container rounded-lg p-3 overflow-x-auto font-[family-name:var(--font-mono)] whitespace-pre-wrap">
+                  {ev.output}
+                </pre>
+              </div>
+            )}
+          </div>
         </div>
       );
     }

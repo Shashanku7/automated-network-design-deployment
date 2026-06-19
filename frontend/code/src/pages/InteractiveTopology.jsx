@@ -1,7 +1,6 @@
 import { useNavigate } from 'react-router-dom';
 import { useProject } from '../context/ProjectContext';
 import SandpackViewer from '../components/SandpackViewer';
-import ChatbotSidebar from '../components/ChatbotSidebar';
 
 export default function InteractiveTopology() {
   const navigate = useNavigate();
@@ -21,8 +20,7 @@ export default function InteractiveTopology() {
   }
 
   return (
-    <div className="flex h-full overflow-hidden">
-      {/* Left: Full screen topology viewer */}
+    <div className="flex flex-col h-full overflow-hidden">
       <div className="flex-1 flex flex-col overflow-hidden bg-surface-container">
         <header className="px-6 py-4 bg-surface-container-low border-b border-outline-variant/15 flex items-center justify-between">
           <div className="flex items-center gap-4">
@@ -45,9 +43,6 @@ export default function InteractiveTopology() {
           </div>
         </div>
       </div>
-
-      {/* Right: Copilot Chat */}
-      <ChatbotSidebar />
     </div>
   );
 }
