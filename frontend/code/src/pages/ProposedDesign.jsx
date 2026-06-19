@@ -8,7 +8,7 @@
  * - Agent responses with markdown rendering
  * - Approval/revision UI between phases
  */
-import { useState, useEffect, useRef, useCallback } from 'react';
+import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { useProject } from '../context/ProjectContext';
 import { runWorkflow, resumeWorkflow, sendApproval, sendRevision, sendChatMessage, getProjectConversation, getConversationMessages, getWorkflowState, getPersistentChatHistory } from '../services/api';
@@ -86,6 +86,13 @@ export default function ProposedDesign() {
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [projectList, setProjectList] = useState([]);
   const eventsEndRef = useRef(null);
+  const chatEndRef = useRef(null);
+
+  const dedupedChatHistory = useMemo(() => {
+    return state.chatHistory.filter((msg, i, arr) =>
+      i === arr.findIndex(m => m.role === msg.role && m.content === msg.content)
+    );
+  }, [state.chatHistory]);
 
   const hasStarted = useRef(false);
   const retryCountRef = useRef(0);
@@ -109,6 +116,7 @@ export default function ProposedDesign() {
   }, []);
 
   useEffect(() => { scrollToBottom(); }, [state.workflowEvents, scrollToBottom]);
+  useEffect(() => { chatEndRef.current?.scrollIntoView({ behavior: 'smooth' }); }, [dedupedChatHistory]);
 
   // Load project state on mount
   useEffect(() => {
@@ -600,7 +608,24 @@ export default function ProposedDesign() {
             </div>
           )}
 
-
+          {/* Inline Chat History */}
+          {dedupedChatHistory.length > 0 && (
+            <div className="pt-4 border-t border-outline-variant/10 space-y-2">
+              {dedupedChatHistory.map((msg, i) => (
+                <div key={i} className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}>
+                  <div className={`max-w-[80%] rounded-lg px-4 py-2 text-sm ${
+                    msg.role === 'user'
+                      ? 'bg-primary/10 text-on-surface rounded-tr-none'
+                      : 'bg-surface-container-low border border-outline-variant/10 text-on-surface rounded-tl-none md-content'
+                  }`}
+                    dangerouslySetInnerHTML={msg.role !== 'user' ? { __html: renderMd(msg.content) } : undefined}>
+                    {msg.role === 'user' ? msg.content : undefined}
+                  </div>
+                </div>
+              ))}
+              <div ref={chatEndRef} />
+            </div>
+          )}
 
           {/* Loading / Error / Reconnect banners */}
           {historyLoading && (
