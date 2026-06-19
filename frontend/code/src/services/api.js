@@ -178,13 +178,13 @@ function makeWorkflowHandler(results, onEvent, resolve, reject, ws, projectId) {
       }
 
       if (event_type === 'TOOL_CALL') {
-        onEvent({ type: 'tool_call', tool_name: data || agent_name, tool_kwargs: payload || {} });
+        onEvent({ type: 'tool_call', phase: currentPhase, tool_name: data || agent_name, tool_kwargs: payload || {} });
         return;
       }
 
       if (event_type === 'TOOL_RESULT') {
         const toolOutput = payload?.output || data || '';
-        onEvent({ type: 'tool_result', tool_name: agent_name, output: toolOutput, payload });
+        onEvent({ type: 'tool_result', phase: currentPhase, tool_name: agent_name, output: toolOutput, payload });
         return;
       }
 

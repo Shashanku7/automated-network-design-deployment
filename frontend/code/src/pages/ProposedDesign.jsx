@@ -436,6 +436,24 @@ export default function ProposedDesign() {
           })}
         </div>
 
+        {/* Completed phases summary */}
+        {(status === 'awaiting' || status === 'running') && currentPhase > 1 && (
+          <div className="px-6 py-2 flex gap-2 flex-wrap items-center">
+            {Array.from({ length: currentPhase - 1 }, (_, i) => (
+              <div key={i} className="flex items-center gap-1.5 text-[11px] text-tertiary bg-tertiary/10 px-2.5 py-1 rounded-full">
+                <span className="material-symbols-outlined text-xs">check_circle</span>
+                Phase {i + 1}: {PHASE_LABELS[i]}
+              </div>
+            ))}
+            {status === 'awaiting' && (
+              <div className="flex items-center gap-1.5 text-[11px] text-primary bg-primary/12 px-2.5 py-1 rounded-full">
+                <span className="material-symbols-outlined text-xs">pending</span>
+                Phase {currentPhase}: {PHASE_LABELS[currentPhase - 1]}
+              </div>
+            )}
+          </div>
+        )}
+
         {/* Scrollable content area */}
 {/*         <div className="flex-1 overflow-y-auto px-6 pb-4 space-y-4 custom-scrollbar"> */}
 {/**/}
@@ -489,7 +507,15 @@ export default function ProposedDesign() {
         {/* Events stream */}
         <div className="flex-1 overflow-y-auto px-6 pb-6 space-y-3 custom-scrollbar">
           <div className="text-[11px] text-outline uppercase tracking-wider px-1">Workflow Chat</div>
-          {state.workflowEvents.map((ev, i) => (
+          {state.workflowEvents
+            .filter(ev => {
+              if (!ev.phase) return true;
+              if (status === 'running' || status === 'awaiting' || status === 'reconnecting') {
+                return ev.phase === currentPhase;
+              }
+              return true;
+            })
+            .map((ev, i) => (
             <EventCard key={i} event={ev} />
           ))}
 
