@@ -193,6 +193,23 @@ public class KafkaService {
       return;
     }
 
+    // If phase has output but wasn't approved yet, re-send APPROVAL_REQUIRED
+    String lastOutput = state.getLastOutput();
+    if (lastOutput != null && !lastOutput.isBlank()) {
+      log.info("resumeWorkflow phase " + phase + " awaiting approval — re-sending APPROVAL_REQUIRED");
+      try {
+        var approvalEvent = new AgentEvent(
+            projectId, UUID.randomUUID(), getAgentTarget(phase),
+            AgentEvent.EventType.APPROVAL_REQUIRED,
+            "Phase completed, awaiting approval",
+            null, false);
+        webSocket.sendMessage(projectId.toString(), objectMapper.writeValueAsString(approvalEvent));
+      } catch (Exception e) {
+        log.severe("resumeWorkflow send approval error: " + e.getMessage());
+      }
+      return;
+    }
+
     var task = pipelineManager.createNextTask(projectId);
     log.info("resumeWorkflow taskId=" + task.taskId() + " phase=" + task.phase() + " agent=" + task.agentTarget());
 
@@ -203,6 +220,17 @@ public class KafkaService {
       log.severe("resumeWorkflow persist error: " + e.getMessage());
     }
     taskEmitter.send(task);
+  }
+
+  private String getAgentTarget(int phase) {
+    return switch (phase) {
+      case 1 -> "prompt_rephraser";
+      case 2 -> "topology_designer";
+      case 3 -> "device_selector";
+      case 4 -> "d2_diagram_generator";
+      case 5 -> "cli_config_generator";
+      default -> "unknown";
+    };
   }
 
   private String extractContent(String messageJson) {

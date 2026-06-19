@@ -76,8 +76,16 @@ public class PipelineManager {
       }
     }
     var last = completed.getLast();
-    state.setCurrentPhase(last.getPhase() + 1);
     state.setLastOutput(last.getOutput() != null ? last.getOutput() : "");
+
+    // Only advance if next phase task already exists (was explicitly approved)
+    long nextCount = agentTaskRepository.count(
+        "projectId = ?1 and phase = ?2", projectId, last.getPhase() + 1);
+    if (nextCount > 0) {
+      state.setCurrentPhase(last.getPhase() + 1);
+    } else {
+      state.setCurrentPhase(last.getPhase());
+    }
   }
 
   private String getAgentTarget(int phase) {

@@ -144,12 +144,9 @@ function makeWorkflowHandler(results, onEvent, resolve, reject, ws, projectId) {
         else if (currentPhase === 3) results.devices = content;
         else if (currentPhase === 5) results.cliConfig = content;
 
-        // onEvent({ type: 'agent_response', content, phase: currentPhase });
-        if (data.type === 'agent_response') {
-          let content = data.content || '';
-          if (content.startsWith('assistant: ')) content = content.slice(11);
-          data.content = content;
-          data.phase = currentPhase;
+        let clean = content;
+        if (clean.startsWith('assistant: ')) clean = clean.slice(11);
+        onEvent({ type: 'agent_response', phase: currentPhase, content: clean });
 
         if (is_final && currentPhase >= 5) {
           onEvent({ type: 'workflow_complete' });
@@ -199,7 +196,7 @@ function makeWorkflowHandler(results, onEvent, resolve, reject, ws, projectId) {
         reject(new Error(data || 'Unknown error'));
         return;
       }
-    }} catch (err) {
+    } catch (err) {
       console.error('WS parse error:', err);
     }
   };
@@ -328,6 +325,14 @@ export async function getProjectMessages(projectId) {
  * Fetch workflow state for a project — completed phases and their outputs.
  * Used on page refresh to resume from where the workflow left off.
  */
+/**
+ * Create project in backend DB.
+ */
+export async function createProjectInDb(title, id) {
+  const res = await API.post('/projects', { title, id });
+  return res.data;
+}
+
 /**
  * Save/update project metadata (solutionType, requirements, chatHistory, workflowStatus) to DB.
  */

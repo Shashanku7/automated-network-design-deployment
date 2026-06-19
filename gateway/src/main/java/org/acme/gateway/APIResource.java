@@ -70,6 +70,9 @@ public class APIResource {
   @Transactional
   public Response createProject(CreateProjectRequest request) {
     var project = new ProjectEntity(request.title());
+    if (request.id() != null) {
+      project.setId(request.id());
+    }
     projectRepository.persist(project);
     return Response.ok(project).build();
   }
@@ -87,7 +90,11 @@ public class APIResource {
   @Transactional
   public Response updateProject(@PathParam("id") UUID id, UpdateProjectRequest request) {
     var project = projectRepository.findById(id);
-    if (project == null) return Response.status(404).build();
+    if (project == null) {
+      var title = request.title() != null ? request.title() : "Untitled Project";
+      project = new ProjectEntity(title);
+      project.setId(id);
+    }
     if (request.title() != null) project.setTitle(request.title());
     if (request.solutionType() != null) project.setSolutionType(request.solutionType());
     if (request.requirements() != null) project.setRequirements(request.requirements());
@@ -197,7 +204,7 @@ public class APIResource {
 
   // ── Request records ─────────────────────────────────
 
-  public record CreateProjectRequest(String title) {
+  public record CreateProjectRequest(String title, UUID id) {
   }
 
   public record CreateConversationRequest(String title) {
