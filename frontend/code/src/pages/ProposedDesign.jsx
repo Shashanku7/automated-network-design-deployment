@@ -11,7 +11,7 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { useProject } from '../context/ProjectContext';
-import { runWorkflow, resumeWorkflow, sendApproval, sendRevision, sendChatMessage, getProjectConversation, getConversationMessages, getWorkflowState } from '../services/api';
+import { runWorkflow, resumeWorkflow, sendApproval, sendRevision, sendChatMessage, getProjectConversation, getConversationMessages, getWorkflowState, getPersistentChatHistory } from '../services/api';
 import { marked } from 'marked';
 import katex from 'katex';
 import 'katex/dist/katex.min.css';
@@ -75,17 +75,18 @@ export default function ProposedDesign() {
   const isFresh = searchParams.get('fresh') === '1';
   const { state, dispatch, loadProject, getProjectList, deleteProject } = useProject();
   const wsRef = useRef(null);
+  const pendingApprovalRef = useRef(null);
   const [status, setStatus] = useState('idle'); // idle | running | awaiting | complete | error
   const [currentPhase, setCurrentPhase] = useState(0);
   const [historyLoading, setHistoryLoading] = useState(false);
   const [historyError, setHistoryError] = useState(null);
+  const [historySource, setHistorySource] = useState(null); // postgres | gateway-db | null
   const [feedbackText, setFeedbackText] = useState('');
   const [showFeedback, setShowFeedback] = useState(false);
   const [chatInput, setChatInput] = useState('');
   const [sending, setSending] = useState(false);
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [projectList, setProjectList] = useState([]);
-  const [showToolEvents, setShowToolEvents] = useState(false);
   const eventsEndRef = useRef(null);
   const chatEndRef = useRef(null);
   const hasStarted = useRef(false);
@@ -113,12 +114,28 @@ export default function ProposedDesign() {
 
   // Load conversation history from API if project has past results
   useEffect(() => {
-    if (!projectId || !state.rephrasedPrompt) return;
+    if (!projectId) return;
     let cancelled = false;
     setHistoryLoading(true);
     setHistoryError(null);
     (async () => {
       try {
+        const persistent = await getPersistentChatHistory(
+          projectId,
+          state.conversationId || 'default'
+        );
+        if (!cancelled && persistent?.merged_messages?.length) {
+          const persistedMessages = persistent.merged_messages.map((m) => ({
+            role: String(m.role || '').toLowerCase() === 'user' ? 'user' : 'assistant',
+            content: m.content || '',
+            timestamp: new Date().toISOString(),
+          }));
+          dispatch({ type: 'SET_CHAT_HISTORY', payload: persistedMessages });
+          setHistorySource('postgres');
+          setHistoryLoading(false);
+          return;
+        }
+
         const conv = await getProjectConversation(projectId);
         if (cancelled) return;
         if (conv && conv.id !== state.conversationId) {
@@ -133,6 +150,7 @@ export default function ProposedDesign() {
             timestamp: m.createdAt || new Date().toISOString(),
           }));
           dispatch({ type: 'SET_CHAT_HISTORY', payload: chatMsgs });
+          setHistorySource('gateway-db');
         }
       } catch (err) {
         if (!cancelled) setHistoryError('Failed to load conversation history');
@@ -221,9 +239,16 @@ export default function ProposedDesign() {
           case 'approval_request':
             setStatus('awaiting');
             wsRef.current = ev.ws;
+            pendingApprovalRef.current = ev.approval || null;
             break;
           case 'phase_approved':
             setStatus('running');
+            pendingApprovalRef.current = null;
+            break;
+          case 'workflow_complete':
+            setStatus('complete');
+            dispatch({ type: 'WORKFLOW_COMPLETE' });
+            pendingApprovalRef.current = null;
             break;
           case 'phase_revision':
             setStatus('running');
@@ -295,14 +320,14 @@ export default function ProposedDesign() {
   }
 
   function handleApprove() {
-    sendApproval(wsRef.current);
+    sendApproval(wsRef.current, pendingApprovalRef.current || {});
     dispatch({ type: 'WORKFLOW_EVENT', payload: { type: 'user_action', content: '✅ Approved' } });
     setStatus('running');
   }
 
   function handleRevise() {
     if (!feedbackText.trim()) return;
-    sendRevision(wsRef.current, feedbackText.trim());
+    sendRevision(wsRef.current, feedbackText.trim(), pendingApprovalRef.current || {});
     dispatch({ type: 'WORKFLOW_EVENT', payload: { type: 'user_action', content: feedbackText.trim() } });
     setFeedbackText('');
     setShowFeedback(false);
@@ -322,14 +347,6 @@ export default function ProposedDesign() {
       </div>
     );
   }
-
-  const phaseOutputs = [
-    { phase: 1, label: 'Rephrased Prompt', content: state.rephrasedPrompt, icon: 'edit_note' },
-    { phase: 2, label: 'Network Topology', content: state.topologyDesign, icon: 'account_tree' },
-    { phase: 3, label: 'Device Selection & BOM', content: state.deviceSelection, icon: 'inventory_2' },
-    { phase: 4, label: 'Topology Diagram', content: state.diagramUrl, icon: 'schema', isImage: true },
-    { phase: 5, label: 'CLI Configuration', content: state.cliConfig, icon: 'terminal' },
-  ];
 
   return (
     <div className="flex h-full overflow-hidden">
@@ -471,6 +488,7 @@ export default function ProposedDesign() {
 
         {/* Events stream */}
         <div className="flex-1 overflow-y-auto px-6 pb-6 space-y-3 custom-scrollbar">
+          <div className="text-[11px] text-outline uppercase tracking-wider px-1">Workflow Chat</div>
           {state.workflowEvents.map((ev, i) => (
             <EventCard key={i} event={ev} />
           ))}
@@ -507,6 +525,13 @@ export default function ProposedDesign() {
           {/* Inline Chat History */}
           {state.chatHistory.length > 0 && (
             <div className="pt-4 border-t border-outline-variant/10 space-y-2">
+              {historySource && (
+                <div className="flex justify-center pb-1">
+                  <span className="text-[10px] px-2 py-1 rounded-full bg-outline/10 text-on-surface-variant border border-outline-variant/20 uppercase tracking-wider">
+                    history source: {historySource === 'postgres' ? 'postgres chat store' : 'gateway db'}
+                  </span>
+                </div>
+              )}
               {state.chatHistory.map((msg, i) => (
                 <div key={i} className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}>
                   <div className={`max-w-[80%] rounded-lg px-4 py-2 text-sm ${
@@ -606,7 +631,7 @@ function EventCard({ event }) {
     case 'phase_start':
       return (
         <div className="flex justify-center py-2">
-          <div className="px-5 py-2 rounded-full text-xs font-bold uppercase tracking-wider bg-primary/10 border border-primary/30 text-primary">
+          <div className="px-4 py-1.5 rounded-full text-[11px] font-semibold uppercase tracking-wider bg-surface-container-high border border-outline-variant/20 text-on-surface-variant">
             {ev.phase === 'diagram' ? ev.name : `Phase ${ev.phase}: ${ev.name}`} {ev.iteration > 1 ? `(revision ${ev.iteration})` : ''}
           </div>
         </div>
@@ -623,12 +648,13 @@ function EventCard({ event }) {
 
     case 'tool_call':
       return (
-        <div className="border border-yellow-500/20 bg-yellow-500/5 rounded-xl overflow-hidden">
+        <div className="flex justify-start">
+          <div className="w-full max-w-[92%] border border-outline-variant/20 bg-surface-container-low rounded-xl overflow-hidden">
           <button onClick={() => setOpen(!open)}
-            className="w-full flex items-center gap-2 px-4 py-2.5 text-sm text-left hover:bg-yellow-500/5 transition-colors">
-            <span className="material-symbols-outlined text-yellow-400 text-lg">build</span>
-            <span className="font-medium text-on-surface flex-1">Tool: {ev.tool_name}</span>
-            <span className="text-[10px] px-2 py-0.5 rounded-full bg-yellow-500/20 text-yellow-400 font-medium">call</span>
+            className="w-full flex items-center gap-2 px-4 py-2.5 text-sm text-left hover:bg-surface-container-high/40 transition-colors">
+            <span className="material-symbols-outlined text-outline text-base">build</span>
+            <span className="font-medium text-on-surface flex-1">Tool call: {ev.tool_name}</span>
+            <span className="text-[10px] px-2 py-0.5 rounded-full bg-outline/15 text-on-surface-variant font-medium">system</span>
             <span className="text-outline text-sm">{open ? '▾' : '▸'}</span>
           </button>
           {open && (
@@ -638,6 +664,7 @@ function EventCard({ event }) {
               </pre>
             </div>
           )}
+        </div>
         </div>
       );
 
@@ -677,14 +704,15 @@ function EventCard({ event }) {
     case 'tool_result': {
       const isCatalog = ev.tool_name === 'list_available_products';
       return (
-        <div className={`border rounded-xl overflow-hidden ${isCatalog ? 'border-cyan-500/20 bg-cyan-500/5' : 'border-outline-variant/10'}`}>
+        <div className="flex justify-start">
+          <div className={`w-full max-w-[92%] border rounded-xl overflow-hidden ${isCatalog ? 'border-cyan-500/20 bg-cyan-500/5' : 'border-outline-variant/20 bg-surface-container-low'}`}>
           <button onClick={() => setOpen(!open)}
             className="w-full flex items-center gap-2 px-4 py-2 text-xs text-left hover:bg-surface-container-high/30 transition-colors">
-            <span className="material-symbols-outlined text-yellow-400 text-sm">
+            <span className="material-symbols-outlined text-outline text-sm">
               {isCatalog ? 'inventory_2' : 'output'}
             </span>
             <span className="text-on-surface-variant flex-1">
-              {isCatalog ? '📦 Product Catalog' : `Tool result: ${ev.tool_name}`} ({ev.output?.length || 0} chars)
+              {isCatalog ? 'Product Catalog' : `Tool result: ${ev.tool_name}`} ({ev.output?.length || 0} chars)
             </span>
             <span className="text-outline text-sm">{open ? '▾' : '▸'}</span>
           </button>
@@ -695,6 +723,7 @@ function EventCard({ event }) {
               </pre>
             </div>
           )}
+        </div>
         </div>
       );
     }
@@ -719,15 +748,17 @@ function EventCard({ event }) {
 
     case 'agent_response':
       return (
-        <div className="bg-surface-container-low border border-outline-variant/15 rounded-xl rounded-tl-none px-5 py-4 text-sm md-content max-w-[95%]"
-          dangerouslySetInnerHTML={{ __html: renderMd(ev.content) }} />
+        <div className="flex justify-start">
+          <div className="max-w-[92%] bg-surface-container-low border border-outline-variant/15 rounded-xl rounded-tl-none px-5 py-4 text-sm md-content"
+            dangerouslySetInnerHTML={{ __html: renderMd(ev.content) }} />
+        </div>
       );
 
     case 'phase_approved':
       return (
         <div className="flex justify-center py-1">
-          <span className="text-xs font-medium text-tertiary bg-tertiary/10 px-4 py-1.5 rounded-full">
-            ✅ Phase {ev.phase} approved
+          <span className="text-xs font-medium text-tertiary bg-tertiary/10 px-4 py-1.5 rounded-full border border-tertiary/20">
+            Phase {ev.phase || '?'} approved
           </span>
         </div>
       );
@@ -742,7 +773,16 @@ function EventCard({ event }) {
       );
 
     case 'workflow_complete':
-      return <WorkflowCompleteCard />;
+      return (
+        <>
+          <div className="flex justify-center py-1">
+            <span className="text-xs font-semibold text-tertiary bg-tertiary/12 px-4 py-1.5 rounded-full border border-tertiary/20">
+              Workflow complete
+            </span>
+          </div>
+          <WorkflowCompleteCard />
+        </>
+      );
 
     case 'error':
       return (

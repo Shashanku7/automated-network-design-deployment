@@ -3,7 +3,7 @@
 import asyncio
 import json
 from datetime import datetime
-from fastapi import APIRouter, WebSocket, WebSocketDisconnect
+from fastapi import APIRouter, Query, WebSocket, WebSocketDisconnect
 from pydantic import BaseModel
 from llama_index.core.llms import ChatMessage, MessageRole
 from llama_index.core.agent.workflow import AgentWorkflow, AgentInput, AgentOutput, ToolCall, ToolCallResult
@@ -48,6 +48,63 @@ async def chat_endpoint(req: ChatRequest):
         "role": "assistant",
         "content": str(resp.message.content),
         "timestamp": datetime.now().isoformat(),
+    }
+
+
+def _normalize_role(role_obj) -> str:
+    raw = getattr(role_obj, "value", str(role_obj))
+    if "." in raw:
+        raw = raw.split(".")[-1]
+    return raw.lower()
+
+
+def _to_serializable_messages(messages, source_key: str):
+    serializable = []
+    for msg in messages or []:
+        serializable.append(
+            {
+                "role": _normalize_role(getattr(msg, "role", "assistant")),
+                "content": str(getattr(msg, "content", "")),
+                "source_key": source_key,
+            }
+        )
+    return serializable
+
+
+@router.get("/api/chat-history/{project_id}")
+async def get_chat_history(project_id: str, conversation_id: str = Query(default="default")):
+    """Return persistent chat history from PostgresChatStore for frontend replay."""
+    conversation_key = f"{project_id}:{conversation_id}"
+    phase_keys = [f"{project_id}:phase{i}" for i in range(1, 6)]
+
+    conversation_messages = []
+    phase_messages = {}
+    merged_messages = []
+
+    try:
+        conversation_messages = _to_serializable_messages(
+            chat_store.get_messages(conversation_key), conversation_key
+        )
+        merged_messages.extend(conversation_messages)
+    except Exception as err:
+        print(f"CHAT_HISTORY conversation_key_error key={conversation_key} err={err}", flush=True)
+
+    for key in phase_keys:
+        try:
+            msgs = _to_serializable_messages(chat_store.get_messages(key), key)
+            phase_messages[key] = msgs
+            merged_messages.extend(msgs)
+        except Exception as err:
+            print(f"CHAT_HISTORY phase_key_error key={key} err={err}", flush=True)
+            phase_messages[key] = []
+
+    return {
+        "project_id": project_id,
+        "conversation_id": conversation_id,
+        "conversation_key": conversation_key,
+        "conversation_messages": conversation_messages,
+        "phase_messages": phase_messages,
+        "merged_messages": merged_messages,
     }
 
 

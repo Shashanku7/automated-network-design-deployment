@@ -119,11 +119,28 @@ function stripHost(url) {
 
 function makeWorkflowHandler(results, onEvent, resolve, reject, ws, projectId) {
   let currentPhase = 0;
+  let settled = false;
+
+  const finalize = () => {
+    if (settled) return;
+    settled = true;
+    onEvent({ type: 'workflow_complete' });
+    ws.close();
+    resolve(results);
+  };
+
   return function (e) {
     try {
       console.log('[WS] recv len=' + e.data.length + ' preview=' + e.data.substring(0, 200));
       const event = JSON.parse(e.data);
       const { event_type, agent_name, data, payload, is_final } = event;
+      if (!event_type) {
+        console.warn('[WS] Missing event_type in payload:', event);
+        return;
+      }
+      if (!agent_name && event_type !== 'PHASE_APPROVED' && event_type !== 'APPROVAL_REQUIRED') {
+        console.warn('[WS] Missing agent_name for event_type=' + event_type, event);
+      }
 
       const phase = PHASE_MAP[agent_name];
       if (phase && phase !== currentPhase) {
@@ -138,23 +155,21 @@ function makeWorkflowHandler(results, onEvent, resolve, reject, ws, projectId) {
       }
 
       if (event_type === 'FINAL_ANSWER') {
+        if (typeof data !== 'string') {
+          console.warn('[WS] FINAL_ANSWER expected string data:', event);
+        }
         const content = data || '';
         if (currentPhase === 1) results.rephrased = content;
         else if (currentPhase === 2) results.topology = content;
         else if (currentPhase === 3) results.devices = content;
+        else if (currentPhase === 4) results.diagramCode = content;
         else if (currentPhase === 5) results.cliConfig = content;
 
-        // onEvent({ type: 'agent_response', content, phase: currentPhase });
-        if (data.type === 'agent_response') {
-          let content = data.content || '';
-          if (content.startsWith('assistant: ')) content = content.slice(11);
-          data.content = content;
-          data.phase = currentPhase;
+        const normalized = content.startsWith('assistant: ') ? content.slice(11) : content;
+        onEvent({ type: 'agent_response', content: normalized, phase: currentPhase });
 
         if (is_final && currentPhase >= 5) {
-          onEvent({ type: 'workflow_complete' });
-          ws.close();
-          resolve(results);
+          finalize();
         }
         return;
       }
@@ -171,12 +186,25 @@ function makeWorkflowHandler(results, onEvent, resolve, reject, ws, projectId) {
       }
 
       if (event_type === 'PHASE_APPROVED') {
-        onEvent({ type: 'phase_approved' });
+        if (is_final) {
+          finalize();
+          return;
+        }
+        onEvent({ type: 'phase_approved', phase: currentPhase || phase });
         return;
       }
 
       if (event_type === 'APPROVAL_REQUIRED') {
-        onEvent({ type: 'approval_request', ws });
+        const approvalTaskId = event.task_id || payload?.task_id;
+        const approvalPhase = payload?.phase || currentPhase || PHASE_MAP[agent_name] || 0;
+        if (!approvalTaskId) {
+          console.warn('[WS] APPROVAL_REQUIRED missing task_id:', event);
+        }
+        onEvent({
+          type: 'approval_request',
+          ws,
+          approval: { taskId: approvalTaskId, phase: approvalPhase },
+        });
         return;
       }
 
@@ -196,10 +224,13 @@ function makeWorkflowHandler(results, onEvent, resolve, reject, ws, projectId) {
       if (event_type === 'ERROR') {
         onEvent({ type: 'error', message: data || 'Unknown error' });
         ws.close();
-        reject(new Error(data || 'Unknown error'));
+        if (!settled) {
+          settled = true;
+          reject(new Error(data || 'Unknown error'));
+        }
         return;
       }
-    }} catch (err) {
+    } catch (err) {
       console.error('WS parse error:', err);
     }
   };
@@ -261,18 +292,27 @@ export function resumeWorkflow(projectId, onEvent) {
 /**
  * Send an approval for the current phase.
  */
-export function sendApproval(ws) {
+export function sendApproval(ws, approvalContext = {}) {
   if (ws?.readyState === WebSocket.OPEN) {
-    ws.send(JSON.stringify({ approved: true }));
+    ws.send(JSON.stringify({
+      approved: true,
+      task_id: approvalContext.taskId || null,
+      phase: approvalContext.phase || null,
+    }));
   }
 }
 
 /**
  * Send a revision request for the current phase.
  */
-export function sendRevision(ws, feedback) {
+export function sendRevision(ws, feedback, approvalContext = {}) {
   if (ws?.readyState === WebSocket.OPEN) {
-    ws.send(JSON.stringify({ approved: false, feedback }));
+    ws.send(JSON.stringify({
+      approved: false,
+      feedback,
+      task_id: approvalContext.taskId || null,
+      phase: approvalContext.phase || null,
+    }));
   }
 }
 
@@ -322,6 +362,16 @@ export async function getProjectMessages(projectId) {
   const conv = await getProjectConversation(projectId);
   if (!conv) return [];
   return getConversationMessages(conv.id);
+}
+
+export async function getPersistentChatHistory(projectId, conversationId = 'default') {
+  try {
+    const q = encodeURIComponent(conversationId || 'default');
+    const res = await API.get(`/projects/${projectId}/chat-history?conversationId=${q}`);
+    return res.data || null;
+  } catch {
+    return null;
+  }
 }
 
 /**

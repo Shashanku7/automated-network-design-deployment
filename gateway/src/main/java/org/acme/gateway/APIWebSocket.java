@@ -16,6 +16,7 @@ import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.inject.Inject;
 import jakarta.transaction.Transactional;
 import lombok.extern.java.Log;
+import org.acme.gateway.models.AgentEvent;
 import org.acme.gateway.services.KafkaService;
 import org.acme.gateway.services.PipelineManager;
 
@@ -38,6 +39,7 @@ public class APIWebSocket {
     var uuid = UUID.fromString(projectId);
     connections.putIfAbsent(uuid, connection);
     pipelineManager.rehydrateFromDb(uuid);
+    kafkaService.replayPendingApproval(uuid);
   }
 
   @OnClose
@@ -58,11 +60,51 @@ public class APIWebSocket {
       var tree = objectMapper.readTree(message);
       if (tree.has("approved")) {
         var approved = tree.get("approved").asBoolean();
+        UUID taskId = null;
+        Integer phase = null;
+        if (tree.has("task_id") && !tree.get("task_id").isNull()) {
+          taskId = UUID.fromString(tree.get("task_id").asText());
+        }
+        if (tree.has("phase") && !tree.get("phase").isNull()) {
+          phase = tree.get("phase").asInt();
+        }
+        var pending = kafkaService.getPendingApproval(uuid);
+        if (pending.isEmpty()) {
+          sendError(projectId, taskId, "No pending approval found for this project.");
+          return;
+        }
+        var expected = pending.get();
+        if (taskId == null || !expected.taskId().equals(taskId)) {
+          sendError(projectId, taskId, "Approval task mismatch. Please refresh and retry.");
+          return;
+        }
+        if (phase != null && phase > 0 && expected.phase() != phase) {
+          sendError(projectId, taskId, "Approval phase mismatch. Please refresh and retry.");
+          return;
+        }
+        if (!approved) {
+          String feedback = tree.has("feedback") ? tree.get("feedback").asText() : "";
+          if (feedback == null || feedback.trim().isEmpty()) {
+            sendError(projectId, taskId, "Revision feedback cannot be empty.");
+            return;
+          }
+          if (feedback.length() > 4000) {
+            sendError(projectId, taskId, "Revision feedback is too long.");
+            return;
+          }
+          if (!kafkaService.clearPendingApproval(uuid, taskId, phase)) {
+            sendError(projectId, taskId, "Approval already processed.");
+            return;
+          }
+        } else if (!kafkaService.clearPendingApproval(uuid, taskId, phase)) {
+          sendError(projectId, taskId, "Approval already processed.");
+          return;
+        }
         log.info("WS approval msg projectId=" + projectId + " approved=" + approved);
         if (approved) {
           kafkaService.emitNextTask(uuid);
         } else {
-          String feedback = tree.has("feedback") ? tree.get("feedback").asText() : "";
+          String feedback = tree.get("feedback").asText();
           log.info("WS revision msg projectId=" + projectId + " feedback=" + feedback);
           // Re-run current phase with feedback appended
           var state = pipelineManager.getOrCreateState(uuid);
@@ -73,6 +115,10 @@ public class APIWebSocket {
         return;
       }
     } catch (Exception e) {
+      if (message.contains("\"approved\"")) {
+        sendError(projectId, null, "Invalid approval message format.");
+        return;
+      }
       // Not JSON or no approved field — treat as regular prompt
     }
 
@@ -99,6 +145,23 @@ public class APIWebSocket {
       connection.sendText(content).subscribe().with(v -> {});
     } else {
       log.warning("WS send fail projectId=" + projectId + " connection=null");
+    }
+  }
+
+  private void sendError(String projectId, UUID taskId, String message) {
+    try {
+      var event =
+          new AgentEvent(
+              UUID.fromString(projectId),
+              taskId != null ? taskId : UUID.randomUUID(),
+              "system",
+              AgentEvent.EventType.ERROR,
+              message,
+              null,
+              false);
+      sendMessage(projectId, objectMapper.writeValueAsString(event));
+    } catch (Exception e) {
+      log.severe("Failed to send WS error event: " + e.getMessage());
     }
   }
 }
