@@ -11,6 +11,7 @@ import jakarta.ws.rs.POST;
 import jakarta.ws.rs.Path;
 import jakarta.ws.rs.PathParam;
 import jakarta.ws.rs.Produces;
+import jakarta.ws.rs.QueryParam;
 import jakarta.ws.rs.core.MediaType;
 import jakarta.ws.rs.core.Response;
 import java.time.Instant;
@@ -126,6 +127,27 @@ public class APIResource {
   @Path("conversations/{conversationId}/messages")
   public List<MessageEntity> getMessages(@PathParam("conversationId") UUID conversationId) {
     return messageRepository.findByConversationIdOrdered(conversationId);
+  }
+
+  @GET
+  @Path("projects/{projectId}/chat-history")
+  public Response getPersistentChatHistory(
+      @PathParam("projectId") UUID projectId,
+      @QueryParam("conversationId") String conversationId) {
+    try {
+      var cid = conversationId == null || conversationId.isBlank() ? "default" : conversationId;
+      var history = aiService.getChatHistory(projectId.toString(), cid);
+      return Response.ok(history).build();
+    } catch (Exception e) {
+      log.warning("Failed to fetch persistent chat history for projectId=" + projectId + " error=" + e.getMessage());
+      return Response.ok(Map.of(
+          "project_id", projectId.toString(),
+          "conversation_id", conversationId == null || conversationId.isBlank() ? "default" : conversationId,
+          "conversation_key", "",
+          "conversation_messages", List.of(),
+          "phase_messages", Map.of(),
+          "merged_messages", List.of())).build();
+    }
   }
 
   @POST

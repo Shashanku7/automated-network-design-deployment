@@ -3,7 +3,7 @@
 import asyncio
 import json
 from datetime import datetime
-from fastapi import APIRouter, WebSocket, WebSocketDisconnect
+from fastapi import APIRouter, Query, WebSocket, WebSocketDisconnect
 from pydantic import BaseModel
 from llama_index.core.llms import ChatMessage, MessageRole
 from llama_index.core.agent.workflow import AgentWorkflow, AgentInput, AgentOutput, ToolCall, ToolCallResult
@@ -51,16 +51,74 @@ async def chat_endpoint(req: ChatRequest):
     }
 
 
+def _normalize_role(role_obj) -> str:
+    raw = getattr(role_obj, "value", str(role_obj))
+    if "." in raw:
+        raw = raw.split(".")[-1]
+    return raw.lower()
+
+
+def _to_serializable_messages(messages, source_key: str):
+    serializable = []
+    for msg in messages or []:
+        serializable.append(
+            {
+                "role": _normalize_role(getattr(msg, "role", "assistant")),
+                "content": str(getattr(msg, "content", "")),
+                "source_key": source_key,
+            }
+        )
+    return serializable
+
+
+@router.get("/api/chat-history/{project_id}")
+async def get_chat_history(project_id: str, conversation_id: str = Query(default="default")):
+    """Return persistent chat history from PostgresChatStore for frontend replay."""
+    conversation_key = f"{project_id}:{conversation_id}"
+    phase_keys = [f"{project_id}:phase{i}" for i in range(1, 6)]
+
+    conversation_messages = []
+    phase_messages = {}
+    merged_messages = []
+
+    try:
+        conversation_messages = _to_serializable_messages(
+            chat_store.get_messages(conversation_key), conversation_key
+        )
+        merged_messages.extend(conversation_messages)
+    except Exception as err:
+        print(f"CHAT_HISTORY conversation_key_error key={conversation_key} err={err}", flush=True)
+
+    for key in phase_keys:
+        try:
+            msgs = _to_serializable_messages(chat_store.get_messages(key), key)
+            phase_messages[key] = msgs
+            merged_messages.extend(msgs)
+        except Exception as err:
+            print(f"CHAT_HISTORY phase_key_error key={key} err={err}", flush=True)
+            phase_messages[key] = []
+
+    return {
+        "project_id": project_id,
+        "conversation_id": conversation_id,
+        "conversation_key": conversation_key,
+        "conversation_messages": conversation_messages,
+        "phase_messages": phase_messages,
+        "merged_messages": merged_messages,
+    }
+
+
 # ── Kafka task processor ─────────────────────────
 kafka_mgr = KafkaManager()
 
 
 async def process_kafka_task(task_data: dict):
-    project_id = task_data.get("project_id")
-    task_id = task_data.get("task_id")
-    phase_idx = task_data.get("phase", 1)
-    input_ctx = task_data.get("input_context")
-    history = task_data.get("history", [])
+    project_id = task_data["project_id"]
+    task_id = task_data["task_id"]
+    phase_idx = task_data["phase"]
+    input_ctx = task_data["input_context"]
+    history = task_data["history"]
+    requested_agent_target = task_data.get("agent_target")
     print(f"PROCESS_TASK project_id={project_id} task_id={task_id} phase={phase_idx}", flush=True)
     print(f"PROCESS_TASK input_context={'None' if input_ctx is None else ('len=' + str(len(str(input_ctx))))}", flush=True)
     print(f"PROCESS_TASK history_len={len(history)}", flush=True)
@@ -74,6 +132,12 @@ async def process_kafka_task(task_data: dict):
         return
 
     _, phase_name, agent = matching_phases[0]
+    if requested_agent_target and requested_agent_target != agent.name:
+        print(
+            f"PROCESS_TASK agent_target_mismatch requested={requested_agent_target} resolved={agent.name} "
+            f"task_id={task_id}",
+            flush=True,
+        )
     await _run_phase_kafka(kafka_mgr, project_id, task_id, phase_idx, phase_name, agent, input_ctx, history, model_name=OLLAMA_MODEL)
 
 

@@ -165,11 +165,14 @@ function makeWorkflowHandler(results, onEvent, resolve, reject, ws, projectId) {
         else if (currentPhase === 4) results.diagramCode = content;
         else if (currentPhase === 5) results.cliConfig = content;
 
-        // let clean = content;
-        // if (clean.startsWith('assistant: ')) clean = clean.slice(11);
-        // onEvent({ type: 'agent_response', phase: currentPhase, content: clean });
+<<<<<<< HEAD
+        let clean = content;
+        if (clean.startsWith('assistant: ')) clean = clean.slice(11);
+        onEvent({ type: 'agent_response', phase: currentPhase, content: clean });
+=======
         const normalized = content.startsWith('assistant: ') ? content.slice(11) : content;
         onEvent({ type: 'agent_response', content: normalized, phase: currentPhase });
+>>>>>>> integration-fix
 
         if (is_final && currentPhase >= 5) {
           finalize();

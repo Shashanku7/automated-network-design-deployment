@@ -4,7 +4,10 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.inject.Inject;
 import jakarta.transaction.Transactional;
+import java.util.Map;
+import java.util.Optional;
 import java.util.UUID;
+import java.util.concurrent.ConcurrentHashMap;
 import lombok.extern.java.Log;
 import org.acme.gateway.APIWebSocket;
 import org.acme.gateway.entities.AgentTaskEntity;
@@ -32,6 +35,7 @@ public class KafkaService {
   @Inject ConversationRepository conversationRepository;
   @Inject MessageRepository messageRepository;
   @Inject AgentTaskRepository agentTaskRepository;
+  private final Map<UUID, PendingApproval> pendingApprovals = new ConcurrentHashMap<>();
 
   @Transactional
   public void sendTask(String message, UUID projectId) {
@@ -58,7 +62,7 @@ public class KafkaService {
       }
     }
     log.info("sendTask JSON=" + task.toString());
-    taskEmitter.send(task);
+    emitTask("sendTask", task);
 
     try {
       var convId = ensureConversation(projectId);
@@ -78,6 +82,11 @@ public class KafkaService {
     log.info("consumeEvent agent=" + event.agentName() + " dataLen=" + (event.data() == null ? 0 : event.data().length()));
 
     if (event.isFinal() && event.eventType() == AgentEvent.EventType.FINAL_ANSWER) {
+      var existingTask = agentTaskRepository.findByIdOptional(event.taskId());
+      if (existingTask.isPresent() && "completed".equalsIgnoreCase(existingTask.get().getStatus())) {
+        log.info("consumeEvent duplicate FINAL_ANSWER ignored taskId=" + event.taskId());
+        return;
+      }
       log.info("consumeEvent FINAL_ANSWER data=" + (event.data() == null ? "null" : event.data().substring(0, Math.min(200, event.data().length()))));
 
       // Persist agent response & mark task complete
@@ -101,6 +110,8 @@ public class KafkaService {
 
       // Store output but DON'T auto-advance — wait for HITL approval
       pipelineManager.storePhaseOutput(event.projectId(), event.data());
+      int phase = pipelineManager.getOrCreateState(event.projectId()).getCurrentPhase();
+      pendingApprovals.put(event.projectId(), new PendingApproval(event.taskId(), phase, event.agentName()));
 
       // Send APPROVAL_REQUIRED event to frontend
       try {
@@ -108,7 +119,11 @@ public class KafkaService {
             event.projectId(), event.taskId(), event.agentName(),
             AgentEvent.EventType.APPROVAL_REQUIRED,
             "Phase completed, awaiting approval",
-            null, false);
+            Map.of(
+                "task_id", event.taskId().toString(),
+                "phase", phase,
+                "agent_name", event.agentName()),
+            false);
         var approvalJson = objectMapper.writeValueAsString(approvalEvent);
         webSocket.sendMessage(event.projectId().toString(), approvalJson);
       } catch (Exception e) {
@@ -146,7 +161,7 @@ public class KafkaService {
       } catch (Exception e) {
         log.severe("emitNextTask persist error: " + e.getMessage());
       }
-      taskEmitter.send(nextTask);
+      emitTask("emitNextTask", nextTask);
 
       // Notify frontend phase was approved
       try {
@@ -169,6 +184,46 @@ public class KafkaService {
       } catch (Exception e) {
         log.severe("emitNextTask send complete error: " + e.getMessage());
       }
+    }
+  }
+
+  public Optional<PendingApproval> getPendingApproval(UUID projectId) {
+    return Optional.ofNullable(pendingApprovals.get(projectId));
+  }
+
+  public boolean clearPendingApproval(UUID projectId, UUID taskId, Integer phase) {
+    final boolean[] cleared = {false};
+    pendingApprovals.compute(
+        projectId,
+        (id, current) -> {
+          if (current == null) return null;
+          if (!current.taskId().equals(taskId)) return current;
+          if (phase != null && phase > 0 && current.phase() != phase) return current;
+          cleared[0] = true;
+          return null;
+        });
+    return cleared[0];
+  }
+
+  public void replayPendingApproval(UUID projectId) {
+    var pending = pendingApprovals.get(projectId);
+    if (pending == null) return;
+    try {
+      var approvalEvent =
+          new AgentEvent(
+              projectId,
+              pending.taskId(),
+              pending.agentName(),
+              AgentEvent.EventType.APPROVAL_REQUIRED,
+              "Phase completed, awaiting approval",
+              Map.of(
+                  "task_id", pending.taskId().toString(),
+                  "phase", pending.phase(),
+                  "agent_name", pending.agentName()),
+              false);
+      webSocket.sendMessage(projectId.toString(), objectMapper.writeValueAsString(approvalEvent));
+    } catch (Exception e) {
+      log.severe("replayPendingApproval failed projectId=" + projectId + " error=" + e.getMessage());
     }
   }
 
@@ -219,7 +274,7 @@ public class KafkaService {
     } catch (Exception e) {
       log.severe("resumeWorkflow persist error: " + e.getMessage());
     }
-    taskEmitter.send(task);
+    emitTask("resumeWorkflow", task);
   }
 
   private String getAgentTarget(int phase) {
@@ -242,4 +297,45 @@ public class KafkaService {
       return messageJson;
     }
   }
+
+  private void emitTask(String source, AgentTask task) {
+    try {
+      taskEmitter.send(task).whenComplete((ignored, error) -> {
+        if (error != null) {
+          log.severe(
+              source
+                  + " kafka send failed projectId="
+                  + task.projectId()
+                  + " taskId="
+                  + task.taskId()
+                  + " phase="
+                  + task.phase()
+                  + " error="
+                  + error.getMessage());
+          return;
+        }
+        log.info(
+            source
+                + " kafka send success projectId="
+                + task.projectId()
+                + " taskId="
+                + task.taskId()
+                + " phase="
+                + task.phase());
+      });
+    } catch (Exception e) {
+      log.severe(
+          source
+              + " kafka send invocation failed projectId="
+              + task.projectId()
+              + " taskId="
+              + task.taskId()
+              + " phase="
+              + task.phase()
+              + " error="
+              + e.getMessage());
+    }
+  }
+
+  public record PendingApproval(UUID taskId, int phase, String agentName) {}
 }
