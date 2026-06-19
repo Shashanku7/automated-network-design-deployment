@@ -79,7 +79,6 @@ export default function ProposedDesign() {
   const [currentPhase, setCurrentPhase] = useState(0);
   const [historyLoading, setHistoryLoading] = useState(false);
   const [historyError, setHistoryError] = useState(null);
-  const [historySource, setHistorySource] = useState(null); // postgres | gateway-db | null
   const [feedbackText, setFeedbackText] = useState('');
   const [showFeedback, setShowFeedback] = useState(false);
   const [chatInput, setChatInput] = useState('');
@@ -87,7 +86,7 @@ export default function ProposedDesign() {
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [projectList, setProjectList] = useState([]);
   const eventsEndRef = useRef(null);
-  const chatEndRef = useRef(null);
+
   const hasStarted = useRef(false);
   const retryCountRef = useRef(0);
   const MAX_RETRIES = 3;
@@ -110,7 +109,6 @@ export default function ProposedDesign() {
   }, []);
 
   useEffect(() => { scrollToBottom(); }, [state.workflowEvents, scrollToBottom]);
-  useEffect(() => { chatEndRef.current?.scrollIntoView({ behavior: 'smooth' }); }, [state.chatHistory]);
 
   // Load project state on mount
   useEffect(() => {
@@ -131,14 +129,13 @@ export default function ProposedDesign() {
           projectId,
           state.conversationId || 'default'
         );
-        if (!cancelled && persistent?.merged_messages?.length) {
-          const persistedMessages = persistent.merged_messages.map((m) => ({
+        if (!cancelled && persistent?.conversation_messages?.length) {
+          const persistedMessages = persistent.conversation_messages.map((m) => ({
             role: String(m.role || '').toLowerCase() === 'user' ? 'user' : 'assistant',
             content: m.content || '',
             timestamp: new Date().toISOString(),
           }));
           dispatch({ type: 'SET_CHAT_HISTORY', payload: persistedMessages });
-          setHistorySource('postgres');
           setHistoryLoading(false);
           return;
         }
@@ -157,9 +154,6 @@ export default function ProposedDesign() {
             timestamp: m.createdAt || new Date().toISOString(),
           }));
           dispatch({ type: 'SET_CHAT_HISTORY', payload: chatMsgs });
-          setHistorySource('gateway-db');
-        } else {
-          setHistorySource(null);
         }
       } catch (err) {
         if (!cancelled) setHistoryError('Failed to load conversation history');
@@ -606,31 +600,7 @@ export default function ProposedDesign() {
             </div>
           )}
 
-          {/* Inline Chat History */}
-          {state.chatHistory.length > 0 && (
-            <div className="pt-4 border-t border-outline-variant/10 space-y-2">
-              {historySource && (
-                <div className="flex justify-center pb-1">
-                  <span className="text-[10px] px-2 py-1 rounded-full bg-outline/10 text-on-surface-variant border border-outline-variant/20 uppercase tracking-wider">
-                    history source: {historySource === 'postgres' ? 'postgres chat store' : 'gateway db'}
-                  </span>
-                </div>
-              )}
-              {state.chatHistory.map((msg, i) => (
-                <div key={i} className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}>
-                  <div className={`max-w-[80%] rounded-lg px-4 py-2 text-sm ${
-                    msg.role === 'user'
-                      ? 'bg-primary/10 text-on-surface rounded-tr-none'
-                      : 'bg-surface-container-low border border-outline-variant/10 text-on-surface rounded-tl-none md-content'
-                  }`}
-                    dangerouslySetInnerHTML={msg.role !== 'user' ? { __html: renderMd(msg.content) } : undefined}>
-                    {msg.role === 'user' ? msg.content : undefined}
-                  </div>
-                </div>
-              ))}
-              <div ref={chatEndRef} />
-            </div>
-          )}
+
 
           {/* Loading / Error / Reconnect banners */}
           {historyLoading && (
