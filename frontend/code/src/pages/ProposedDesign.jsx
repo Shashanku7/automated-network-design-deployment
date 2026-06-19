@@ -22,61 +22,7 @@ import {
   getWorkflowState,
   getPersistentChatHistory,
 } from "../services/api";
-import { marked } from "marked";
-import katex from "katex";
-import "katex/dist/katex.min.css";
-
-marked.setOptions({ gfm: true, breaks: true });
-
-/**
- * renderMd — Markdown parser with full KaTeX math rendering.
- * Extracts block math ($$...$$) and inline math ($...$) before
- * marked processes the text, preventing markdown from breaking LaTeX.
- */
-function renderMd(text) {
-  if (!text) return "";
-
-  const mathPlaceholders = [];
-
-  // Extract and render block math: $$...$$
-  let processed = text.replace(/\$\$([\s\S]+?)\$\$/g, (_, expr) => {
-    try {
-      const html = katex.renderToString(expr.trim(), {
-        displayMode: true,
-        throwOnError: false,
-      });
-      mathPlaceholders.push(html);
-    } catch {
-      mathPlaceholders.push(`<span class="katex-error">$$${expr}$$</span>`);
-    }
-    return `%%MATH_BLOCK_${mathPlaceholders.length - 1}%%`;
-  });
-
-  // Extract and render inline math: $...$
-  processed = processed.replace(/\$([^\$\n]+?)\$/g, (_, expr) => {
-    try {
-      const html = katex.renderToString(expr.trim(), {
-        displayMode: false,
-        throwOnError: false,
-      });
-      mathPlaceholders.push(html);
-    } catch {
-      mathPlaceholders.push(`<span class="katex-error">$${expr}$</span>`);
-    }
-    return `%%MATH_BLOCK_${mathPlaceholders.length - 1}%%`;
-  });
-
-  // Run marked on the math-extracted text
-  let html = marked.parse(processed);
-
-  // Restore math placeholders into the final HTML
-  html = html.replace(
-    /%%MATH_BLOCK_(\d+)%%/g,
-    (_, idx) => mathPlaceholders[parseInt(idx)],
-  );
-
-  return html;
-}
+import { renderMd } from "../utils/renderMd";
 
 const PHASE_LABELS = [
   "Prompt Rephrasing",

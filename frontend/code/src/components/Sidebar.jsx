@@ -1,17 +1,27 @@
+import { useMemo } from "react";
 import { NavLink, useNavigate, useParams } from "react-router-dom";
+import { useProject } from "../context/ProjectContext";
 
-const navItems = [
+const BASE_NAV = [
   { icon: "dashboard", label: "Dashboard" },
   { icon: "list_alt", label: "Requirements" },
   { icon: "hub", label: "Design" },
+  { icon: "receipt_long", label: "BOM" },
   { icon: "rocket_launch", label: "Deployment" },
 ];
 
 export default function Sidebar() {
   const navigate = useNavigate();
   const { projectId } = useParams();
+  const { state } = useProject();
   const base = projectId ? `/project/${projectId}` : "";
   const isInProject = !!projectId;
+
+  const showBom = !!state.deviceSelection;
+  const navItems = useMemo(
+    () => BASE_NAV.filter((item) => item.label !== "BOM" || showBom),
+    [showBom],
+  );
 
   function handleNewDesign() {
     navigate("/project/new");
@@ -23,6 +33,7 @@ export default function Sidebar() {
       Dashboard: base,
       Requirements: `${base}/requirements`,
       Design: `${base}/design`,
+      BOM: `${base}/bom`,
       Deployment: `${base}/deployment`,
     };
     return map[label] || "/";

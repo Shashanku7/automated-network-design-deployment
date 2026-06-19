@@ -6,7 +6,7 @@
  * Each tab has a placeholder for AI-generated content.
  */
 import { useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useParams } from "react-router-dom";
 import { useProject } from "../context/ProjectContext";
 
 const tabs = [
@@ -17,6 +17,7 @@ const tabs = [
 
 export default function DetailedTopology() {
   const navigate = useNavigate();
+  const { projectId } = useParams();
   const { state } = useProject();
   const [activeTab, setActiveTab] = useState("logical");
   const [simpleView, setSimpleView] = useState(true);
@@ -32,7 +33,7 @@ export default function DetailedTopology() {
         </h2>
         <p className="text-on-surface-variant mb-6">Generate a design first.</p>
         <button
-          onClick={() => navigate("/requirements")}
+          onClick={() => navigate(`/project/${projectId}/requirements`)}
           className="px-6 py-3 bg-primary text-on-primary font-bold rounded-lg"
         >
           Go to Requirements
@@ -189,14 +190,14 @@ export default function DetailedTopology() {
         {/* Navigation */}
         <div className="flex justify-between mt-8">
           <button
-            onClick={() => navigate("/bom")}
+            onClick={() => navigate(`/project/${projectId}/bom`)}
             className="px-6 py-3 border border-outline-variant/30 text-on-surface font-medium rounded-lg hover:bg-surface-container-high transition-all flex items-center gap-2"
           >
             <span className="material-symbols-outlined">arrow_back</span> Bill
             of Materials
           </button>
           <button
-            onClick={() => navigate("/deployment")}
+            onClick={() => navigate(`/project/${projectId}/deployment`)}
             className="px-6 py-3 bg-gradient-to-r from-primary to-primary-container text-on-primary font-bold rounded-lg hover:brightness-110 transition-all flex items-center gap-2"
           >
             Proceed to Deployment{" "}

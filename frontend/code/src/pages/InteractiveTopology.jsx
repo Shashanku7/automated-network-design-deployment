@@ -1,9 +1,10 @@
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useParams } from "react-router-dom";
 import { useProject } from "../context/ProjectContext";
 import SandpackViewer from "../components/SandpackViewer";
 
 export default function InteractiveTopology() {
   const navigate = useNavigate();
+  const { projectId } = useParams();
   const { state } = useProject();
 
   if (!state.reactCode) {
@@ -19,7 +20,7 @@ export default function InteractiveTopology() {
           Please run the design workflow first.
         </p>
         <button
-          onClick={() => navigate("/design")}
+          onClick={() => navigate(`/project/${projectId}/design`)}
           className="px-6 py-3 bg-primary text-on-primary font-bold rounded-lg"
         >
           Go to Design Pipeline
@@ -34,7 +35,7 @@ export default function InteractiveTopology() {
         <header className="px-6 py-4 bg-surface-container-low border-b border-outline-variant/15 flex items-center justify-between">
           <div className="flex items-center gap-4">
             <button
-              onClick={() => navigate("/design")}
+              onClick={() => navigate(`/project/${projectId}/design`)}
               className="w-10 h-10 rounded-full hover:bg-outline-variant/10 flex items-center justify-center transition-colors text-on-surface-variant"
             >
               <span className="material-symbols-outlined">arrow_back</span>
