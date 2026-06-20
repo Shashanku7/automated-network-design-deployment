@@ -1067,7 +1067,7 @@ function EventCard({ event }) {
       return (
         <div className="flex justify-start">
           <div
-            className="max-w-[80%] bg-surface-container-low border border-outline-variant/15 rounded-xl rounded-tl-none px-5 py-4 text-sm md-content"
+            className="max-w-[92%] bg-surface-container-low border border-outline-variant/15 rounded-xl rounded-tl-none px-5 py-4 text-sm md-content"
             dangerouslySetInnerHTML={{ __html: renderMd(ev.content) }}
           />
         </div>

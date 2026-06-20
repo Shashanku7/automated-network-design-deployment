@@ -7,14 +7,14 @@ export default function InteractiveTopology() {
   const { projectId } = useParams();
   const { state } = useProject();
 
-  if (!state.reactCode && !state.diagramUrl) {
+  if (!state.reactCode) {
     return (
       <div className="p-8 text-center mt-20">
         <span className="material-symbols-outlined text-6xl text-outline mb-4">
           info
         </span>
         <h2 className="text-xl font-bold text-on-surface mb-2">
-          No topology generated yet
+          No interactive topology generated yet
         </h2>
         <p className="text-on-surface-variant mb-6">
           Please run the design workflow first.
@@ -28,8 +28,6 @@ export default function InteractiveTopology() {
       </div>
     );
   }
-
-  const isReactCode = !!state.reactCode;
 
   return (
     <div className="flex flex-col h-full overflow-hidden">
@@ -47,34 +45,22 @@ export default function InteractiveTopology() {
                 Interactive Network Topology
               </h1>
               <p className="text-xs text-on-surface-variant">
-                {isReactCode
-                  ? "Pan, zoom, and drag nodes"
-                  : "Static network topology diagram"}
+                Pan, zoom, and drag nodes
               </p>
             </div>
           </div>
           <div className="px-3 py-1 rounded-full bg-primary/10 text-primary text-xs font-bold border border-primary/20">
-            {isReactCode ? "LIVE PREVIEW" : "STATIC DIAGRAM"}
+            LIVE PREVIEW
           </div>
         </header>
 
         <div className="flex-1 w-full h-full p-6">
-          {isReactCode ? (
-            <div className="w-full h-full rounded-2xl overflow-hidden border border-outline-variant/20 shadow-sm bg-white relative">
-              <SandpackViewer
-                reactCode={state.reactCode}
-                onError={(e) => console.error(e)}
-              />
-            </div>
-          ) : (
-            <div className="w-full h-full rounded-2xl overflow-hidden border border-outline-variant/20 shadow-sm bg-surface-container-low flex items-center justify-center p-6">
-              <img
-                src={state.diagramUrl}
-                alt="Network Topology Diagram"
-                className="max-w-full max-h-full object-contain"
-              />
-            </div>
-          )}
+          <div className="w-full h-full rounded-2xl overflow-hidden border border-outline-variant/20 shadow-sm bg-white relative">
+            <SandpackViewer
+              reactCode={state.reactCode}
+              onError={(e) => console.error(e)}
+            />
+          </div>
         </div>
       </div>
     </div>
