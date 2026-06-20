@@ -17,7 +17,7 @@ const API = axios.create({
 /**
  * Build a natural-language prompt from the structured requirements form.
  */
-function buildPromptFromRequirements(req, solutionType) {
+export function buildPromptFromRequirements(req, solutionType) {
   const isCampus = solutionType !== "datacenter";
 
   if (isCampus) {
@@ -142,7 +142,7 @@ const PHASE_MAP = {
   prompt_rephraser: 1,
   topology_designer: 2,
   device_selector: 3,
-  d2_diagram_generator: 4,
+  react_topology_architect: 4,
   cli_config_generator: 5,
 };
 
@@ -266,7 +266,8 @@ function makeWorkflowHandler(results, onEvent, resolve, reject, ws, projectId) {
           finalize();
           return;
         }
-        onEvent({ type: "phase_approved", phase: currentPhase || phase });
+        // Ignore WS PHASE_APPROVED for intermediate phases to avoid race conditions.
+        // The frontend already dispatches it locally on click, and on load via completedPhases.
         return;
       }
 
@@ -289,11 +290,13 @@ function makeWorkflowHandler(results, onEvent, resolve, reject, ws, projectId) {
         const url = stripHost(payload?.url || "");
         results.diagramUrl = url;
         results.diagramDownloadUrl = stripHost(payload?.download_url || "");
+        results.diagramCode = data;
         onEvent({
           type: "diagram_ready",
           url,
           download_url: results.diagramDownloadUrl,
           filename: payload?.filename,
+          data: data,
         });
         return;
       }
@@ -321,7 +324,7 @@ function makeWorkflowHandler(results, onEvent, resolve, reject, ws, projectId) {
   };
 }
 
-export function runWorkflow(projectId, requirements, solutionType, onEvent) {
+export function runWorkflow(projectId, requirements, solutionType, onEvent, isRestart = false) {
   return new Promise((resolve, reject) => {
     const prompt = buildPromptFromRequirements(requirements, solutionType);
     const wsProtocol = window.location.protocol === "https:" ? "wss:" : "ws:";
@@ -341,7 +344,7 @@ export function runWorkflow(projectId, requirements, solutionType, onEvent) {
 
     ws.onopen = () => {
       console.log("[WS] open projectId=" + projectId);
-      const msg = JSON.stringify({ content: prompt, projectId });
+      const msg = JSON.stringify({ content: prompt, projectId, restart: isRestart });
       console.log(
         "[WS] send len=" + msg.length + " preview=" + msg.substring(0, 150),
       );

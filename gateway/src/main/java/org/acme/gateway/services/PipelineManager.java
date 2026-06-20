@@ -20,6 +20,10 @@ public class PipelineManager {
     return states.computeIfAbsent(projectId, PipelineState::new);
   }
 
+  public void clearState(UUID projectId) {
+    states.remove(projectId);
+  }
+
   public AgentTask createNextTask(UUID projectId) {
     PipelineState state = getOrCreateState(projectId);
     return new AgentTask(

@@ -1,9 +1,9 @@
 # start_all.ps1
-# Starts all 3 services in separate terminal windows automatically.
+# Starts all 5 services in separate terminal windows automatically.
 # Run from the project root:
 #   .\start_all.ps1
 #
-# To stop everything, just close the 3 terminal windows it opens.
+# To stop everything, just close the terminal windows it opens.
 
 $ROOT     = Split-Path -Parent $MyInvocation.MyCommand.Path
 $PYTHON   = if ($env:PYTHON_EXE) { $env:PYTHON_EXE } else { "python" }
@@ -15,8 +15,37 @@ Write-Host "  Automated Network Design - Dev Stack  " -ForegroundColor Cyan
 Write-Host "========================================" -ForegroundColor Cyan
 Write-Host ""
 
+# ─── Core Infrastructure (Kafka & Postgres) ────────────────────────────────────
+Write-Host "[Infrastructure] Starting Core Docker containers (Kafka & Postgres)..." -ForegroundColor Yellow
+Set-Location $ROOT
+& docker compose up -d
+Start-Sleep -Seconds 5
+
+# ─── 0. Firecrawl Web Scraper (Port 3002) ────────────────────────────────────
+Write-Host "[0/4] Starting Firecrawl Docker container..." -ForegroundColor Yellow
+$firecrawlDir = Join-Path $ROOT "firecrawl"
+if (-not (Test-Path $firecrawlDir)) {
+    Write-Host "Cloning Firecrawl repository for the first time..." -ForegroundColor Yellow
+    & git clone https://github.com/mendableai/firecrawl.git $firecrawlDir
+}
+
+Start-Process powershell -ArgumentList @(
+    "-NoExit",
+    "-ExecutionPolicy", "Bypass",
+    "-Command",
+    "& {
+        Set-Location '$firecrawlDir';
+        Write-Host 'Firecrawl Web Scraper (Port 3002)' -ForegroundColor Cyan;
+        Write-Host 'Starting Docker containers in background...' -ForegroundColor Yellow;
+        & docker compose up -d;
+        Write-Host 'Containers started! You can close this specific window if you like.' -ForegroundColor Gray;
+    }"
+)
+
+Start-Sleep -Seconds 3
+
 # ─── 1. Topology Gatekeeper (Port 8002) ──────────────────────────────────────
-Write-Host "[1/3] Starting Topology Gatekeeper on port 8002..." -ForegroundColor Yellow
+Write-Host "[1/4] Starting Topology Gatekeeper on port 8002..." -ForegroundColor Yellow
 $topoDir = Join-Path $ROOT "topology_generation"
 Start-Process powershell -ArgumentList @(
     "-NoExit",
@@ -40,7 +69,7 @@ Start-Process powershell -ArgumentList @(
 Start-Sleep -Seconds 2
 
 # ─── 2. AI Service (Port 8000) ───────────────────────────────────────────────
-Write-Host "[2/3] Starting AI Service on port 8000..." -ForegroundColor Yellow
+Write-Host "[2/4] Starting AI Service on port 8000..." -ForegroundColor Yellow
 $aiDir = Join-Path $ROOT "ai-service"
 $aiScript = Join-Path $aiDir "start_ai_service.ps1"
 
@@ -53,8 +82,25 @@ Start-Process powershell -ArgumentList @(
 
 Start-Sleep -Seconds 2
 
-# ─── 3. Frontend Dev Server (Port 5173) ──────────────────────────────────────
-Write-Host "[3/3] Starting Frontend on port 5173..." -ForegroundColor Yellow
+# ─── 3. Java Gateway (Port 8080) ───────────────────────────────────────────────
+Write-Host "[3/4] Starting Java Gateway on port 8080..." -ForegroundColor Yellow
+$gatewayDir = Join-Path $ROOT "gateway"
+Start-Process powershell -ArgumentList @(
+    "-NoExit",
+    "-ExecutionPolicy", "Bypass",
+    "-Command",
+    "& {
+        Set-Location '$gatewayDir';
+        Write-Host 'Java Gateway (Port 8080)' -ForegroundColor Cyan;
+        Write-Host 'Starting Quarkus DevServices...' -ForegroundColor Yellow;
+        & mvn quarkus:dev '-Duser.timezone=UTC'
+    }"
+)
+
+Start-Sleep -Seconds 5
+
+# ─── 4. Frontend Dev Server (Port 5173) ──────────────────────────────────────
+Write-Host "[4/4] Starting Frontend on port 5173..." -ForegroundColor Yellow
 $frontendDir = Join-Path $ROOT "frontend\code"
 Start-Process powershell -ArgumentList @(
     "-NoExit",
@@ -73,14 +119,16 @@ Start-Process powershell -ArgumentList @(
 
 Write-Host ""
 Write-Host "========================================" -ForegroundColor Green
-Write-Host "  All 3 services launched!              " -ForegroundColor Green
+Write-Host "  All 5 services launched!              " -ForegroundColor Green
 Write-Host "----------------------------------------" -ForegroundColor Green
+Write-Host "  Firecrawl  : http://localhost:3002    " -ForegroundColor White
 Write-Host "  Gatekeeper : http://localhost:8002    " -ForegroundColor White
 Write-Host "  AI Service : http://localhost:8000    " -ForegroundColor White
+Write-Host "  Gateway    : http://localhost:8080    " -ForegroundColor White
 Write-Host "  Frontend   : http://localhost:5173    " -ForegroundColor White
 Write-Host "========================================" -ForegroundColor Green
 Write-Host ""
 Write-Host "Opening browser in 3 seconds..." -ForegroundColor Cyan
 Start-Sleep -Seconds 3
 Start-Process "http://localhost:5173"
-Write-Host "Close the 3 terminal windows to stop." -ForegroundColor Gray
+Write-Host "Close the 4 terminal windows to stop." -ForegroundColor Gray

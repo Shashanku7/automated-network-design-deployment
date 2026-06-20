@@ -233,6 +233,14 @@ public class KafkaService {
   }
 
   @Transactional
+  public void restartWorkflow(UUID projectId) {
+    log.info("restartWorkflow projectId=" + projectId);
+    pipelineManager.clearState(projectId);
+    agentTaskRepository.delete("projectId", projectId);
+    pendingApprovals.remove(projectId);
+  }
+
+  @Transactional
   public void resumeWorkflow(UUID projectId) {
     log.info("resumeWorkflow projectId=" + projectId);
     var state = pipelineManager.getOrCreateState(projectId);

@@ -13,11 +13,11 @@ export function renderMd(text) {
     try {
       const html = katex.renderToString(expr.trim(), {
         displayMode: true,
-        throwOnError: false,
+        throwOnError: true,
       });
       mathPlaceholders.push(html);
     } catch {
-      mathPlaceholders.push(`<span class="katex-error">$$${expr}$$</span>`);
+      mathPlaceholders.push(`$$${expr}$$`);
     }
     return `%%MATH_BLOCK_${mathPlaceholders.length - 1}%%`;
   });
@@ -26,11 +26,11 @@ export function renderMd(text) {
     try {
       const html = katex.renderToString(expr.trim(), {
         displayMode: false,
-        throwOnError: false,
+        throwOnError: true,
       });
       mathPlaceholders.push(html);
     } catch {
-      mathPlaceholders.push(`<span class="katex-error">$${expr}$</span>`);
+      mathPlaceholders.push(`$${expr}$`);
     }
     return `%%MATH_BLOCK_${mathPlaceholders.length - 1}%%`;
   });

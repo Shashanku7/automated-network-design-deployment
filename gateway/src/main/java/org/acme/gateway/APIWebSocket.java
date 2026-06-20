@@ -122,13 +122,18 @@ public class APIWebSocket {
       // Not JSON or no approved field — treat as regular prompt
     }
 
-    // Handle resume — continue from current phase, no new user message
+    // Handle resume and restart
     try {
       var tree = objectMapper.readTree(message);
       if (tree.has("resume") && tree.get("resume").asBoolean()) {
         log.info("WS resume projectId=" + projectId);
         kafkaService.resumeWorkflow(uuid);
         return;
+      }
+      if (tree.has("restart") && tree.get("restart").asBoolean()) {
+        log.info("WS restart projectId=" + projectId);
+        kafkaService.restartWorkflow(uuid);
+        // We will fall through to send the prompt to Kafka as a fresh task
       }
     } catch (Exception e) {
       // fall through

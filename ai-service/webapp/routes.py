@@ -11,7 +11,7 @@ from llama_index.core.memory import ChatMemoryBuffer
 
 from webapp.config import llm, chat_store, OLLAMA_MODEL, IMAGE_SERVICE_URL, CHAT_TOKEN_LIMIT
 from webapp.agents import PHASES
-from webapp.utils import _strip_ansi, _parse_chunks, _generate_diagram_via_service, _save
+from webapp.utils import _strip_ansi, _parse_chunks, _generate_diagram_via_service, _save, generate_topology_code
 from webapp.kafka_handler import KafkaManager
 
 router = APIRouter()
@@ -154,7 +154,12 @@ async def process_kafka_task(task_data: dict):
             f"task_id={task_id}",
             flush=True,
         )
-    await _run_phase_kafka(kafka_mgr, project_id, task_id, phase_idx, phase_name, agent, input_ctx, history, model_name=OLLAMA_MODEL)
+        
+    if phase_idx == 4:
+        await _run_phase4_kafka(kafka_mgr, project_id, task_id, phase_idx, phase_name, agent, input_ctx, history, model_name=OLLAMA_MODEL)
+    else:
+        await _run_phase_kafka(kafka_mgr, project_id, task_id, phase_idx, phase_name, agent, input_ctx, history, model_name=OLLAMA_MODEL)
+
 
 
 # ── WebSocket streaming helpers ──────────────────
@@ -246,6 +251,173 @@ async def _run_phase(ws, phase_num, phase_name, agent, initial_msg, model_name="
                 "output": f"Phase {phase_num} revised with feedback",
             })
             await _send(ws, type="phase_revision", phase=phase_num, feedback=msg)
+
+
+
+def build_react_flow_code(nodes_json: str, edges_json: str) -> str:
+    """
+    Combines the nodes and edges JSON lists into a standard, fully functional
+    React Flow application wrapper using custom SVG icon nodes.
+    """
+    return f"""import React from 'react';
+import ReactFlow, {{ Background, Controls, MiniMap }} from 'reactflow';
+import 'reactflow/dist/style.css';
+
+const nodes = {nodes_json};
+const edges = {edges_json};
+
+export default function App() {{
+  return (
+    <div style={{{{width:'100vw',height:'100vh',background:'#fdfdfd'}}}}>
+      <ReactFlow
+        nodes={{nodes}}
+        edges={{edges}}
+        fitView
+        defaultEdgeOptions={{{{ type: 'smoothstep' }}}}
+      >
+        <Background color='#e8e8e8' gap={{20}} />
+        <Controls />
+        <MiniMap nodeStrokeColor='#00A3AD' nodeColor='#e1e4e8' />
+      </ReactFlow>
+    </div>
+  );
+}}"""
+
+async def _run_phase4_kafka(kafka_mgr, project_id, task_id, phase_num, phase_name, agent, initial_msg, history=None, model_name=""):
+    import json, re
+    from llama_index.core.llms import ChatMessage, MessageRole
+    from llama_index.core.agent.workflow import AgentInput, AgentOutput, ToolCall, ToolCallResult
+    
+    print(f"\n=== START PHASE 4 (GATEKEEPER): {phase_name} ===", flush=True)
+    wf = AgentWorkflow(agents=[agent], root_agent=agent.name, timeout=400.0)
+    
+    key = f"{project_id}:phase{phase_num}"
+    memory = ChatMemoryBuffer.from_defaults(
+        token_limit=CHAT_TOKEN_LIMIT,
+        chat_store=chat_store,
+        chat_store_key=key,
+    )
+    chat_history = memory.get()
+    
+    MAX_CORRECTION_ATTEMPTS = 5
+    msg = initial_msg
+    react_code = None
+    
+    # Send Token to start
+    await kafka_mgr.send_event({
+        "project_id": project_id, "task_id": task_id, "agent_name": agent.name,
+        "event_type": "TOKEN", "data": f"Starting phase {phase_num}: {phase_name}", "is_final": False
+    })
+    
+    for attempt in range(1, MAX_CORRECTION_ATTEMPTS + 1):
+        print(f"=== [Phase 4] Generation Attempt {attempt}/{MAX_CORRECTION_ATTEMPTS} ===", flush=True)
+        response_text = ""
+        try:
+            handler = wf.run(user_msg=msg) if not chat_history else wf.run(
+                chat_history=chat_history + [ChatMessage(role=MessageRole.USER, content=msg)])
+            async for ev in handler.stream_events():
+                base_event = {"project_id": project_id, "task_id": task_id, "agent_name": agent.name, "is_final": False}
+                if isinstance(ev, ToolCall):
+                    await kafka_mgr.send_event({**base_event, "event_type": "TOOL_CALL", "data": ev.tool_name, "payload": ev.tool_kwargs})
+                elif isinstance(ev, ToolCallResult):
+                    await kafka_mgr.send_event({**base_event, "event_type": "TOOL_RESULT", "payload": {"output": str(ev.tool_output)}})
+                elif isinstance(ev, AgentOutput):
+                    if not ev.tool_calls:
+                        await kafka_mgr.send_event({**base_event, "event_type": "TOKEN", "data": "Building node coordinates and establishing physical connection paths..."})
+            resp = await handler
+            response_text = str(resp)
+        except Exception as e:
+            print(f"Agent run failed: {e}")
+            await kafka_mgr.send_event({
+                "project_id": project_id, "task_id": task_id, "agent_name": agent.name,
+                "event_type": "ERROR", "data": str(e), "is_final": True
+            })
+            return None
+
+        # Truncation Check
+        trimmed_text = response_text.strip()
+        cleaned_trimmed = re.sub(r"```(?:json)?\s*", "", trimmed_text).replace("```", "").strip()
+        if cleaned_trimmed.startswith("{") and not cleaned_trimmed.endswith("}"):
+            error_msg = "Your JSON response was truncated/cut off. Please output the complete JSON object, and shorten descriptions if needed."
+            msg = error_msg
+            chat_history.append(ChatMessage(role=MessageRole.USER, content=msg))
+            chat_history.append(ChatMessage(role=MessageRole.ASSISTANT, content=response_text))
+            continue
+
+        # Persist history
+        chat_history.append(ChatMessage(role=MessageRole.USER, content=msg))
+        chat_history.append(ChatMessage(role=MessageRole.ASSISTANT, content=response_text))
+
+        # Gatekeeper validation
+        try:
+            print("Sending output to Gatekeeper for 4-layer validation...")
+            # We don't have topology and devices string vars in the local scope of this kafka function easily accessible,
+            # so we'll just pass empty strings since the gatekeeper primarily needs llm_output
+            gate_result = await generate_topology_code(cleaned_trimmed, "", "")
+        except Exception as gate_err:
+            print(f"Gatekeeper unreachable: {gate_err}")
+            gate_result = {"status": "error", "message": f"Gatekeeper unreachable: {gate_err}. Please ensure Topology Gatekeeper is running."}
+
+        if gate_result.get("status") == "ok":
+            try:
+                parsed = json.loads(gate_result.get("code", cleaned_trimmed))
+                nodes_json = json.dumps(parsed.get("nodes", []), indent=2)
+                edges_json = json.dumps(parsed.get("edges", []), indent=2)
+                react_code = build_react_flow_code(nodes_json, edges_json)
+                print("JSON successfully wrapped in React Flow template.")
+            except Exception as parse_err:
+                print(f"Failed to format React template: {parse_err}")
+                react_code = gate_result.get("code", cleaned_trimmed)
+            
+            # Now call image service to get the final preview URL for frontend diagram_ready event
+            try:
+                img_result = await _generate_diagram_via_service(react_code)
+                url = f"{IMAGE_SERVICE_URL}{img_result['url']}"
+                filename = img_result.get("filename", "")
+            except Exception as e:
+                print(f"Image generation failed: {e}")
+                url = None
+                filename = ""
+            
+            await kafka_mgr.send_event({
+                "project_id": project_id, "task_id": task_id, "agent_name": agent.name,
+                "event_type": "DIAGRAM_READY", "data": react_code,
+                "payload": {
+                    "url": url,
+                    "filename": filename,
+                    "download_url": f"{url}/download" if url else None
+                },
+                "is_final": False
+            })
+
+            await kafka_mgr.send_event({
+                "project_id": project_id, "task_id": task_id, "agent_name": agent.name,
+                "event_type": "FINAL_ANSWER", "data": react_code, "is_final": True
+            })
+            
+            # Save final memory
+            memory.put(ChatMessage(role=MessageRole.USER, content=msg))
+            memory.put(ChatMessage(role=MessageRole.ASSISTANT, content=react_code))
+            return react_code
+        else:
+            gate_err = gate_result.get("message", "Unknown validation error")
+            print(f"Validation failed (Attempt {attempt}): {gate_err}")
+            
+            if attempt < MAX_CORRECTION_ATTEMPTS:
+                error_msg = f"Your JSON failed validation: {gate_err}. Please fix these errors and output only the corrected JSON."
+                msg = error_msg
+                await kafka_mgr.send_event({
+                    "project_id": project_id, "task_id": task_id, "agent_name": agent.name,
+                    "event_type": "TOKEN", "data": f"⚠️ JSON Validation Failed. Gatekeeper rejected output. Retrying ({attempt}/{MAX_CORRECTION_ATTEMPTS})...", "is_final": False
+                })
+            else:
+                error_msg = "Maximum correction attempts reached. Gatekeeper validation failed."
+                print(error_msg)
+                await kafka_mgr.send_event({
+                    "project_id": project_id, "task_id": task_id, "agent_name": agent.name,
+                    "event_type": "ERROR", "data": error_msg, "is_final": True
+                })
+                return None
 
 
 async def _run_phase_kafka(kafka_mgr, project_id, task_id, phase_num, phase_name, agent, initial_msg, history=None, model_name=""):

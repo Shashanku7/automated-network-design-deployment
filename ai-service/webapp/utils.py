@@ -5,7 +5,7 @@ import json
 from datetime import datetime
 from pathlib import Path
 
-from webapp.config import OUTPUT_DIR, IMAGE_SERVICE_URL, OLLAMA_MODEL
+from webapp.config import OUTPUT_DIR, IMAGE_SERVICE_URL, TOPOLOGY_SERVICE_URL, OLLAMA_MODEL
 
 
 def _strip_ansi(t):
@@ -78,3 +78,9 @@ def _save(prompt, rephrased, topology, devices, diagram_code="", diagram_url=Non
         content += f"\n---\n\n## Phase 5: CLI Configuration\n\n{_strip_ansi(cli_config)}\n"
     fp.write_text(content, encoding="utf-8")
     return fp
+async def generate_topology_code(llm_output: str, topology_text: str = "", bom_text: str = "") -> dict:
+    import httpx
+    async with httpx.AsyncClient(timeout=30.0) as client:
+        resp = await client.post(f"{TOPOLOGY_SERVICE_URL}/api/validate-topology", json={"llm_output": llm_output, "topology_text": topology_text, "bom_text": bom_text})
+        resp.raise_for_status()
+        return resp.json()

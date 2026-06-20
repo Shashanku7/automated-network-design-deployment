@@ -159,6 +159,11 @@ function projectReducer(state, action) {
       return {
         ...state,
         workflowStatus: "running",
+      };
+
+    case "WORKFLOW_CLEAR":
+      return {
+        ...state,
         currentPhase: 0,
         workflowEvents: [],
         rephrasedPrompt: null,
@@ -170,20 +175,47 @@ function projectReducer(state, action) {
         reactCode: null,
       };
 
-    case "WORKFLOW_EVENT":
+    case "WORKFLOW_RESUME":
       return {
         ...state,
-        workflowEvents: [
-          ...state.workflowEvents,
-          {
-            ...action.payload,
-            timestamp: Date.now(),
-            _id:
-              action.payload._id ||
-              `${action.payload.type}|${action.payload.phase || ""}|${action.payload.content || ""}|${action.payload.tool_name || ""}`,
-          },
-        ],
+        workflowStatus: "running",
       };
+
+    case "WORKFLOW_EVENT": {
+      const isRestartPhase1 =
+        action.payload.type === "phase_start" && action.payload.phase === 1;
+      return {
+        ...state,
+        workflowEvents: isRestartPhase1
+          ? [
+              {
+                ...action.payload,
+                timestamp: Date.now(),
+                _id:
+                  action.payload._id ||
+                  `${action.payload.type}|${action.payload.phase || ""}|${
+                    action.payload.content || ""
+                  }|${action.payload.tool_name || ""}`,
+              },
+            ]
+          : [
+              ...state.workflowEvents,
+              {
+                ...action.payload,
+                timestamp: Date.now(),
+                _id:
+                  action.payload._id ||
+                  `${action.payload.type}|${action.payload.phase || ""}|${
+                    action.payload.content || ""
+                  }|${action.payload.tool_name || ""}`,
+              },
+            ],
+        currentPhaseName:
+          action.payload.type === "phase_start"
+            ? action.payload.name || state.currentPhaseName
+            : state.currentPhaseName,
+      };
+    }
 
     case "SET_WORKFLOW_EVENTS":
       return { ...state, workflowEvents: action.payload };

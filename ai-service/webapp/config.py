@@ -8,6 +8,7 @@ from config import (
     OLLAMA_MODEL,
     OLLAMA_BASE_URL,
     IMAGE_SERVICE_URL,
+    TOPOLOGY_SERVICE_URL,
     POSTGRES_URI,
     CHAT_TOKEN_LIMIT,
     create_qdrant_client,

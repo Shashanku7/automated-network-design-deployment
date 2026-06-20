@@ -55,7 +55,7 @@ Receives the rephrased prompt and produces a full network topology including:
 ### Agent 3 — `device_selector` *(line 134)*
 Has access to the `network_device_lookup` RAG tool. Analyses the topology per building/floor, calls the datasheet retriever, and produces a Bill of Materials (BOM) table with model/SKU, specs, quantities, and justifications.
 
-### Agent 4 — `d2_diagram_generator` *(line 153)*
+### Agent 4 — `react_topology_architect` *(line 153)*
 Generates valid [D2](https://d2lang.com) diagram code from the approved topology and BOM. Follows a strict color scheme, container hierarchy (core → buildings → floors → access switches → end devices), and connection labeling. Produces the actual D2 source code that is sent directly to Kroki.io for rendering — replaces the previously hardcoded `_build_d2_from_topology` logic in the Image Service.
 
 ### Phase registry — `PHASES` *(line 190)*
@@ -95,7 +95,7 @@ The core endpoint that orchestrates the full multi-agent workflow:
 3. **Run Phase 1** — `prompt_rephraser` → rephrased prompt.
 4. **Run Phase 2** — `topology_designer` (receives rephrased prompt) → topology.
 5. **Run Phase 3** — `device_selector` (receives original prompt + approved topology) → BOM.
-6. **Run Phase 4** — `d2_diagram_generator` (receives topology + BOM) → D2 diagram code.
+6. **Run Phase 4** — `react_topology_architect` (receives topology + BOM) → React network map code.
 7. **Phase 5** — Sends D2 code to Image Service for Kroki.io rendering.
 8. **Save** the run report via `_save()` (includes D2 source code in the report).
 9. Send `workflow_complete` event with the report path and diagram URL.
@@ -134,7 +134,7 @@ Phase 1: prompt_rephraser ─────────────────►
     │  context for Phase 3 ◄───────────────────────┘        │
     │                                                       │
     ▼                                                       ▼
-    └─────────────────────►  Phase 4: d2_diagram_generator ◄─┘
+    └─────────────────────►  Phase 4: react_topology_architect ◄─┘
                                         │
                                         ▼
                                   D2 diagram code

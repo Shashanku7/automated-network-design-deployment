@@ -171,8 +171,10 @@ public class APIResource {
         .toList();
     int nextPhase = completed.isEmpty() ? 1
         : Math.min(completed.getLast().getPhase() + 1, 6);
+    var project = projectRepository.findById(projectId);
+    String status = (project != null && "complete".equals(project.getWorkflowStatus())) ? "complete" : "running";
     return Response.ok(new WorkflowState(projectId,
-        nextPhase > 5 ? "complete" : "running", nextPhase, phases)).build();
+        status, nextPhase, phases)).build();
   }
 
   // ── Deploy ─────────────────────────────────────────

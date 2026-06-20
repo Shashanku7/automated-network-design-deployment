@@ -21,6 +21,7 @@ import {
   getConversationMessages,
   getWorkflowState,
   getPersistentChatHistory,
+  buildPromptFromRequirements,
 } from "../services/api";
 import { renderMd } from "../utils/renderMd";
 
@@ -102,6 +103,15 @@ export default function ProposedDesign() {
         const key = `chat|${msg.role}|${msg.content}`;
         if (seen.has(key)) return false;
         seen.add(key);
+        // Hide raw React code from being rendered as a chat bubble
+        if (
+          msg.role === "assistant" &&
+          msg.content &&
+          msg.content.includes("import React") &&
+          msg.content.includes("reactflow")
+        ) {
+          return false;
+        }
         return true;
       })
       .map((msg) => ({
@@ -110,7 +120,19 @@ export default function ProposedDesign() {
         timestamp: msg.timestamp || null,
       }));
 
-    return [...events, ...chats].sort((a, b) => {
+    const allItems = [...events, ...chats];
+    
+    // Inject the initial prompt
+    if (state.requirements && !chats.some(c => c.content?.includes("Initial System Request:") || c.content?.includes("UserReq:"))) {
+        const rawPrompt = buildPromptFromRequirements(state.requirements, state.solutionType);
+        allItems.unshift({
+            type: "user_echo",
+            content: `**Initial System Request:**\n\n${rawPrompt}`,
+            timestamp: new Date(0).toISOString() // Ensure it sorts to the top
+        });
+    }
+
+    return allItems.sort((a, b) => {
       const ta = a.timestamp ? new Date(a.timestamp).getTime() : 0;
       const tb = b.timestamp ? new Date(b.timestamp).getTime() : 0;
       return ta - tb;
@@ -328,8 +350,9 @@ export default function ProposedDesign() {
           case "diagram_ready":
             dispatch({
               type: "SET_DIAGRAM",
-              payload: { url: ev.url, downloadUrl: ev.download_url },
+              payload: { url: ev.payload?.url || ev.url, downloadUrl: ev.payload?.download_url || ev.download_url },
             });
+            if (ev.data) dispatch({ type: "SET_REACT_CODE", payload: ev.data });
             break;
         }
       };
@@ -391,6 +414,7 @@ export default function ProposedDesign() {
           state.requirements,
           state.solutionType,
           handleEvent,
+          isFresh,
         )
           .then(handleComplete)
           .catch(handleError);
@@ -418,14 +442,14 @@ export default function ProposedDesign() {
     hasStarted.current = false;
     retryCountRef.current = 0;
     setStatus("running");
-    dispatch({ type: "WORKFLOW_START" });
+    dispatch({ type: "WORKFLOW_RESUME" });
   }
 
   function handleApprove() {
     sendApproval(wsRef.current, pendingApprovalRef.current || {});
     dispatch({
       type: "WORKFLOW_EVENT",
-      payload: { type: "user_action", content: "✅ Approved" },
+      payload: { type: "phase_approved", phase: currentPhase },
     });
     setStatus("running");
   }
@@ -439,7 +463,7 @@ export default function ProposedDesign() {
     );
     dispatch({
       type: "WORKFLOW_EVENT",
-      payload: { type: "user_action", content: feedbackText.trim() },
+      payload: { type: "user_action", content: `Requested changes: ${feedbackText.trim()}` },
     });
     setFeedbackText("");
     setShowFeedback(false);
@@ -748,14 +772,8 @@ nded-lg hover:brightness-110 transition-all text-sm"
                         ? "bg-primary/10 text-on-surface rounded-tr-none"
                         : "bg-surface-container-low border border-outline-variant/10 text-on-surface rounded-tl-none md-content"
                     }`}
-                    dangerouslySetInnerHTML={
-                      item.role !== "user"
-                        ? { __html: renderMd(item.content) }
-                        : undefined
-                    }
-                  >
-                    {item.role === "user" ? item.content : undefined}
-                  </div>
+                    dangerouslySetInnerHTML={{ __html: renderMd(item.content) }}
+                  />
                 </div>
               );
             }
@@ -836,6 +854,7 @@ nded-lg hover:brightness-110 transition-all text-sm"
           )}
           {status === "running" && (
             <div className="flex items-center gap-3 text-on-surface-variant text-sm py-2">
+              <span className="material-symbols-outlined text-primary text-sm">psychology</span>
               <div className="flex gap-1">
                 <span
                   className="w-2 h-2 rounded-full bg-primary animate-bounce"
@@ -898,9 +917,10 @@ function EventCard({ event }) {
     case "user_echo":
       return (
         <div className="flex justify-end">
-          <div className="bg-surface-container-high rounded-xl rounded-tr-none px-4 py-3 text-sm max-w-[80%]">
-            {ev.content}
-          </div>
+          <div 
+            className="bg-surface-container-high rounded-xl rounded-tr-none px-4 py-3 text-sm max-w-[80%] md-content"
+            dangerouslySetInnerHTML={{ __html: renderMd(ev.content) }}
+          />
         </div>
       );
 
@@ -1064,6 +1084,7 @@ function EventCard({ event }) {
       );
 
     case "agent_response":
+      if (ev.phase === 4) return null; // Hide React code streaming, we only want the Interactive Topology CTA
       return (
         <div className="flex justify-start">
           <div
@@ -1220,33 +1241,6 @@ function WorkflowCompleteCard() {
           </span>
           Workflow Complete
         </div>
-      </div>
-
-      {/* Interactive Topology CTA */}
-      <div className="mx-5 mb-5 bg-surface-container-low border border-tertiary/20 rounded-xl p-5 flex items-center justify-between gap-4">
-        <div className="flex items-center gap-3">
-          <div className="w-11 h-11 rounded-full bg-tertiary/15 flex items-center justify-center text-tertiary shrink-0">
-            <span className="material-symbols-outlined text-xl">schema</span>
-          </div>
-          <div>
-            <h3 className="text-sm font-bold text-on-surface">
-              Interactive Topology Ready
-            </h3>
-            <p className="text-xs text-on-surface-variant mt-0.5">
-              Your React-based network map has been successfully generated and
-              validated.
-            </p>
-          </div>
-        </div>
-        <button
-          onClick={() => navigate(`/project/${projectId}/interactive-topology`)}
-          className="shrink-0 px-5 py-2.5 bg-tertiary text-on-tertiary font-bold rounded-lg hover:brightness-110 transition-all flex items-center gap-2 text-sm shadow-sm"
-        >
-          View Topology
-          <span className="material-symbols-outlined text-base">
-            open_in_new
-          </span>
-        </button>
       </div>
     </div>
   );

@@ -53,6 +53,7 @@ ai-service/output/
 
 # Temp dev files and archives
 temp/
+firecrawl/
 *.zip
 .gemini/
 
@@ -65,3 +66,6 @@ test_gatekeeper.py
 
 # Local documentation & artifacts
 docs/
+
+
+start_all.ps1
