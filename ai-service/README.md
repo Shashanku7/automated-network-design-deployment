@@ -26,17 +26,16 @@ Gateway/Kafka ──→ webapp/app.py ──→ 5 Agents (LlamaIndex)
 | # | Agent | Tool Access | Output |
 |---|-------|-------------|--------|
 | 1 | Prompt Rephraser | — | Structured prompt from user input |
-| 2 | Topology Designer | — | Network topology with VSF/VSX/LAG/QoS |
-| 3 | Device Selector | `network_device_lookup` (Qdrant RAG) | BOM with SKU, specs, quantities |
+| 2 | Topology Designer | `firecrawl_search_tool` | Network topology with VSF/VSX/LAG/QoS and VLAN |
+| 3 | Device Selector | `catalog_tool`, `product_search_tool` (Qdrant RAG), `firecrawl_search_tool`, `broad_search_tool` | BOM with SKU, specs, quantities |
 | 4 | React Topology Architect | — | React Flow nodes+edges JSON for interactive topology |
-| 5 | CLI Config Generator | — | Device CLI configuration commands |
+| 5 | CLI Config Generator | `config_guide_tool` | Device CLI configuration commands |
 
 ## Setup
 
 ```bash
 cd ai-service
-uv venv
-uv pip install
+uv sync
 
 # Configure environment
 cp .env.example .env
