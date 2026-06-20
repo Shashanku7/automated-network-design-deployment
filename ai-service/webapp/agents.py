@@ -55,6 +55,9 @@ agent2 = FunctionAgent(
         "4. Link design (speeds, LAG bundles, redundancy). Explicitly state if high-density student areas require Multi-Gigabit (Smart Rate) access links for Wi-Fi 6/6E APs.\n"
         "5. VLAN plan — keep every department isolated using VLAN, create VLANs per building or per department, "
         "   assign subnets sized to actual user counts (students, staffs, admins, VOIP phones, IPTV, printers), include QoS markings\n"
+        "5. VLAN Table"
+        "| VLAN | Department Name | Purpose | Subnet | Mask | Gateway |\n"
+        "   assign subnets sized to actual user counts (students, staffs, admins, VOIP phones, IPTV, printers), include QoS markings\n"
         "6. Redundancy & failover — If using VSX at the Core/Distribution layer, utilize VSX Active-Gateway for default gateways. Do NOT combine VRRP with VSX Active-Gateway on the same segment.\n"
         "Do NOT include a Bill of Materials."
     ), llm=llm, tools=[firecrawl_search_tool],
@@ -89,7 +92,7 @@ agent3 = FunctionAgent(
         "  - Stacking/redundancy capabilities (VSF, VSX)\n"
         "  - Cost effectiveness\n\n"
         "STEP 5: Present a Bill of Materials table with columns:\n"
-        "  Building/Floor | Role | Model & SKU | Key Specs | Qty | Justification\n"
+        "| Building Name | Floor no. | Department Name | Role | Model & SKU | Key Specs | Qty | Justification |\n"
         "  Group rows by building.\n\n"
         "RULES:\n"
         "- You MUST call the search tools BEFORE recommending any device.\n"
