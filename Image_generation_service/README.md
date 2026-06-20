@@ -1,6 +1,8 @@
 # Image Generation Service
 
-Standalone microservice for generating network topology diagram images (PNG) from the AI-generated topology designs using **D2** ([d2lang.com](https://d2lang.com)).
+Standalone microservice for generating network topology diagrams (SVG) from AI-generated designs using **D2** ([d2lang.com](https://d2lang.com)) rendered via Kroki.io.
+
+**Port:** 8001
 
 ## Why D2?
 
@@ -13,12 +15,12 @@ Standalone microservice for generating network topology diagram images (PNG) fro
 
 ```
 ai-service (port 8000)
-    └── After Phase 3 (BOM) completes
-         └── POST /api/generate-diagram ──→ Image_generation_service (port 8001)
-                                              ├── Parses topology text (regex)
-                                              ├── Generates D2 diagram code
-                                              ├── Renders PNG via kroki.io
-                                              └── Saves to generated_diagrams/
+    └── After Phase 4 (D2 code generated)
+         └── POST /api/generate-diagram ──→ Image Generation Service (port 8001)
+                                               ├── Parses topology text (regex)
+                                               ├── Generates D2 diagram code
+                                               ├── Renders SVG via Kroki.io
+                                               └── Saves to generated_diagrams/
 ```
 
 ## Setup
@@ -28,30 +30,31 @@ cd Image_generation_service
 pip install -r requirements.txt
 ```
 
+## Environment Variables
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `KROKI_URL` | `http://localhost:8003` | Kroki.io rendering endpoint |
+
 ## Running
 
 ```bash
-# Start the service (default port 8001)
-python app.py
-
-# Or with uvicorn directly
+python app.py                        # port 8001
 uvicorn app:app --host 0.0.0.0 --port 8001 --reload
-
-# Or use the convenience script (shares ai-service venv)
-./run.sh
+./run.sh                             # convenience script (shares ai-service venv)
 ```
 
-## API Endpoints
+## API
 
 | Method | Endpoint | Description |
 |--------|----------|-------------|
-| `POST` | `/api/generate-diagram` | Generate a PNG from topology text |
-| `GET` | `/api/diagrams/{filename}` | View a generated diagram |
-| `GET` | `/api/diagrams/{filename}/download` | Download a generated diagram |
+| `POST` | `/api/generate-diagram` | Generate SVG from topology text + BOM |
+| `GET` | `/api/diagrams/{filename}` | View generated diagram |
+| `GET` | `/api/diagrams/{filename}/download` | Download diagram file |
 | `GET` | `/api/diagrams` | List all generated diagrams |
 | `GET` | `/health` | Health check |
 
-## Example Request
+## Example
 
 ```bash
 curl -X POST http://localhost:8001/api/generate-diagram \
@@ -64,4 +67,8 @@ curl -X POST http://localhost:8001/api/generate-diagram \
 
 ## Output
 
-Generated PNGs are saved to `generated_diagrams/` folder with timestamps.
+Generated SVGs saved to `generated_diagrams/` with timestamps.
+
+## Dependencies
+
+fastapi, uvicorn, httpx, python-dotenv, Pillow. See `requirements.txt`.

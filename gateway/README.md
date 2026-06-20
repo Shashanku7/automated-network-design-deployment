@@ -1,54 +1,72 @@
-# gateway
+# Gateway — API Gateway & Orchestrator
 
-This project uses Quarkus, the Supersonic Subatomic Java Framework.
+Java/Quarkus service that bridges frontend WebSocket connections to the AI service via Kafka. Manages conversations, agent tasks, and event streaming.
 
-If you want to learn more about Quarkus, please visit its website: <https://quarkus.io/>.
+**Port:** 8080
 
-## Running the application in dev mode
+## Architecture
 
-You can run your application in dev mode that enables live coding using:
+```
+Frontend (WS) ←──→ Gateway :8080 ←──Kafka──→ AI Service :8000
+                       │
+                       └── PostgreSQL :5433
+```
 
-```shell script
+## Responsibilities
+
+- **WebSocket server** — Accepts frontend connections, routes messages to Kafka
+- **Kafka producer** — Sends `agent-tasks` to AI Service
+- **Kafka consumer** — Receives `agent-events` from AI Service, forwards to frontend
+- **REST proxy** — Proxies `/api/chat` to AI Service (`http://localhost:8000`)
+- **Persistence** — Stores conversations, messages, tasks, events in PostgreSQL
+
+## Kafka Topics
+
+| Topic | Direction | Content |
+|-------|-----------|---------|
+| `agent-tasks` | Gateway → AI | Task requests (project_id, phase, input) |
+| `agent-events` | AI → Gateway | Streaming events (token, tool_call, result, final) |
+
+## PostgreSQL Entities
+
+| Table | Purpose |
+|-------|---------|
+| `conversations` | Chat threads per project |
+| `messages` | Individual chat messages (role, content) |
+| `agent_tasks` | Orchestration task records |
+| `agent_events` | Persisted Kafka events for replay/debug |
+| `tool_calls` | Tool execution audit log |
+
+Schema defined in [`../db.sql`](../db.sql). Hibernate auto-creates tables on startup.
+
+## Setup
+
+```bash
+# Prerequisites
+# - Java 25+
+# - PostgreSQL on localhost:5433 (database: network_design)
+# - Kafka on localhost:9092
+
+cd gateway
 ./mvnw quarkus:dev
 ```
 
-> **_NOTE:_**  Quarkus now ships with a Dev UI, which is available in dev mode only at <http://localhost:8080/q/dev/>.
+## Configuration
 
-## Packaging and running the application
+`src/main/resources/application.properties`:
 
-The application can be packaged using:
+| Property | Default | Description |
+|----------|---------|-------------|
+| `kafka.bootstrap.servers` | `localhost:9092` | Kafka broker |
+| `quarkus.datasource.jdbc.url` | `jdbc:postgresql://localhost:5433/network_design` | PostgreSQL |
+| `quarkus.datasource.username` | `postgres` | DB user |
+| `quarkus.datasource.password` | `root` | DB password |
+| `rest-client.ai-service.url` | `http://localhost:8000` | AI Service REST endpoint |
 
-```shell script
-./mvnw package
+## Building
+
+```bash
+./mvnw package                          # quarkus-run.jar
+./mvnw package -Dquarkus.package.jar.type=uber-jar  # fat JAR
+./mvnw package -Dnative                 # native binary (needs GraalVM)
 ```
-
-It produces the `quarkus-run.jar` file in the `target/quarkus-app/` directory.
-Be aware that it’s not an _über-jar_ as the dependencies are copied into the `target/quarkus-app/lib/` directory.
-
-The application is now runnable using `java -jar target/quarkus-app/quarkus-run.jar`.
-
-If you want to build an _über-jar_, execute the following command:
-
-```shell script
-./mvnw package -Dquarkus.package.jar.type=uber-jar
-```
-
-The application, packaged as an _über-jar_, is now runnable using `java -jar target/*-runner.jar`.
-
-## Creating a native executable
-
-You can create a native executable using:
-
-```shell script
-./mvnw package -Dnative
-```
-
-Or, if you don't have GraalVM installed, you can run the native executable build in a container using:
-
-```shell script
-./mvnw package -Dnative -Dquarkus.native.container-build=true
-```
-
-You can then execute your native executable with: `./target/code-with-quarkus-1.0.0-SNAPSHOT-runner`
-
-If you want to learn more about building native executables, please consult <https://quarkus.io/guides/maven-tooling>.
