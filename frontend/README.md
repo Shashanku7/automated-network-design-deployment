@@ -16,15 +16,16 @@ React 19 single-page application for the NetOrch network design pipeline. Guides
 | Axios | — |
 | Marked + KaTeX | — |
 
-## 7-Step Pipeline
+## Pipeline
 
 1. **Dashboard** — Project overview and metrics
 2. **Solution Type** — Network architecture selection (Campus, Branch, DC)
 3. **Requirements** — Natural language constraint input
 4. **Proposed Design** — AI-generated high-level architecture
-5. **Bill of Materials** — Hardware list with pricing
-6. **Detailed Topology** — Interactive ReactFlow network diagram
-7. **Deployment** — Config generation and deploy status
+5. **Bill of Materials** — AI-generated equipment list (Phase 3 markdown output)
+6. **Detailed Topology** — Tabbed technical view (logical, cabling, ports)
+7. **Interactive Topology** — ReactFlow diagram rendered via Sandpack
+8. **Deployment** — Config generation and deploy status
 
 ## Setup
 
@@ -75,9 +76,9 @@ code/
 | File | Purpose |
 |------|---------|
 | `src/App.jsx` | Route definitions |
-| `src/pages/DetailedTopology.jsx` | Interactive ReactFlow diagram |
+| `src/pages/DetailedTopology.jsx` | Tabbed technical topology view |
+| `src/pages/InteractiveTopology.jsx` | Interactive ReactFlow diagram (Sandpack) |
 | `src/services/api.js` | WebSocket handler and API client |
-| `src/components/InteractiveTopology.jsx` | ReactFlow canvas |
 | `vite.config.js` | Dev proxy, build config |
 
 For detailed UI/UX docs, see [`DOCUMENTATION.md`](./DOCUMENTATION.md).

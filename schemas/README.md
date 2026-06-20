@@ -18,9 +18,15 @@ Defines message types exchanged over the frontend-to-gateway WebSocket:
 |-------------|-----------|-------------|
 | `USER_INPUT` | Frontend → Gateway | User prompt / approval decision |
 | `AGENT_EVENT` | Gateway → Frontend | Streaming agent progress |
+| `TOKEN` | Gateway → Frontend | Streaming LLM token |
 | `TOOL_CALL` | Gateway → Frontend | Tool invocation notification |
 | `TOOL_RESULT` | Gateway → Frontend | Tool execution result |
+| `FINAL_ANSWER` | Gateway → Frontend | Agent completed its phase with final output |
 | `APPROVAL_REQ` | Gateway → Frontend | Human-in-the-loop approval request |
+| `PHASE_APPROVED` | Gateway → Frontend | Phase was approved, pipeline advances |
+| `PHASE_REVISION` | Gateway → Frontend | Phase rejected, agent re-runs with feedback |
+| `DIAGRAM_READY` | Gateway → Frontend | Topology diagram rendered and available |
+| `DIAGRAM_ERROR` | Gateway → Frontend | Diagram rendering failed |
 | `WORKFLOW_COMPLETE` | Gateway → Frontend | Final result and diagram URL |
 | `ERROR` | Gateway → Frontend | Error details |
 

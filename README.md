@@ -18,7 +18,7 @@ AI-powered dashboard for designing and deploying enterprise-grade networks via n
 
 | Service | Port | Tech | Description |
 |---------|------|------|-------------|
-| Frontend | 5173 | React 19, Vite 8 | 7-step design pipeline SPA |
+| Frontend | 5173 | React 19, Vite 8 | Design pipeline SPA (8 pages) |
 | AI Service | 8000 | Python 3.14+, FastAPI | Multi-agent LLM orchestrator (5 agents) |
 | Image Gen | 8001 | Python, FastAPI | D2 → SVG topology diagram rendering |
 | Topology Gatekeeper | 8002 | Python, FastAPI | 4-layer JSON validation |

@@ -28,15 +28,16 @@ The UI follows a clean, professional "Enterprise Dashboard" aesthetic.
 - **Component-Based:** Highly modular code using reusable UI components.
 
 ## Application Flow
-The application implements a strict 7-step pipeline to ensure valid network designs:
+The application implements a strict pipeline to ensure valid network designs:
 
 1. **Dashboard:** Project overview and recent activity.
 2. **Solution Type:** Selection of network architecture (e.g., Campus, Branch, Data Center).
 3. **Requirements:** Input of user-specific constraints and scale needs.
-4. **Proposed Design:** Visualization of the generated high-level architecture.
-5. **Bill of Materials (BOM):** Automated list of required hardware and software licenses.
-6. **Detailed Topology:** In-depth technical view of device connections.
-7. **Deployment:** Generation of configuration files and deployment status.
+4. **Proposed Design:** AI-generated high-level architecture with streaming phases.
+5. **Bill of Materials (BOM):** AI-generated equipment list from Phase 3 (markdown output).
+6. **Detailed Topology:** Tabbed technical view (logical topology, cabling, switch-port mapping).
+7. **Interactive Topology:** ReactFlow network diagram rendered via Sandpack.
+8. **Deployment:** Generation of configuration files and deployment status.
 
 ## How to Run & Build
 
