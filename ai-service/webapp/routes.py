@@ -22,6 +22,7 @@ class ChatRequest(BaseModel):
     history: list = []
     conversation_id: str = "default"
     project_id: str = "default"
+    screen_context: str = ""
 
 
 
@@ -34,11 +35,14 @@ async def chat_endpoint(req: ChatRequest):
         chat_store=chat_store,
         chat_store_key=key,
     )
-    system_msg = ChatMessage(role=MessageRole.SYSTEM, content=(
+    context = (
         "You are a Network Design AI Assistant. Answer questions about network design, "
         "HPE Aruba - CX products, VLANs, QoS, VSF, VSX, LAG, and general networking. "
         "Be concise and technical."
-    ))
+    )
+    if req.screen_context:
+        context += f"\n\nCurrent workflow context:\n{req.screen_context}"
+    system_msg = ChatMessage(role=MessageRole.SYSTEM, content=context)
     messages = [system_msg] + memory.get()
     messages.append(ChatMessage(role=MessageRole.USER, content=req.message))
     resp = await llm.achat(messages)

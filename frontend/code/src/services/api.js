@@ -461,9 +461,17 @@ export async function sendChatMessage(
   message,
   history = [],
   screenContext = "",
+  projectId = "default",
+  conversationId = "default",
 ) {
   try {
-    const res = await API.post("/chat", { message, history, screenContext });
+    const res = await API.post("/chat", {
+      message,
+      history,
+      screen_context: screenContext,
+      project_id: projectId,
+      conversation_id: conversationId,
+    });
     return res.data;
   } catch {
     // Fallback stub if chat endpoint not ready

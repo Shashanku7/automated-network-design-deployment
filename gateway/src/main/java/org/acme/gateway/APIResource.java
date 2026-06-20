@@ -200,7 +200,12 @@ public class APIResource {
   public record CreateTaskRequest(String projectId, String message) {
   }
 
-  public record ChatRequest(String message, List<AgentTask.ChatMessage> history, @JsonProperty("project_id") String projectId) {
+  public record ChatRequest(
+      String message,
+      List<AgentTask.ChatMessage> history,
+      @JsonProperty("project_id") String projectId,
+      @JsonProperty("conversation_id") String conversationId,
+      @JsonProperty("screen_context") String screenContext) {
   }
 
   @POST
@@ -212,7 +217,8 @@ public class APIResource {
               h.role().name().toLowerCase(),
               h.content()))
           .collect(Collectors.toList());
-      var aiRequest = new AIService.ChatRequest(request.message(), history, request.projectId());
+      var aiRequest = new AIService.ChatRequest(
+          request.message(), history, request.projectId(), request.screenContext());
       var aiResponse = aiService.sendChat(aiRequest);
       return Response.ok(aiResponse).build();
     } catch (Exception e) {

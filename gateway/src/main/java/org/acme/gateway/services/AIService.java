@@ -17,7 +17,7 @@ public interface AIService {
 
   record ChatHistoryItem(String role, String content) {}
 
-  record ChatRequest(String message, List<ChatHistoryItem> history, @JsonProperty("project_id") String projectId) {}
+  record ChatRequest(String message, List<ChatHistoryItem> history, @JsonProperty("project_id") String projectId, @JsonProperty("screen_context") String screenContext) {}
 
   record ChatResponse(String role, String content, String timestamp) {}
 

@@ -475,6 +475,8 @@ export default function ProposedDesign() {
         messageToSend,
         state.chatHistory,
         screenContext,
+        projectId,
+        state.conversationId,
       );
       dispatch({ type: "ADD_CHAT_MESSAGE", payload: res });
     } catch (err) {
