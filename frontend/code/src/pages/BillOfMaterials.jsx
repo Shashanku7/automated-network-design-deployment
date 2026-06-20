@@ -72,10 +72,10 @@ export default function BillOfMaterials() {
           </button>
           <div className="flex gap-4">
             <button
-              onClick={() => navigate(`/project/${projectId}/topology`)}
+              onClick={() => navigate(`/project/${projectId}/interactive-topology`)}
               className="px-6 py-3 border border-outline-variant/30 text-on-surface font-medium rounded-lg hover:bg-surface-container-high transition-all flex items-center gap-2"
             >
-              Detailed Topology{" "}
+              Interactive Topology{" "}
               <span className="material-symbols-outlined">account_tree</span>
             </button>
             <button
