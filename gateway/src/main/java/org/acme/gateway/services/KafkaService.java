@@ -67,6 +67,12 @@ public class KafkaService {
     try {
       var convId = ensureConversation(projectId);
       var content = extractContent(message);
+      var revisionMarker = "## Revision Request\n";
+      int revIdx = content.indexOf(revisionMarker);
+      if (revIdx >= 0) {
+        var feedback = content.substring(revIdx + revisionMarker.length()).trim();
+        content = feedback.isEmpty() ? content : "Requested revision: " + feedback;
+      }
       var seq = messageRepository.countByConversationId(convId) + 1;
       messageRepository.persist(new MessageEntity(convId, seq, "user", content));
       agentTaskRepository.deleteCompletedByProjectIdAndPhase(projectId, task.phase());
