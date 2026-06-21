@@ -12,7 +12,7 @@ Gateway/Kafka ──→ webapp/app.py ──→ 5 Agents (LlamaIndex)
                     ├── routes.py          ├── Agent 1: Prompt Rephraser
                     ├── agents.py          ├── Agent 2: Topology Designer
                     ├── tools.py           ├── Agent 3: Device Selector
-                    └── kafka_handler.py   ├── Agent 4: D2 Diagram Generator
+                    └── kafka_handler.py                                               ├── Agent 4: React Topology Architect
                                            └── Agent 5: CLI Config Generator
                               │
                               ├── Qdrant (hybrid search: datasheets + config guides)
@@ -26,17 +26,16 @@ Gateway/Kafka ──→ webapp/app.py ──→ 5 Agents (LlamaIndex)
 | # | Agent | Tool Access | Output |
 |---|-------|-------------|--------|
 | 1 | Prompt Rephraser | — | Structured prompt from user input |
-| 2 | Topology Designer | — | Network topology with VSF/VSX/LAG/QoS |
-| 3 | Device Selector | `network_device_lookup` (Qdrant RAG) | BOM with SKU, specs, quantities |
-| 4 | D2 Diagram Generator | — | D2 diagram code for Kroki rendering |
-| 5 | CLI Config Generator | — | Device CLI configuration commands |
+| 2 | Topology Designer | `firecrawl_search_tool` | Network topology with VSF/VSX/LAG/QoS and VLAN |
+| 3 | Device Selector | `catalog_tool`, `product_search_tool` (Qdrant RAG), `firecrawl_search_tool`, `broad_search_tool` | BOM with SKU, specs, quantities |
+| 4 | React Topology Architect | — | React Flow nodes+edges JSON for interactive topology |
+| 5 | CLI Config Generator | `config_guide_tool` | Device CLI configuration commands |
 
 ## Setup
 
 ```bash
 cd ai-service
-uv venv
-uv pip install
+uv sync
 
 # Configure environment
 cp .env.example .env
@@ -82,8 +81,8 @@ Uses DoclingReader for PDF parsing, Qwen3-Embedding-8B for dense vectors, and SP
 |------|---------|
 | `webapp/app.py` | FastAPI entry, lifespan (Kafka start/stop) |
 | `webapp/routes.py` | WebSocket (`/ws`) + REST (`/api/chat`) routes |
-| `webapp/agents.py` | 5 FunctionAgent definitions |
-| `webapp/tools.py` | RAG tools (hybrid search, product search, Firecrawl) |
+| `webapp/agents.py` | 5 FunctionAgent definitions with tool bindings |
+| `webapp/tools.py` | RAG tools (hybrid search, product search, Firecrawl, catalog lookup) |
 | `webapp/kafka_handler.py` | Kafka consumer/producer for agent tasks/events |
 | `webapp/config.py` | LLM, Qdrant, PostgresChatStore config |
 | `webapp/utils.py` | Report saving, chunk parsing |
@@ -109,11 +108,15 @@ Uses DoclingReader for PDF parsing, Qwen3-Embedding-8B for dense vectors, and SP
 
 ### WebSocket — `ws://localhost:8000/ws`
 
-Full-duplex streaming for multi-agent workflow. Events: `USER_INPUT`, `AGENT_EVENT`, `APPROVAL_REQ`, `WORKFLOW_COMPLETE`, `ERROR`.
+Full-duplex streaming for multi-agent workflow. Events: `USER_INPUT`, `AGENT_EVENT`, `TOKEN`, `TOOL_CALL`, `TOOL_RESULT`, `FINAL_ANSWER`, `APPROVAL_REQ`, `DIAGRAM_READY`, `WORKFLOW_COMPLETE`, `ERROR`.
 
 ### REST — `POST /api/chat`
 
 Simple LLM chat for the copilot sidebar.
+
+### Kafka — `agent-tasks` / `agent-events`
+
+Async task distribution and event streaming between Gateway and AI Service.
 
 ## Dependencies
 
