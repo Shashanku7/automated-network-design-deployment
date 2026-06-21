@@ -248,6 +248,10 @@ public class KafkaService {
     pipelineManager.clearState(projectId);
     agentTaskRepository.delete("projectId", projectId);
     pendingApprovals.remove(projectId);
+    conversationRepository.find("projectId", projectId).firstResultOptional().ifPresent(conv -> {
+      messageRepository.delete("conversationId", conv.getId());
+      conversationRepository.delete(conv);
+    });
   }
 
   @Transactional

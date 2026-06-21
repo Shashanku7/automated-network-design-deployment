@@ -149,8 +149,11 @@ export default function ProposedDesign() {
     }
 
     return allItems.sort((a, b) => {
-      const ta = new Date(a.timestamp).getTime() || 0;
-      const tb = new Date(b.timestamp).getTime() || 0;
+      const ta = new Date(a.timestamp).getTime();
+      const tb = new Date(b.timestamp).getTime();
+      if (isNaN(ta) && isNaN(tb)) return (a._order ?? 0) - (b._order ?? 0);
+      if (isNaN(ta)) return -1;
+      if (isNaN(tb)) return 1;
       return ta - tb;
     });
   }, [state.workflowEvents, state.chatHistory, status, currentPhase, state.requirements, state.solutionType]);
@@ -222,7 +225,7 @@ export default function ProposedDesign() {
           const chatMsgs = messages.map((m) => ({
             role: m.role,
             content: m.content,
-            timestamp: m.createdAt || null,
+            timestamp: m.created_at || m.createdAt || null,
           }));
           dispatch({ type: "SET_CHAT_HISTORY", payload: chatMsgs });
         }
