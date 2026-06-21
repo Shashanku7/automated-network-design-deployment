@@ -123,7 +123,8 @@ public class KafkaService {
                 "task_id", event.taskId().toString(),
                 "phase", phase,
                 "agent_name", event.agentName()),
-            false);
+            false,
+            java.time.OffsetDateTime.now());
         var approvalJson = objectMapper.writeValueAsString(approvalEvent);
         webSocket.sendMessage(event.projectId().toString(), approvalJson);
       } catch (Exception e) {
@@ -168,7 +169,7 @@ public class KafkaService {
         var approvedEvent = new AgentEvent(projectId, nextTask.taskId(), nextTask.agentTarget(),
             AgentEvent.EventType.PHASE_APPROVED,
             nextTask != null ? "Phase approved, proceeding to next phase" : "Workflow complete",
-            null, nextTask == null);
+            null, nextTask == null, java.time.OffsetDateTime.now());
         var approvedJson = objectMapper.writeValueAsString(approvedEvent);
         webSocket.sendMessage(projectId.toString(), approvedJson);
       } catch (Exception e) {
@@ -180,7 +181,8 @@ public class KafkaService {
         var doneTaskId = UUID.randomUUID();
         var doneEvent = new AgentEvent(projectId, doneTaskId, "",
             AgentEvent.EventType.PHASE_APPROVED,
-            "Workflow complete", Map.of("task_id", doneTaskId.toString(), "phase", 5), true);
+            "Workflow complete", Map.of("task_id", doneTaskId.toString(), "phase", 5), true,
+            java.time.OffsetDateTime.now());
         webSocket.sendMessage(projectId.toString(), objectMapper.writeValueAsString(doneEvent));
       } catch (Exception e) {
         log.severe("emitNextTask send complete error: " + e.getMessage());
@@ -225,7 +227,8 @@ public class KafkaService {
                   "task_id", pending.taskId().toString(),
                   "phase", pending.phase(),
                   "agent_name", pending.agentName()),
-              false);
+              false,
+              java.time.OffsetDateTime.now());
       webSocket.sendMessage(projectId.toString(), objectMapper.writeValueAsString(approvalEvent));
     } catch (Exception e) {
       log.severe("replayPendingApproval failed projectId=" + projectId + " error=" + e.getMessage());
@@ -254,7 +257,8 @@ public class KafkaService {
         var doneTaskId = UUID.randomUUID();
         var doneEvent = new AgentEvent(projectId, doneTaskId, "",
             AgentEvent.EventType.PHASE_APPROVED,
-            "Workflow complete", Map.of("task_id", doneTaskId.toString(), "phase", 5), true);
+            "Workflow complete", Map.of("task_id", doneTaskId.toString(), "phase", 5), true,
+            java.time.OffsetDateTime.now());
         webSocket.sendMessage(projectId.toString(), objectMapper.writeValueAsString(doneEvent));
       } catch (Exception e) {
         log.severe("resumeWorkflow send complete error: " + e.getMessage());

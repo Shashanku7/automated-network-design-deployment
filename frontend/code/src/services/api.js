@@ -171,7 +171,7 @@ function makeWorkflowHandler(results, onEvent, resolve, reject, ws, projectId) {
           e.data.substring(0, 200),
       );
       const event = JSON.parse(e.data);
-      const { event_type, agent_name, data, payload, is_final } = event;
+      const { event_type, agent_name, data, payload, is_final, timestamp } = event;
       if (!event_type) {
         console.warn("[WS] Missing event_type in payload:", event);
         return;
@@ -197,6 +197,7 @@ function makeWorkflowHandler(results, onEvent, resolve, reject, ws, projectId) {
           name: agent_name
             .replace(/_/g, " ")
             .replace(/\b\w/g, (c) => c.toUpperCase()),
+          timestamp,
         });
       }
 
@@ -231,6 +232,7 @@ function makeWorkflowHandler(results, onEvent, resolve, reject, ws, projectId) {
           type: "agent_response",
           content: normalized,
           phase: currentPhase,
+          timestamp,
         });
 
         if (is_final && currentPhase >= 5) {
@@ -245,6 +247,7 @@ function makeWorkflowHandler(results, onEvent, resolve, reject, ws, projectId) {
           phase: currentPhase,
           tool_name: data || agent_name,
           tool_kwargs: payload || {},
+          timestamp,
         });
         return;
       }
@@ -257,6 +260,7 @@ function makeWorkflowHandler(results, onEvent, resolve, reject, ws, projectId) {
           tool_name: agent_name,
           output: toolOutput,
           payload,
+          timestamp,
         });
         return;
       }
@@ -282,6 +286,7 @@ function makeWorkflowHandler(results, onEvent, resolve, reject, ws, projectId) {
           type: "approval_request",
           ws,
           approval: { taskId: approvalTaskId, phase: approvalPhase },
+          timestamp,
         });
         return;
       }
@@ -297,6 +302,7 @@ function makeWorkflowHandler(results, onEvent, resolve, reject, ws, projectId) {
           download_url: results.diagramDownloadUrl,
           filename: payload?.filename,
           data: data,
+          timestamp,
         });
         return;
       }
@@ -305,12 +311,13 @@ function makeWorkflowHandler(results, onEvent, resolve, reject, ws, projectId) {
         onEvent({
           type: "diagram_error",
           message: payload?.message || "Diagram rendering failed",
+          timestamp,
         });
         return;
       }
 
       if (event_type === "ERROR") {
-        onEvent({ type: "error", message: data || "Unknown error" });
+        onEvent({ type: "error", message: data || "Unknown error", timestamp });
         ws.close();
         if (!settled) {
           settled = true;

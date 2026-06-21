@@ -163,7 +163,8 @@ public class APIWebSocket {
               AgentEvent.EventType.ERROR,
               message,
               null,
-              false);
+              false,
+              java.time.OffsetDateTime.now());
       sendMessage(projectId, objectMapper.writeValueAsString(event));
     } catch (Exception e) {
       log.severe("Failed to send WS error event: " + e.getMessage());

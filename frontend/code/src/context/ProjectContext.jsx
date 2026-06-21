@@ -75,6 +75,7 @@ const initialState = {
 
   proposedDesign: null,
   chatHistory: [],
+  _timelineOrder: 0,
   deploymentStatus: "idle",
 };
 
@@ -111,6 +112,7 @@ function projectReducer(state, action) {
           proposedDesign: saved.proposedDesign ?? null,
           workflowEvents: saved.workflowEvents ?? [],
           chatHistory: saved.chatHistory ?? [],
+          _timelineOrder: saved._timelineOrder ?? 0,
           deploymentStatus: saved.deploymentStatus ?? "idle",
         };
       }
@@ -143,11 +145,32 @@ function projectReducer(state, action) {
         deploymentStatus: "ready",
       };
 
-    case "SET_CHAT_HISTORY":
-      return { ...state, chatHistory: action.payload };
+    case "SET_CHAT_HISTORY": {
+      const orderMap = new Map();
+      state.chatHistory.forEach((msg) => {
+        if (msg._order) {
+          orderMap.set(`${msg.role}|${msg.content}`, msg._order);
+        }
+      });
+      let maxOrder = state._timelineOrder;
+      const merged = action.payload.map((msg) => {
+        const key = `${msg.role}|${msg.content}`;
+        const existing = orderMap.get(key);
+        if (existing) return { ...msg, _order: existing };
+        const next = ++maxOrder;
+        return { ...msg, _order: next };
+      });
+      return { ...state, chatHistory: merged, _timelineOrder: maxOrder };
+    }
 
-    case "ADD_CHAT_MESSAGE":
-      return { ...state, chatHistory: [...state.chatHistory, action.payload] };
+    case "ADD_CHAT_MESSAGE": {
+      const order = state._timelineOrder + 1;
+      return {
+        ...state,
+        _timelineOrder: order,
+        chatHistory: [...state.chatHistory, { ...action.payload, _order: order }],
+      };
+    }
 
     case "SET_DEPLOYMENT_STATUS":
       return { ...state, deploymentStatus: action.payload };
@@ -182,34 +205,23 @@ function projectReducer(state, action) {
       };
 
     case "WORKFLOW_EVENT": {
+      const order = state._timelineOrder + 1;
       const isRestartPhase1 =
         action.payload.type === "phase_start" && action.payload.phase === 1;
+      const base = {
+        ...action.payload,
+        _order: order,
+        timestamp: action.payload.timestamp || Date.now(),
+        _id:
+          action.payload._id ||
+          `${action.payload.type}|${action.payload.phase || ""}|${
+            action.payload.content || ""
+          }|${action.payload.tool_name || ""}`,
+      };
       return {
         ...state,
-        workflowEvents: isRestartPhase1
-          ? [
-              {
-                ...action.payload,
-                timestamp: Date.now(),
-                _id:
-                  action.payload._id ||
-                  `${action.payload.type}|${action.payload.phase || ""}|${
-                    action.payload.content || ""
-                  }|${action.payload.tool_name || ""}`,
-              },
-            ]
-          : [
-              ...state.workflowEvents,
-              {
-                ...action.payload,
-                timestamp: Date.now(),
-                _id:
-                  action.payload._id ||
-                  `${action.payload.type}|${action.payload.phase || ""}|${
-                    action.payload.content || ""
-                  }|${action.payload.tool_name || ""}`,
-              },
-            ],
+        _timelineOrder: order,
+        workflowEvents: isRestartPhase1 ? [base] : [...state.workflowEvents, base],
         currentPhaseName:
           action.payload.type === "phase_start"
             ? action.payload.name || state.currentPhaseName
@@ -316,6 +328,7 @@ export function ProjectProvider({ children }) {
       reactCode: state.reactCode,
       proposedDesign: state.proposedDesign,
       chatHistory: state.chatHistory,
+      _timelineOrder: state._timelineOrder,
       deploymentStatus: state.deploymentStatus,
     };
     const serialized = JSON.stringify(persistable);

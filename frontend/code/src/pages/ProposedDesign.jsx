@@ -128,14 +128,18 @@ export default function ProposedDesign() {
         allItems.unshift({
             type: "user_echo",
             content: `**Initial System Request:**\n\n${rawPrompt}`,
-            timestamp: new Date(0).toISOString() // Ensure it sorts to the top
+            _order: 0,
+            timestamp: new Date(0).toISOString()
         });
     }
 
     return allItems.sort((a, b) => {
-      const ta = a.timestamp ? new Date(a.timestamp).getTime() : 0;
-      const tb = b.timestamp ? new Date(b.timestamp).getTime() : 0;
-      return ta - tb;
+      const ta = a.timestamp ? new Date(a.timestamp).getTime() : (a._order ?? 0);
+      const tb = b.timestamp ? new Date(b.timestamp).getTime() : (b._order ?? 0);
+      if (ta !== tb) return ta - tb;
+      const oa = a._order ?? Infinity;
+      const ob = b._order ?? Infinity;
+      return oa - ob;
     });
   }, [state.workflowEvents, state.chatHistory, status, currentPhase]);
 
@@ -157,9 +161,16 @@ export default function ProposedDesign() {
     }
   }, [projectId, state.projectId, loadProject]);
 
-  // Load conversation history from API if project has past results
+  // Load conversation history from API — only if not already loaded from localStorage
+  const historyFetchedRef = useRef(false);
   useEffect(() => {
     if (!projectId) return;
+    // Reset ref on project change
+    if (historyFetchedRef.current !== projectId) {
+      historyFetchedRef.current = null;
+    }
+    // Already loaded from localStorage — skip
+    if (historyFetchedRef.current) return;
     let cancelled = false;
     setHistoryLoading(true);
     setHistoryError(null);
@@ -169,7 +180,8 @@ export default function ProposedDesign() {
           projectId,
           state.conversationId || "default",
         );
-        if (!cancelled && persistent?.conversation_messages?.length) {
+        if (cancelled) return;
+        if (persistent?.conversation_messages?.length) {
           const persistedMessages = persistent.conversation_messages.map(
             (m) => ({
               role:
@@ -182,6 +194,7 @@ export default function ProposedDesign() {
             }),
           );
           dispatch({ type: "SET_CHAT_HISTORY", payload: persistedMessages });
+          historyFetchedRef.current = projectId;
           setHistoryLoading(false);
           return;
         }
@@ -201,6 +214,7 @@ export default function ProposedDesign() {
           }));
           dispatch({ type: "SET_CHAT_HISTORY", payload: chatMsgs });
         }
+        historyFetchedRef.current = projectId;
       } catch (err) {
         if (!cancelled) setHistoryError("Failed to load conversation history");
       } finally {
@@ -211,6 +225,14 @@ export default function ProposedDesign() {
       cancelled = true;
     };
   }, [projectId, state.conversationId, dispatch]);
+
+  // Once localStorage data is loaded, mark history as fetched so API call is skipped
+  useEffect(() => {
+    if (state.chatHistory.length > 0 && !historyFetchedRef.current) {
+      historyFetchedRef.current = projectId;
+      setHistoryLoading(false);
+    }
+  }, [state.chatHistory, projectId]);
 
   // Start workflow on mount if flagged
   useEffect(() => {
