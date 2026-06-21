@@ -69,6 +69,7 @@ public class KafkaService {
       var content = extractContent(message);
       var seq = messageRepository.countByConversationId(convId) + 1;
       messageRepository.persist(new MessageEntity(convId, seq, "user", content));
+      agentTaskRepository.deleteCompletedByProjectIdAndPhase(projectId, task.phase());
       agentTaskRepository.persist(new AgentTaskEntity(task.taskId(), convId, projectId, task.phase(), task.agentTarget(), task.inputContext()));
     } catch (Exception e) {
       log.severe("Failed to persist user message: " + e.getMessage());

@@ -19,6 +19,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 import java.util.stream.Collectors;
+import org.acme.gateway.entities.AgentTaskEntity;
 import org.acme.gateway.entities.ConversationEntity;
 import org.acme.gateway.entities.MessageEntity;
 import org.acme.gateway.entities.ProjectEntity;
@@ -166,11 +167,21 @@ public class APIResource {
   @Path("projects/{pid}/phases")
   public Response getWorkflowState(@PathParam("pid") UUID projectId) {
     var completed = agentTaskRepository.findCompletedByProjectId(projectId);
-    var phases = completed.stream()
+    var latestPerPhase = completed.stream()
+        .collect(Collectors.toMap(
+            AgentTaskEntity::getPhase,
+            java.util.function.Function.identity(),
+            (a, b) -> {
+              if (a.getCompletedAt() == null) return b;
+              if (b.getCompletedAt() == null) return a;
+              return a.getCompletedAt().isAfter(b.getCompletedAt()) ? a : b;
+            }));
+    var phases = latestPerPhase.values().stream()
         .map(t -> new PhaseResult(t.getPhase(), t.getAgentTarget(), t.getOutput(), t.getStatus()))
+        .sorted((a, b) -> Integer.compare(a.phase(), b.phase()))
         .toList();
-    int nextPhase = completed.isEmpty() ? 1
-        : Math.min(completed.getLast().getPhase() + 1, 6);
+    int nextPhase = phases.isEmpty() ? 1
+        : Math.min(phases.getLast().phase() + 1, 6);
     var project = projectRepository.findById(projectId);
     String status = (project != null && "complete".equals(project.getWorkflowStatus())) ? "complete" : "running";
     return Response.ok(new WorkflowState(projectId,

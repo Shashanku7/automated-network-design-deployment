@@ -206,22 +206,26 @@ function projectReducer(state, action) {
 
     case "WORKFLOW_EVENT": {
       const order = state._timelineOrder + 1;
-      const isRestartPhase1 =
-        action.payload.type === "phase_start" && action.payload.phase === 1;
+      const restartPhase = action.payload.type === "phase_start"
+        ? action.payload.phase : null;
       const base = {
         ...action.payload,
         _order: order,
         timestamp: action.payload.timestamp || Date.now(),
         _id:
           action.payload._id ||
-          `${action.payload.type}|${action.payload.phase || ""}|${
-            action.payload.content || ""
-          }|${action.payload.tool_name || ""}`,
+          (action.payload.type === "tool_call"
+            ? `tool_call|${action.payload.phase || ""}|${action.payload.tool_name || ""}|${JSON.stringify(action.payload.tool_kwargs || {})}`
+            : `${action.payload.type}|${action.payload.phase || ""}|${
+                action.payload.content || ""
+              }|${action.payload.tool_name || ""}`),
       };
       return {
         ...state,
         _timelineOrder: order,
-        workflowEvents: isRestartPhase1 ? [base] : [...state.workflowEvents, base],
+        workflowEvents: restartPhase !== null
+          ? [...state.workflowEvents.filter(ev => ev.phase !== restartPhase), base]
+          : [...state.workflowEvents, base],
         currentPhaseName:
           action.payload.type === "phase_start"
             ? action.payload.name || state.currentPhaseName

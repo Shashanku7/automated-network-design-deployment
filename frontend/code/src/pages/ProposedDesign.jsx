@@ -125,6 +125,7 @@ export default function ProposedDesign() {
     // Inject the initial prompt
     if (state.requirements && !chats.some(c => c.content?.includes("Initial System Request:") || c.content?.includes("UserReq:"))) {
         const rawPrompt = buildPromptFromRequirements(state.requirements, state.solutionType);
+        seen.add(`chat|user|${rawPrompt}`);
         allItems.unshift({
             type: "user_echo",
             content: `**Initial System Request:**\n\n${rawPrompt}`,
@@ -134,12 +135,9 @@ export default function ProposedDesign() {
     }
 
     return allItems.sort((a, b) => {
-      const ta = a.timestamp ? new Date(a.timestamp).getTime() : (a._order ?? 0);
-      const tb = b.timestamp ? new Date(b.timestamp).getTime() : (b._order ?? 0);
-      if (ta !== tb) return ta - tb;
-      const oa = a._order ?? Infinity;
-      const ob = b._order ?? Infinity;
-      return oa - ob;
+      const ta = new Date(a.timestamp).getTime() || 0;
+      const tb = new Date(b.timestamp).getTime() || 0;
+      return ta - tb;
     });
   }, [state.workflowEvents, state.chatHistory, status, currentPhase]);
 

@@ -25,4 +25,8 @@ public class AgentTaskRepository implements PanacheRepositoryBase<AgentTaskEntit
   public boolean existsByProjectIdAndPhase(UUID projectId, int phase) {
     return count("projectId = ?1 and phase = ?2", projectId, phase) > 0;
   }
+
+  public void deleteCompletedByProjectIdAndPhase(UUID projectId, int phase) {
+    delete("projectId = ?1 and phase = ?2 and status = 'completed'", projectId, phase);
+  }
 }
