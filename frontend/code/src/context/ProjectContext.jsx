@@ -214,8 +214,8 @@ function projectReducer(state, action) {
         timestamp: action.payload.timestamp || Date.now(),
         _id:
           action.payload._id ||
-          (action.payload.type === "tool_call"
-            ? `tool_call|${action.payload.phase || ""}|${action.payload.tool_name || ""}|${JSON.stringify(action.payload.tool_kwargs || {})}`
+          (action.payload.type === "tool_call" || action.payload.type === "tool_result"
+            ? `${action.payload.type}|${order}|${action.payload.phase || ""}|${action.payload.tool_name || ""}|${Date.now()}|${Math.random()}`
             : `${action.payload.type}|${action.payload.phase || ""}|${
                 action.payload.content || ""
               }|${action.payload.tool_name || ""}`),

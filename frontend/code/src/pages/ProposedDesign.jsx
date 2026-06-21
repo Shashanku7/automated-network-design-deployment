@@ -73,6 +73,17 @@ export default function ProposedDesign() {
 
   const mergedTimeline = useMemo(() => {
     const seen = new Set();
+    // Pre-seed the dedup set with the raw prompt key that the backend stores
+    // as a "user" conversation message. This ensures the raw copy from chatHistory
+    // is filtered out before chats are assembled, leaving only our formatted
+    // user_echo bubble below.
+    const rawPrompt = state.requirements
+      ? buildPromptFromRequirements(state.requirements, state.solutionType)
+      : null;
+    if (rawPrompt) {
+      seen.add(`chat|user|${rawPrompt}`);
+    }
+
     const events = state.workflowEvents
       .filter((ev) => {
         if (!ev.phase) return true;
@@ -88,7 +99,9 @@ export default function ProposedDesign() {
       .filter((ev) => {
         const key =
           ev._id ||
-          `${ev.type}|${ev.phase || ""}|${ev.tool_name || ""}|${ev.content || ""}|${typeof ev.tool_kwargs === "object" ? JSON.stringify(ev.tool_kwargs) : ev.tool_kwargs || ""}`;
+          ((ev.type === "tool_call" || ev.type === "tool_result")
+            ? `${ev.type}|${ev._order || i}|${ev.phase || ""}|${ev.tool_name || ""}`
+            : `${ev.type}|${ev.phase || ""}|${ev.tool_name || ""}|${ev.content || ""}|${typeof ev.tool_kwargs === "object" ? JSON.stringify(ev.tool_kwargs) : ev.tool_kwargs || ""}`);
         if (seen.has(key)) return false;
         seen.add(key);
         if (ev.type === "agent_response" && ev.content) {
@@ -122,16 +135,17 @@ export default function ProposedDesign() {
 
     const allItems = [...events, ...chats];
     
-    // Inject the initial prompt
-    if (state.requirements && !chats.some(c => c.content?.includes("Initial System Request:") || c.content?.includes("UserReq:"))) {
-        const rawPrompt = buildPromptFromRequirements(state.requirements, state.solutionType);
-        seen.add(`chat|user|${rawPrompt}`);
-        allItems.unshift({
-            type: "user_echo",
-            content: `**Initial System Request:**\n\n${rawPrompt}`,
-            _order: 0,
-            timestamp: new Date(0).toISOString()
-        });
+    // Inject the formatted "Initial System Request" bubble.
+    // Guard: skip if a user_echo is already present in events (from localStorage)
+    // or if we have no prompt to show.
+    const alreadyHasEcho = allItems.some(item => item.type === "user_echo");
+    if (rawPrompt && !alreadyHasEcho) {
+      allItems.unshift({
+        type: "user_echo",
+        content: `**Initial System Request:**\n\n${rawPrompt}`,
+        _order: 0,
+        timestamp: new Date(0).toISOString()
+      });
     }
 
     return allItems.sort((a, b) => {
@@ -139,7 +153,7 @@ export default function ProposedDesign() {
       const tb = new Date(b.timestamp).getTime() || 0;
       return ta - tb;
     });
-  }, [state.workflowEvents, state.chatHistory, status, currentPhase]);
+  }, [state.workflowEvents, state.chatHistory, status, currentPhase, state.requirements, state.solutionType]);
 
   useEffect(() => {
     eventsEndRef.current?.scrollIntoView({ behavior: "smooth" });
