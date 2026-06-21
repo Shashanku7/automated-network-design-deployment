@@ -1,19 +1,19 @@
 # AI Service — Multi-Agent LLM Orchestrator
 
-Core backend that orchestrates a 5-agent LLM pipeline for automated campus network design. Uses RAG (Qdrant hybrid search) for grounded hardware recommendations and communicates via Kafka + WebSocket.
+Core backend that orchestrates a 5-agent LLM pipeline for automated campus network design. Uses RAG (Qdrant hybrid search) for grounded hardware recommendations and communicates primarily via Kafka (Gateway handles WebSocket).
 
 **Port:** 8000
 
 ## Architecture
 
 ```
-Gateway/Kafka ──→ webapp/app.py ──→ 5 Agents (LlamaIndex)
-                    │                      │
-                    ├── routes.py          ├── Agent 1: Prompt Rephraser
-                    ├── agents.py          ├── Agent 2: Topology Designer
-                    ├── tools.py           ├── Agent 3: Device Selector
-                    └── kafka_handler.py                                               ├── Agent 4: React Topology Architect
-                                           └── Agent 5: CLI Config Generator
+Gateway (Kafka) ──→ webapp/app.py ──→ 5 Agents (LlamaIndex)
+                       │                      │
+                       ├── routes.py          ├── Agent 1: Prompt Rephraser
+                       ├── agents.py          ├── Agent 2: Topology Designer
+                       ├── tools.py           ├── Agent 3: Device Selector
+                       ├── kafka_handler.py   ├── Agent 4: React Topology Architect
+                       └── config.py          └── Agent 5: CLI Config Generator
                               │
                               ├── Qdrant (hybrid search: datasheets + config guides)
                               ├── Ollama (LLM: gemma4, qwen3-coder)
@@ -108,7 +108,7 @@ Uses DoclingReader for PDF parsing, Qwen3-Embedding-8B for dense vectors, and SP
 
 ### WebSocket — `ws://localhost:8000/ws`
 
-Full-duplex streaming for multi-agent workflow. Events: `USER_INPUT`, `AGENT_EVENT`, `TOKEN`, `TOOL_CALL`, `TOOL_RESULT`, `FINAL_ANSWER`, `APPROVAL_REQ`, `DIAGRAM_READY`, `WORKFLOW_COMPLETE`, `ERROR`.
+Legacy direct WebSocket endpoint (currently unused — all flows go through Gateway + Kafka). Events: `USER_INPUT`, `AGENT_EVENT`, `TOKEN`, `TOOL_CALL`, `TOOL_RESULT`, `FINAL_ANSWER`, `APPROVAL_REQ`, `DIAGRAM_READY`, `WORKFLOW_COMPLETE`, `ERROR`.
 
 ### REST — `POST /api/chat`
 

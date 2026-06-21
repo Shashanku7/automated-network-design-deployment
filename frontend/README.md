@@ -8,12 +8,12 @@ React 19 single-page application for the NetOrch network design pipeline. Guides
 
 | Tool | Version |
 |------|---------|
-| React | 19 |
-| Vite | 8 |
-| Tailwind CSS | 4 |
-| React Router | 7 |
-| ReactFlow | 11 |
-| Axios | — |
+| React | 19.2.5 |
+| Vite | 8.0.9 |
+| Tailwind CSS | 4.2.4 |
+| React Router | 7.14.2 |
+| ReactFlow | 11.11.4 |
+| Axios | 1.15.2 |
 | Marked + KaTeX | — |
 
 ## Pipeline
@@ -24,7 +24,7 @@ React 19 single-page application for the NetOrch network design pipeline. Guides
 4. **Proposed Design** — AI-generated high-level architecture
 5. **Bill of Materials** — AI-generated equipment list (Phase 3 markdown output)
 6. **Detailed Topology** — Tabbed technical view (logical, cabling, ports)
-7. **Interactive Topology** — ReactFlow diagram rendered via Sandpack
+7. **Interactive Topology** — ReactFlow diagram rendered via SandpackViewer
 8. **Deployment** — Config generation and deploy status
 
 ## Setup
@@ -49,15 +49,16 @@ The dev server proxies backend requests:
 
 | Prefix | Target |
 |--------|--------|
-| `/ws` | `ws://localhost:8000` (AI Service) |
+| `/ws` | `ws://localhost:8000` (AI Service — legacy, unused) |
+| `/chat` | `ws://localhost:8080` (Gateway WS) |
 | `/api` | `http://localhost:8080` (Gateway) |
 | `/api/diagrams` | `http://localhost:8001` (Image Gen) |
 
 ## WebSocket Protocol
 
-The frontend connects via `api.js` to the Gateway's WebSocket (`ws://localhost:8080/ws`). Messages follow the schema in [`schemas/ws-protocol.json`](../schemas/ws-protocol.json).
+The frontend connects via `api.js` to the Gateway's WebSocket at `/chat/{projectId}` (proxied from Vite to `ws://localhost:8080`). Messages follow the schema in [`schemas/ws-protocol.json`](../schemas/ws-protocol.json).
 
-Key event types: `USER_INPUT`, `AGENT_EVENT`, `TOOL_CALL`, `TOOL_RESULT`, `APPROVAL_REQ`, `WORKFLOW_COMPLETE`.
+Key event types: `TOKEN`, `TOOL_CALL`, `TOOL_RESULT`, `FINAL_ANSWER`, `APPROVAL_REQUIRED`, `PHASE_APPROVED`, `DIAGRAM_READY`, `DIAGRAM_ERROR`, `ERROR`.
 
 ## Project Structure
 

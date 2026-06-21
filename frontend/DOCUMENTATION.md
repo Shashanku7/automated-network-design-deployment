@@ -13,6 +13,7 @@ The application utilizes a cutting-edge frontend stack:
 - **State Management:** React Context API (`ProjectContext`) - Handles global project data across the design pipeline.
 - **API Client:** [Axios](https://axios-http.com/) - For reliable communication with the backend services.
 - **Content Rendering:** [Marked](https://marked.js.org/) - To render complex network documentation and summaries from Markdown.
+- **Interactive Diagrams:** [ReactFlow 11](https://reactflow.dev/) - For rendering interactive network topology diagrams via the SandpackViewer component.
 
 ## Design & Architecture
 The UI follows a clean, professional "Enterprise Dashboard" aesthetic.
@@ -33,10 +34,10 @@ The application implements a strict pipeline to ensure valid network designs:
 1. **Dashboard:** Project overview and recent activity.
 2. **Solution Type:** Selection of network architecture (e.g., Campus, Branch, Data Center).
 3. **Requirements:** Input of user-specific constraints and scale needs.
-4. **Proposed Design:** AI-generated high-level architecture with streaming phases.
+4. **Proposed Design:** AI-generated high-level architecture with streaming phases. Events flow: Frontend WS → Gateway → Kafka → AI Service → Kafka → Gateway → Frontend WS.
 5. **Bill of Materials (BOM):** AI-generated equipment list from Phase 3 (markdown output).
 6. **Detailed Topology:** Tabbed technical view (logical topology, cabling, switch-port mapping).
-7. **Interactive Topology:** ReactFlow network diagram rendered via Sandpack.
+7. **Interactive Topology:** ReactFlow network diagram rendered via the SandpackViewer component (live code execution sandbox).
 8. **Deployment:** Generation of configuration files and deployment status.
 
 ## How to Run & Build

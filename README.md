@@ -6,12 +6,12 @@ AI-powered dashboard for designing and deploying enterprise-grade networks via n
 
 ```
 [Frontend :5173] ←─WS/REST── [Gateway :8080] ←─Kafka── [AI Service :8000]
-                                 │                           │
-                                 ├── PostgreSQL :5433        ├── Qdrant (vector store)
-                                 └── Kafka :9092             ├── Ollama (LLM)
-                                                             ├── Firecrawl (web search)
-                                                             ├──→ [Image Gen :8001] → Kroki.io
-                                                             └──→ [Topology Gatekeeper :8002]
+                                 │              (agent-tasks /   │
+                                 │               agent-events)   ├── Qdrant (vector store)
+                                 ├── PostgreSQL :5433            ├── Ollama (LLM)
+                                 └── Kafka :9092                 ├── Firecrawl (web search)
+                                                                ├──→ [Image Gen :8001] → Kroki.io
+                                                                └──→ [Topology Gatekeeper :8002]
 ```
 
 ## Services & Ports
@@ -97,15 +97,18 @@ npm run dev                       # port 5173
 ./start.sh --stop                 # stop all services
 ```
 
+Startup order: **Gatekeeper → AI Service → Image Gen → Gateway → Frontend**.  
+PostgreSQL and Kafka must be running first (via `docker compose up -d`).
+
 ## Data Ingestion
 
 Populate the Qdrant knowledge base with HPE Aruba datasheets:
 
 ```bash
 cd ai-service
-python ingest.py datasheets        # equipment datasheets
-python ingest.py config_guides     # configuration guides
-python ingest.py all               # both
+uv run python ingest.py datasheets        # equipment datasheets
+uv run python ingest.py config_guides     # configuration guides
+uv run python ingest.py all               # both
 ```
 
 ## Project Structure
@@ -115,8 +118,8 @@ ai-service/              Multi-agent LLM orchestrator (5 agents, RAG)
   webapp/                FastAPI app, routes, agents, tools, Kafka handler
   config.py              Shared config + sparse vector logic
   ingest.py              PDF → Qdrant ingestion pipeline
-data/                    HPE Aruba CX datasheet PDFs
-config_guides/           Network configuration guide PDFs
+  data/                  HPE Aruba CX datasheet PDFs
+  config_guides/         Network configuration guide PDFs
 
 frontend/
   code/                  React SPA (Vite, Tailwind, React Router, ReactFlow)
@@ -130,7 +133,7 @@ topology_generation/     JSON validation gatekeeper
 schemas/                 Shared JSON Schemas (WS protocol, Kafka events)
 ref_docs/                Design reference documents (PDF, diagrams)
 db.sql                   PostgreSQL schema
-docker-compose.yml       Kafka only
+docker-compose.yml       Kafka + PostgreSQL
 start.sh                 Unified launcher script
 tasks.md                 Project task list
 contributions.md         Contributor breakdown

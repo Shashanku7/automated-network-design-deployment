@@ -67,12 +67,12 @@ Uses `firecrawl_search` to verify latest standards before designing.
 Has access to product catalog and RAG lookup tools. Analyses the topology per building/floor, calls datasheet tools, and produces a Bill of Materials (BOM) table with model/SKU, specs, quantities, and justifications.
 
 ### Agent 4 — `react_topology_architect`
-Generates a **JSON object** with `nodes` and `edges` arrays for a React Flow interactive topology diagram. Follows strict layout rules (campus vs datacenter), icon type mapping, and edge styling. Output ONLY valid JSON — no explanations or markdown fences.
+Generates a **JSON object** with `nodes` and `edges` arrays for a React Flow interactive topology diagram. Follows strict layout rules (campus vs datacenter), icon type mapping, and edge styling. Output is validated by the Topology Gatekeeper service before reaching the frontend. Output ONLY valid JSON — no explanations or markdown fences.
 
 ### Agent 5 — `cli_config_generator`
 Generates per-switch CLI configuration commands for HPE Aruba CX switches. Uses `search_config_guides` to verify AOS-CX CLI syntax. Produces production-ready configs grouped by building and switch role.
 
-### Phase registry — `PHASES` (line 192)
+### Phase registry — `PHASES` in `agents.py`
 Orders the five agents as phases 1→2→3→4→5.
 
 ---
@@ -128,8 +128,9 @@ Phase 3: device_selector ──────────────────�
     │
     ▼
 Phase 4: react_topology_architect ─────────► React Flow JSON (nodes + edges)
-    │
-    ▼
+    │                                         │
+    │                                   Gatekeeper validates
+    │                                         ▼
 Phase 5: cli_config_generator ─────────────► per-switch CLI configs
     │
     ▼

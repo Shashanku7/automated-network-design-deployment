@@ -15,9 +15,9 @@ Standalone microservice for generating network topology diagrams (SVG) from AI-g
 
 ```
 ai-service (port 8000)
-    └── After Phase 4 (D2 code generated)
+    └── After Phase 4 (React Flow JSON generated)
          └── POST /api/generate-diagram ──→ Image Generation Service (port 8001)
-                                               ├── Parses topology text (regex)
+                                               ├── Parses topology text + BOM (regex)
                                                ├── Generates D2 diagram code
                                                ├── Renders SVG via Kroki.io
                                                └── Saves to generated_diagrams/
@@ -48,7 +48,7 @@ uvicorn app:app --host 0.0.0.0 --port 8001 --reload
 
 | Method | Endpoint | Description |
 |--------|----------|-------------|
-| `POST` | `/api/generate-diagram` | Generate SVG from topology text + BOM |
+| `POST` | `/api/generate-diagram` | Generate SVG from topology text + BOM + optional `diagram_code` (direct D2) |
 | `GET` | `/api/diagrams/{filename}` | View generated diagram |
 | `GET` | `/api/diagrams/{filename}/download` | Download diagram file |
 | `GET` | `/api/diagrams` | List all generated diagrams |

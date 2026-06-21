@@ -6,10 +6,11 @@ Step-by-step guide to start all backend services for NetOrch.
 
 1. **PostgreSQL** — Database
 2. **Kafka** — Message broker
-3. **AI Service** — Multi-agent orchestrator (port 8000)
-4. **Image Gen** — Diagram renderer (port 8001)
-5. **Topology Gatekeeper** — JSON validator (port 8002)
+3. **Topology Gatekeeper** — JSON validator (port 8002)
+4. **AI Service** — Multi-agent orchestrator (port 8000)
+5. **Image Gen** — Diagram renderer (port 8001)
 6. **Gateway** — API gateway (port 8080)
+7. **Frontend** — React SPA (port 5173, optional)
 
 ---
 
@@ -42,8 +43,7 @@ docker compose up -d
 ```bash
 cd ai-service
 cp .env.example .env      # fill in QDRANT_URL, OLLAMA_BASE_URL, etc.
-uv venv
-uv pip install -r requirements.txt   # or use pyproject.toml
+uv sync                   # install from pyproject.toml
 uv run uvicorn webapp.app:app --host 0.0.0.0 --port 8000 --reload
 ```
 
