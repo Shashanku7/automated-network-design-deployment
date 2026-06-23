@@ -118,7 +118,7 @@ function ProjectListView() {
         </div>
       </section>
 
-      <section className="grid grid-cols-1 md:grid-cols-4 gap-6">
+      <section className="grid grid-cols-2 md:grid-cols-4 gap-6">
         {metrics.map((m) => (
           <div
             key={m.label}
