@@ -1,6 +1,7 @@
 import { useMemo } from "react";
 import { NavLink, useNavigate, useParams } from "react-router-dom";
 import { useProject } from "../context/ProjectContext";
+import { useSidebar } from "../context/SidebarContext";
 
 const BASE_NAV = [
   { icon: "dashboard", label: "Dashboard" },
@@ -15,6 +16,7 @@ export default function Sidebar() {
   const navigate = useNavigate();
   const { projectId } = useParams();
   const { state } = useProject();
+  const { open, close } = useSidebar();
   const base = projectId ? `/project/${projectId}` : "";
   const isInProject = !!projectId;
 
@@ -45,33 +47,49 @@ export default function Sidebar() {
   }
 
   return (
-    <aside className="flex flex-col fixed left-0 top-14 h-[calc(100vh-3.5rem)] z-40 w-64 border-r border-outline-variant/15 bg-surface-dim font-body text-sm font-medium">
-      <div className="p-6 flex flex-col h-full">
-        <nav className="flex flex-col gap-1">
-          {navItems.map((item) => (
-            <NavLink
-              key={item.label}
-              to={navPath(item.label)}
-              end={item.label === "Dashboard" || !isInProject}
-              className={({ isActive }) =>
-                `flex items-center gap-3 px-4 py-3 rounded-md transition-all ${
-                  !isInProject && item.label !== "Dashboard"
-                    ? "text-outline/30 cursor-not-allowed"
-                    : isActive
-                      ? "text-primary border-r-2 border-primary bg-gradient-to-r from-primary/10 to-transparent font-bold"
-                      : "text-on-surface/60 hover:text-on-surface hover:bg-surface"
-                }`
-              }
-              onClick={(e) => {
-                if (!isInProject && item.label !== "Dashboard")
-                  e.preventDefault();
-              }}
-            >
-              <span className="material-symbols-outlined">{item.icon}</span>
-              {item.label}
-            </NavLink>
-          ))}
-        </nav>
+    <>
+      {/* Overlay backdrop for mobile */}
+      {open && (
+        <div
+          className="fixed inset-0 top-14 z-30 bg-black/50 lg:hidden"
+          onClick={close}
+        />
+      )}
+
+      <aside
+        className={`flex flex-col fixed left-0 top-14 h-[calc(100vh-3.5rem)] z-40 w-64 border-r border-outline-variant/15 bg-surface-dim font-body text-sm font-medium transition-transform duration-300 lg:translate-x-0 ${
+          open ? "translate-x-0" : "-translate-x-full"
+        }`}
+      >
+        <div className="p-6 flex flex-col h-full">
+          <nav className="flex flex-col gap-1">
+            {navItems.map((item) => (
+              <NavLink
+                key={item.label}
+                to={navPath(item.label)}
+                end={item.label === "Dashboard" || !isInProject}
+                onClick={(e) => {
+                  if (!isInProject && item.label !== "Dashboard") {
+                    e.preventDefault();
+                    return;
+                  }
+                  close();
+                }}
+                className={({ isActive }) =>
+                  `flex items-center gap-3 px-4 py-3 rounded-md transition-all ${
+                    !isInProject && item.label !== "Dashboard"
+                      ? "text-outline/30 cursor-not-allowed"
+                      : isActive
+                        ? "text-primary border-r-2 border-primary bg-gradient-to-r from-primary/10 to-transparent font-bold"
+                        : "text-on-surface/60 hover:text-on-surface hover:bg-surface"
+                  }`
+                }
+              >
+                <span className="material-symbols-outlined">{item.icon}</span>
+                {item.label}
+              </NavLink>
+            ))}
+          </nav>
 
         <div className="mt-auto space-y-4">
           <button
@@ -106,7 +124,8 @@ export default function Sidebar() {
             Support
           </button>
         </div>
-      </div>
-    </aside>
+        </div>
+      </aside>
+    </>
   );
 }

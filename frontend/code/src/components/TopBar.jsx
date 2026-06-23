@@ -7,10 +7,12 @@
 import { useState, useEffect, useRef } from "react";
 import { NavLink, useNavigate } from "react-router-dom";
 import { useProject } from "../context/ProjectContext";
+import { useSidebar } from "../context/SidebarContext";
 
 export default function TopBar() {
   const navigate = useNavigate();
   const { getProjectList } = useProject();
+  const { open, toggle } = useSidebar();
   const [query, setQuery] = useState("");
   const [results, setResults] = useState([]);
   const [showResults, setShowResults] = useState(false);
@@ -49,6 +51,16 @@ export default function TopBar() {
   return (
     <header className="flex justify-between items-center px-6 w-full sticky top-0 z-50 h-14 bg-surface border-b border-outline-variant/15 shrink-0">
       <div className="flex items-center gap-6">
+        <button
+          onClick={toggle}
+          className="lg:hidden p-2 text-on-surface hover:bg-surface-container-high rounded-lg transition-colors"
+          aria-label="Toggle sidebar"
+        >
+          <span className="material-symbols-outlined">
+            {open ? "close" : "menu"}
+          </span>
+        </button>
+
         <NavLink
           to="/"
           className="flex items-center gap-3 group cursor-pointer"
