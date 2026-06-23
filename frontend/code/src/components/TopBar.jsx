@@ -49,18 +49,9 @@ export default function TopBar() {
   };
 
   return (
-    <header className="flex justify-between items-center px-6 w-full sticky top-0 z-50 h-14 bg-surface border-b border-outline-variant/15 shrink-0">
-      <div className="flex items-center gap-6">
-        <button
-          onClick={toggle}
-          className="lg:hidden p-2 text-on-surface hover:bg-surface-container-high rounded-lg transition-colors"
-          aria-label="Toggle sidebar"
-        >
-          <span className="material-symbols-outlined">
-            {open ? "close" : "menu"}
-          </span>
-        </button>
-
+    <header className="flex items-center w-full sticky top-0 z-50 h-14 bg-surface border-b border-outline-variant/15 shrink-0 px-6 lg:pl-0">
+      {/* Brand — fixed width matching sidebar on lg+ */}
+      <div className="hidden lg:flex w-64 shrink-0 items-center px-6">
         <NavLink
           to="/"
           className="flex items-center gap-3 group cursor-pointer"
@@ -70,7 +61,7 @@ export default function TopBar() {
               hub
             </span>
           </div>
-          <div className="hidden sm:block">
+          <div>
             <div className="text-sm font-bold text-on-surface group-hover:text-primary transition-colors leading-tight">
               NetOrch
             </div>
@@ -79,8 +70,22 @@ export default function TopBar() {
             </div>
           </div>
         </NavLink>
+      </div>
 
-        {/* Search Bar with Results Dropdown */}
+      {/* Mobile hamburger */}
+      <button
+        onClick={toggle}
+        className="lg:hidden p-2 text-on-surface hover:bg-surface-container-high rounded-lg transition-colors"
+        aria-label="Toggle sidebar"
+      >
+        <span className="material-symbols-outlined">
+          {open ? "close" : "menu"}
+        </span>
+      </button>
+
+      {/* Search + right actions */}
+      <div className="flex items-center flex-1 justify-between gap-6 pl-6 lg:pl-0">
+        {/* Search Bar */}
         <div className="relative flex items-center" ref={searchRef}>
           <span className="material-symbols-outlined absolute left-3 text-outline text-sm">
             search
@@ -94,7 +99,6 @@ export default function TopBar() {
             onFocus={() => query.length > 1 && setShowResults(true)}
           />
 
-          {/* Floating Search Results */}
           {showResults && (
             <div className="absolute top-full left-0 w-full mt-2 bg-surface-container-high border border-outline-variant/30 rounded-xl shadow-2xl overflow-hidden animate-in fade-in slide-in-from-top-2 duration-200">
               <div className="p-2 border-b border-outline-variant/10">
@@ -134,26 +138,26 @@ export default function TopBar() {
             </div>
           )}
         </div>
-      </div>
 
-      <div className="flex items-center gap-4">
-        <button
-          onClick={() => window.alert("Notifications feature coming soon!")}
-          className="p-2 text-on-surface/70 hover:bg-surface-container-high transition-colors rounded-full"
-        >
-          <span className="material-symbols-outlined">notifications</span>
-        </button>
-        <button
-          onClick={() => window.alert("Settings feature coming soon!")}
-          className="p-2 text-on-surface/70 hover:bg-surface-container-high transition-colors rounded-full"
-        >
-          <span className="material-symbols-outlined">settings</span>
-        </button>
-        <div
-          onClick={() => window.alert("User Profile feature coming soon!")}
-          className="h-8 w-8 rounded-full bg-primary-container flex items-center justify-center text-on-primary text-sm font-bold cursor-pointer hover:brightness-110 transition-all"
-        >
-          U
+        <div className="flex items-center gap-4 shrink-0">
+          <button
+            onClick={() => window.alert("Notifications feature coming soon!")}
+            className="p-2 text-on-surface/70 hover:bg-surface-container-high transition-colors rounded-full"
+          >
+            <span className="material-symbols-outlined">notifications</span>
+          </button>
+          <button
+            onClick={() => window.alert("Settings feature coming soon!")}
+            className="p-2 text-on-surface/70 hover:bg-surface-container-high transition-colors rounded-full"
+          >
+            <span className="material-symbols-outlined">settings</span>
+          </button>
+          <div
+            onClick={() => window.alert("User Profile feature coming soon!")}
+            className="h-8 w-8 rounded-full bg-primary-container flex items-center justify-center text-on-primary text-sm font-bold cursor-pointer hover:brightness-110 transition-all"
+          >
+            U
+          </div>
         </div>
       </div>
     </header>
