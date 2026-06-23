@@ -49,15 +49,8 @@ export default function TopBar() {
   return (
     <header className="flex justify-between items-center px-6 w-full sticky top-0 z-50 h-14 bg-surface border-b border-outline-variant/15 shrink-0">
       <div className="flex items-center gap-6">
-        <NavLink
-          to="/"
-          className="text-lg font-bold text-primary font-[family-name:var(--font-headline)] hover:opacity-80 transition-opacity"
-        >
-          NetOrch
-        </NavLink>
-
         {/* Search Bar with Results Dropdown */}
-        <div className="relative flex items-center ml-4" ref={searchRef}>
+        <div className="relative flex items-center" ref={searchRef}>
           <span className="material-symbols-outlined absolute left-3 text-outline text-sm">
             search
           </span>

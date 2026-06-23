@@ -58,7 +58,7 @@ export default function Sidebar() {
           </div>
           <div>
             <div className="text-on-surface font-bold group-hover:text-primary transition-colors">
-              Project Core
+              NetOrch
             </div>
             <div className="text-on-surface/60 text-xs uppercase tracking-wider">
               Network Architect
