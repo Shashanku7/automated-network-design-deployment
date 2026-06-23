@@ -7,6 +7,7 @@ const BASE_NAV = [
   { icon: "list_alt", label: "Requirements" },
   { icon: "hub", label: "Design" },
   { icon: "receipt_long", label: "BOM" },
+  { icon: "account_tree", label: "Topology" },
   { icon: "rocket_launch", label: "Deployment" },
 ];
 
@@ -18,9 +19,12 @@ export default function Sidebar() {
   const isInProject = !!projectId;
 
   const showBom = !!state.deviceSelection;
+  const showTopology = !!state.reactCode;
   const navItems = useMemo(
-    () => BASE_NAV.filter((item) => item.label !== "BOM" || showBom),
-    [showBom],
+    () => BASE_NAV.filter(
+      (item) => (item.label !== "BOM" || showBom) && (item.label !== "Topology" || showTopology),
+    ),
+    [showBom, showTopology],
   );
 
   function handleNewDesign() {
@@ -34,6 +38,7 @@ export default function Sidebar() {
       Requirements: `${base}/requirements`,
       Design: `${base}/design`,
       BOM: `${base}/bom`,
+      Topology: `${base}/interactive-topology`,
       Deployment: `${base}/deployment`,
     };
     return map[label] || "/";
