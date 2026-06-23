@@ -224,7 +224,7 @@ function ProjectListView() {
               </span>
               Quick Actions
             </h2>
-            <div className="grid grid-cols-2 gap-3">
+            <div className="grid grid-cols-2 lg:flex lg:flex-col gap-3">
               <button
                 onClick={() => navigate("/project/new")}
                 className="flex items-center justify-between p-4 bg-gradient-to-br from-primary to-primary-container text-on-primary rounded-xl font-bold hover:brightness-110 transition-all group"
@@ -363,7 +363,7 @@ function ProjectDashboardView({ projectId, meta }) {
           <h2 className="text-lg font-bold font-[family-name:var(--font-headline)] mb-4">
             Quick Actions
           </h2>
-          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3">
+          <div className="grid grid-cols-2 sm:grid-cols-3 lg:flex lg:flex-col gap-3">
             <button
               onClick={() => navigate(`/project/${projectId}/requirements`)}
               className="px-4 py-2 bg-primary text-on-primary font-bold rounded-lg hover:brightness-110 transition-all text-sm"
