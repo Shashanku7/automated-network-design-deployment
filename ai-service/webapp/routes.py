@@ -13,6 +13,7 @@ from webapp.config import llm, chat_store, OLLAMA_MODEL, IMAGE_SERVICE_URL, CHAT
 from webapp.agents import PHASES
 from webapp.utils import _strip_ansi, _parse_chunks, _generate_diagram_via_service, _save, generate_topology_code
 from webapp.kafka_handler import KafkaManager
+from config import unload_embedding_model
 
 router = APIRouter()
 
@@ -159,6 +160,9 @@ async def process_kafka_task(task_data: dict):
         await _run_phase4_kafka(kafka_mgr, project_id, task_id, phase_idx, phase_name, agent, input_ctx, history, model_name=OLLAMA_MODEL)
     else:
         await _run_phase_kafka(kafka_mgr, project_id, task_id, phase_idx, phase_name, agent, input_ctx, history, model_name=OLLAMA_MODEL)
+
+    if phase_idx == 5:
+        unload_embedding_model()
 
 
 
