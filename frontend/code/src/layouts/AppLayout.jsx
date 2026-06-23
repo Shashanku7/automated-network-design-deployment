@@ -12,11 +12,11 @@ import TopBar from "../components/TopBar";
 
 export default function AppLayout() {
   return (
-    <div className="flex h-screen overflow-hidden">
-      <Sidebar />
-      <div className="flex flex-col flex-1 ml-64 overflow-hidden">
-        <TopBar />
-        <main className="flex-1 bg-surface relative overflow-hidden">
+    <div className="flex flex-col h-screen overflow-hidden">
+      <TopBar />
+      <div className="flex flex-1 overflow-hidden">
+        <Sidebar />
+        <main className="flex-1 ml-64 bg-surface relative overflow-hidden">
           {/* Each page renders here with a slide-in animation */}
           <div className="h-full page-enter">
             <Outlet />

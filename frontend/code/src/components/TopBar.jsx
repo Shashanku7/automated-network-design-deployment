@@ -49,6 +49,25 @@ export default function TopBar() {
   return (
     <header className="flex justify-between items-center px-6 w-full sticky top-0 z-50 h-14 bg-surface border-b border-outline-variant/15 shrink-0">
       <div className="flex items-center gap-6">
+        <NavLink
+          to="/"
+          className="flex items-center gap-3 group cursor-pointer"
+        >
+          <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-primary to-primary-container flex items-center justify-center group-hover:scale-105 transition-transform">
+            <span className="material-symbols-outlined text-sm text-on-primary">
+              hub
+            </span>
+          </div>
+          <div className="hidden sm:block">
+            <div className="text-sm font-bold text-on-surface group-hover:text-primary transition-colors leading-tight">
+              NetOrch
+            </div>
+            <div className="text-[10px] text-on-surface/60 uppercase tracking-wider leading-tight">
+              Network Architect
+            </div>
+          </div>
+        </NavLink>
+
         {/* Search Bar with Results Dropdown */}
         <div className="relative flex items-center" ref={searchRef}>
           <span className="material-symbols-outlined absolute left-3 text-outline text-sm">

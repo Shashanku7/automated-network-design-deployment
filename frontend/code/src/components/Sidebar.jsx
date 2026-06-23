@@ -45,27 +45,8 @@ export default function Sidebar() {
   }
 
   return (
-    <aside className="flex flex-col fixed left-0 top-0 h-full z-40 w-64 border-r border-outline-variant/15 bg-surface-dim font-body text-sm font-medium">
+    <aside className="flex flex-col fixed left-0 top-14 h-[calc(100vh-3.5rem)] z-40 w-64 border-r border-outline-variant/15 bg-surface-dim font-body text-sm font-medium">
       <div className="p-6 flex flex-col h-full">
-        <NavLink
-          to="/"
-          className="flex items-center gap-3 mb-8 group cursor-pointer"
-        >
-          <div className="w-10 h-10 rounded-lg bg-gradient-to-br from-primary to-primary-container flex items-center justify-center group-hover:scale-105 transition-transform">
-            <span className="material-symbols-outlined text-on-primary">
-              hub
-            </span>
-          </div>
-          <div>
-            <div className="text-on-surface font-bold group-hover:text-primary transition-colors">
-              NetOrch
-            </div>
-            <div className="text-on-surface/60 text-xs uppercase tracking-wider">
-              Network Architect
-            </div>
-          </div>
-        </NavLink>
-
         <nav className="flex flex-col gap-1">
           {navItems.map((item) => (
             <NavLink
