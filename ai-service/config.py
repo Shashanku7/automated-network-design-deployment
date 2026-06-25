@@ -74,6 +74,26 @@ def get_embedding_model() -> HuggingFaceEmbedding:
     return _embedding_model
 
 
+def unload_embedding_model():
+    """Unload the embedding model from memory to free VRAM."""
+    global _embedding_model
+    if _embedding_model is not None:
+        print("Unloading embedding model to free VRAM...", flush=True)
+        del _embedding_model
+        _embedding_model = None
+        
+        import gc
+        gc.collect()
+        
+        try:
+            import torch
+            if torch.cuda.is_available():
+                torch.cuda.empty_cache()
+                print("CUDA cache cleared.", flush=True)
+        except ImportError:
+            pass
+
+
 # ──────────────────────────────────────────────
 # Qdrant client
 # ──────────────────────────────────────────────

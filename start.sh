@@ -18,13 +18,25 @@ warn()  { echo -e "${YELLOW}[!]${RESET} $*"; }
 err()   { echo -e "${RED}[✗]${RESET} $*"; }
 info()  { echo -e "${CYAN}[i]${RESET} $*"; }
 
+kill_process_tree() {
+    local parent_pid=$1
+    if kill -0 "$parent_pid" 2>/dev/null; then
+        local children=$(pgrep -P "$parent_pid" 2>/dev/null || true)
+        for child in $children; do
+            kill_process_tree "$child"
+        done
+        kill "$parent_pid" 2>/dev/null || true
+    fi
+}
+
 stop_services() {
     echo ""
     echo -e "${BOLD}${RED}━━━ Stopping services ━━━${RESET}"
     if [ -f "$PID_FILE" ]; then
         while IFS='|' read -r pid name; do
             if kill -0 "$pid" 2>/dev/null; then
-                kill "$pid" 2>/dev/null && log "Stopped $name (PID $pid)" || warn "Failed to stop $name"
+                kill_process_tree "$pid"
+                log "Stopped $name (PID $pid) and its descendants"
             else
                 info "$name (PID $pid) already stopped"
             fi
@@ -32,14 +44,22 @@ stop_services() {
         rm -f "$PID_FILE"
     else
         warn "No PID file found."
-        for port in 8000 8001 8002 5173 8080; do
-            pid=$(lsof -ti ":$port" 2>/dev/null || true)
-            [ -n "$pid" ] && kill "$pid" 2>/dev/null && log "Killed process on port $port"
-        done
     fi
+
+    # Always perform a final port-based cleanup sweep
+    info "Performing final port cleanup sweep..."
+    for port in 8000 8001 8002 5173 8080; do
+        pids=$(lsof -ti ":$port" 2>/dev/null || true)
+        for p in $pids; do
+            kill_process_tree "$p"
+            log "Killed process tree on port $port (PID $p)"
+        done
+    done
+
     echo -e "${GREEN}All services stopped.${RESET}"
     exit 0
 }
+
 
 cleanup() {
     echo ""
@@ -102,7 +122,7 @@ TOPO_LOG="/tmp/gatekeeper.log"
     warn "Installing deps..."
     uv pip install --quiet -r requirements.txt 2>&1 | tail -1
     exec uv run uvicorn app:app --port 8002 --reload --log-level info
-) 2>&1 | tee -a "$TOPO_LOG" | sed "s/^/  ${BLUE}[gatekeeper]${RESET} /" &
+) > >(tee -a "$TOPO_LOG" | sed "s/^/  ${BLUE}[gatekeeper]${RESET} /") 2>&1 &
 TOPO_PID=$!
 echo "$TOPO_PID|Gatekeeper (8002)" >> "$PID_FILE"
 log "Gatekeeper started (PID $TOPO_PID)"
@@ -129,7 +149,7 @@ AI_LOG="/tmp/ai-service.log"
     warn "Installing torch + numpy..."
     uv pip install --quiet torch numpy 2>&1 || warn "torch/numpy install failed (non-fatal)"
     exec uv run uvicorn webapp.app:app --host 0.0.0.0 --port 8000 --reload --log-level info
-) 2>&1 | tee -a "$AI_LOG" | sed "s/^/  ${MAGENTA}[ai-service]${RESET} /" &
+) > >(tee -a "$AI_LOG" | sed "s/^/  ${MAGENTA}[ai-service]${RESET} /") 2>&1 &
 AI_PID=$!
 echo "$AI_PID|AI Service (8000)" >> "$PID_FILE"
 log "AI Service started (PID $AI_PID)"
@@ -147,7 +167,7 @@ IMG_LOG="/tmp/image-gen.log"
         export UV_PROJECT_ENVIRONMENT="$VENV"
     fi
     exec uv run uvicorn app:app --host 0.0.0.0 --port 8001 --reload --log-level info
-) 2>&1 | tee -a "$IMG_LOG" | sed "s/^/  ${CYAN}[image-gen]${RESET} /" &
+) > >(tee -a "$IMG_LOG" | sed "s/^/  ${CYAN}[image-gen]${RESET} /") 2>&1 &
 IMG_PID=$!
 echo "$IMG_PID|Image Gen (8001)" >> "$PID_FILE"
 log "Image Gen started (PID $IMG_PID)"
@@ -161,7 +181,7 @@ GW_LOG="/tmp/gateway.log"
 (
     cd "$GW_DIR"
     exec ./mvnw quarkus:dev -DskipTests=true -Dquarkus.http.port=8080
-) 2>&1 | tee -a "$GW_LOG" | sed "s/^/  ${YELLOW}[gateway]${RESET} /" &
+) > >(tee -a "$GW_LOG" | sed "s/^/  ${YELLOW}[gateway]${RESET} /") 2>&1 &
 GW_PID=$!
 echo "$GW_PID|Gateway (8080)" >> "$PID_FILE"
 log "Gateway started (PID $GW_PID)"
@@ -179,7 +199,7 @@ if [ "$SKIP_FRONTEND" = false ]; then
     (
         cd "$FE_DIR"
         exec npm run dev
-    ) 2>&1 | tee -a "$FE_LOG" | sed "s/^/  ${GREEN}[frontend]${RESET} /" &
+    ) > >(tee -a "$FE_LOG" | sed "s/^/  ${GREEN}[frontend]${RESET} /") 2>&1 &
     FE_PID=$!
     echo "$FE_PID|Frontend (5173)" >> "$PID_FILE"
     log "Frontend started (PID $FE_PID)"
