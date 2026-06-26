@@ -126,11 +126,7 @@ def firecrawl_search(query: str, limit: int = 5) -> str:
 firecrawl_search_tool = FunctionTool.from_defaults(
     fn=firecrawl_search,
     name="firecrawl_search",
-    description=(
-        "Search the web using a self-hosted Firecrawl instance. "
-        "Use this for up-to-date or external information not in the local RAG knowledge base, "
-        "such as latest HPE Aruba product releases, pricing, or technical blogs."
-    ),
+    description="Search the web for current HPE Aruba product information",
 )
 
 

@@ -40,7 +40,7 @@ agent1 = FunctionAgent(
         "- Preserve every building, floor, department, rack, workload, or cluster breakdown.\n"
         "- NEVER flatten hierarchical data into aggregates.\n"
         "- NEVER remove tables.\n"
-        "- Maintain the exact building → department structure.\n"
+        "- Maintain the exact building → floor → department structure.\n"
         "- Output ONLY the refined prompt.\n\n"
 
         "IF THE REQUEST CONTAINS A BUILDING/FLOOR/DEPARTMENT BREAKDOWN:\n"
@@ -55,9 +55,9 @@ agent1 = FunctionAgent(
         "4. Wireless Infrastructure Design\n"
         "5. Capacity Planning and Growth Forecasting\n"
         "6. VLAN and IP Addressing Strategy\n"
-        "7. Security Architecture (802.1X, NAC, ACLs, Firewalls)\n"
+        "7. Security Architecture (802.1X, WPA3-Personal, Port Security, NAC, ACLs, Firewalls)\n"
         "8. MDF/IDF and Physical Infrastructure Design\n"
-        "9. Fiber and Copper Backbone Planning\n"
+        "9. Fiber (single mode, multimode) and Copper Backbone Planning\n"
         "10. Hardware Recommendations\n"
         "11. Logical and Physical Topology Diagrams\n"
         "12. Budget Optimization\n\n"
@@ -99,14 +99,14 @@ agent2 = FunctionAgent(
         "Before generating any design, you MUST use the 'firecrawl_search' tool "
         "to verify the latest HPE Aruba networking best practices, current switch "
         "families, Aruba CX recommendations, VSF guidance, VSX guidance, "
-        "Wi-Fi 6/6E/7 campus designs, and data center architecture updates.\n\n"
+        "Wi-Fi, campus designs, and data center architecture updates.\n\n"
 
         "You MUST search for:\n"
         "- Latest HPE Aruba Campus Network Design Guide\n"
         "- Aruba CX VSF Best Practices\n"
         "- Aruba CX VSX Best Practices\n"
         "- Aruba Campus Core/Distribution recommendations\n"
-        "- Aruba Wi-Fi 6E / Wi-Fi 7 campus recommendations\n"
+        "- Aruba Wi-Fi campus recommendations\n"
         "- Latest Aruba CX switch series and lifecycle guidance\n"
         "- Aruba Data Center EVPN/VXLAN recommendations (if applicable)\n\n"
 
@@ -276,16 +276,49 @@ agent2 = FunctionAgent(
 
         "Generate a VLAN table:\n\n"
 
-        "| VLAN | Building | Department | Purpose | Subnet | Mask | Gateway | QoS |\n"
+        "| VLAN | Building | Department | Purpose | Subnet | Mask | Gateway |\n"
 
         "Subnet sizes must be calculated from actual endpoint counts.\n\n"
+
+        "### STEP 7a: GENERATE A QOS TABLE\n\n"
+        "For every VLAN in the table above, assign a traffic profile using these mappings:\n\n"
+
+        "- VOICE / VOIP TRAFFIC:\n"
+        "  * CoS: 5, DSCP: 46 (EF), Queue: 5\n"
+        "  * Command: 'qos trust dscp' or 'vlan <id> voice'\n\n"
+
+        "- VIDEO CONFERENCING / INTERACTIVE VIDEO:\n"
+        "  * CoS: 4, DSCP: 34 (AF41), Queue: 4\n\n"
+
+        "- CRITICAL SIGNALING / MANAGEMENT:\n"
+        "  * CoS: 3, DSCP: 26 (AF31), Queue: 3\n\n"
+
+        "- BUSINESS-CRITICAL / DATA:\n"
+        "  * CoS: 2, DSCP: 18 (AF21), Queue: 2\n\n"
+
+        "- BEST-EFFORT / STANDARD INTERNET / UNTAGGED:\n"
+        "  * CoS: 0, DSCP: 0 (CS0), Queue: 0\n\n"
+
+        "RULES:\n"
+        "- Keep Local Priority and CoS within 0-7 hardware queue limit.\n"
+        "- Default unrecognized traffic to Best-Effort (Queue 0, DSCP 0, CoS 0).\n"
+        "- Include these columns in your QoS table: [VLAN ID, VLAN Name, Traffic Type, CoS, DSCP, Target Queue, AOS-CX Interface Trust Mode].\n\n"
+
+        "Example QoS table:\n\n"
+
+        "| VLAN ID | VLAN Name  | Traffic Type | CoS | DSCP      | Target Queue | AOS-CX Interface Trust Mode |\n"
+        "|---------|------------|--------------|-----|-----------|--------------|-----------------------------|\n"
+        "| 10      | Data_VLAN  | Best-Effort  | 0   | 0         | 0            | `qos trust dscp`            |\n"
+        "| 20      | Voice_VLAN | Voice / VoIP | 5   | 46 (EF)   | 5            | `qos trust dscp` (or global voice mode) |\n"
+        "| 30      | Video_Conf | Video        | 4   | 34 (AF41) | 4            | `qos trust dscp`            |\n"
+        "| 99      | Mgmt_VLAN  | Management   | 3   | 26 (AF31) | 3            | `qos trust cos`             |\n\n"
 
         "--------------------------------------------------\n"
         "STEP 8: SECURITY\n"
         "--------------------------------------------------\n"
 
         "Include:\n"
-        "- 802.1X\n"
+        "- 802.1X or WPA3-Personal or Port Security\n"
         "- Dynamic VLAN assignment\n"
         "- NAC recommendations\n"
         "- ACL placement\n"
@@ -303,6 +336,7 @@ agent2 = FunctionAgent(
         "Preserve every building and department.\n"
         "Show all calculations.\n"
         "Show VLAN tables.\n"
+        "Show QoS table\n"
         "Show subnet allocations.\n"
         "Show switch sizing calculations.\n"
         "Show redundancy design.\n"
@@ -334,9 +368,22 @@ agent3 = FunctionAgent(
         "STEP 1 — DISCOVER AVAILABLE PRODUCTS\n"
         "Call 'list_available_products'.\n"
         "Identify all available Aruba switch families.\n\n"
-
         "STEP 2 — GATHER PRODUCT SPECIFICATIONS\n"
-        "For every discovered family, call 'search_product_specs'.\n"
+        "'search_product_specs' for EVERY single family in that catalog. You must query ALL of them: "
+        "- CX 4100i\n"
+        "- CX 5420\n"
+        "- CX 6000\n"
+        "- CX 6100\n"
+        "- CX 6200\n"
+        "- CX 6300\n"
+        "- CX 6300L\n"
+        "- CX 6400\n"
+        "- CX 8320\n"
+        "- CX 8360\n"
+        "- CX 8400\n"
+        "- CX 9300\n"
+        "- Do NOT skip any family, even if you think it is not suitable.\n"
+        "- Do NOT make any recommendations until you have queried EVERY family.\n\n"
         "Build a comparison matrix containing:\n"
         "- Port counts\n"
         "- PoE budgets\n"
@@ -374,8 +421,7 @@ agent3 = FunctionAgent(
         "- Product end-of-support announcements\n"
         "- New Aruba switch releases\n"
         "- Current market pricing\n"
-        "- Aruba Wi-Fi 6E recommendations\n"
-        "- Aruba Wi-Fi 7 recommendations\n\n"
+        "Aruba Wifi model recommendations\n"
 
         "If a newer replacement exists, prefer the replacement.\n\n"
 
@@ -419,13 +465,6 @@ agent3 = FunctionAgent(
         "- Prefer VSF-capable platforms.\n"
         "- Match PoE budget to APs and phones.\n"
         "- Match physical port density.\n\n"
-
-        "HIGH-DENSITY WIRELESS AREAS\n"
-        "- Prefer Smart Rate (2.5GbE or higher).\n"
-        "- Support Wi-Fi 6E and Wi-Fi 7 APs.\n\n"
-
-        "LOW-DENSITY AREAS\n"
-        "- Prefer cost-efficient access switches.\n\n"
 
         "====================================================\n"
         "SCORING MODEL\n"
