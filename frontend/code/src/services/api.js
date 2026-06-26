@@ -158,6 +158,7 @@ function makeWorkflowHandler(results, onEvent, resolve, reject, wsRef, projectId
     if (settled) return;
     settled = true;
     onEvent({ type: "workflow_complete" });
+    wsRef.closed = true;
     wsRef.current?.close();
     resolve(results);
   };
@@ -322,6 +323,7 @@ function makeWorkflowHandler(results, onEvent, resolve, reject, wsRef, projectId
         if (data && /approval|Revision|feedback/.test(data)) {
           return;
         }
+        wsRef.closed = true;
         wsRef.current?.close();
         if (!settled) {
           settled = true;
@@ -404,8 +406,8 @@ export function runWorkflow(projectId, requirements, solutionType, onEvent, isRe
 
       ws.onclose = (ev) => {
         console.log("[WS] close projectId=" + projectId + " code=" + ev.code + " reason=" + ev.reason);
-        if (closed) return;
         if (heartbeatTimer) clearInterval(heartbeatTimer);
+        if (closed || wsRef.closed) return;
         if (reconnectAttempts < 3) {
           reconnectAttempts++;
           const delay = Math.min(1000 * Math.pow(2, reconnectAttempts - 1), 8000);
@@ -482,8 +484,8 @@ export function resumeWorkflow(projectId, onEvent) {
 
       ws.onclose = (ev) => {
         console.log("[WS] resume close projectId=" + projectId + " code=" + ev.code + " reason=" + ev.reason);
-        if (closed) return;
         if (heartbeatTimer) clearInterval(heartbeatTimer);
+        if (closed || wsRef.closed) return;
         if (reconnectAttempts < 3) {
           reconnectAttempts++;
           const delay = Math.min(1000 * Math.pow(2, reconnectAttempts - 1), 8000);
