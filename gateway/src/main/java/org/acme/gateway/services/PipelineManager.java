@@ -49,13 +49,10 @@ public class PipelineManager {
 
   public AgentTask advancePhase(UUID projectId) {
     PipelineState state = getOrCreateState(projectId);
-    if (state.getCurrentPhase() <= 5) {
-      state.setCurrentPhase(state.getCurrentPhase() + 1);
-    }
-    int nextPhase = state.getCurrentPhase();
-    if (nextPhase > 5) {
+    if (state.getCurrentPhase() >= 5) {
       return null;
     }
+    state.setCurrentPhase(state.getCurrentPhase() + 1);
     return createNextTask(projectId);
   }
 

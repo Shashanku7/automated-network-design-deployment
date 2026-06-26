@@ -165,7 +165,7 @@ export default function ProposedDesign() {
   // Sync progress bar with persisted workflow state
   useEffect(() => {
     if (state.workflowStatus === "complete") {
-      setCurrentPhase(6);
+      setCurrentPhase(PHASE_LABELS.length);
     }
   }, [state.workflowStatus]);
 
@@ -325,7 +325,7 @@ export default function ProposedDesign() {
       // Sync progress bar with completed phases
       if (completedPhases.length > 0) {
         const phases = completedPhases.map((p) => p.phase);
-        setCurrentPhase(Math.max(...phases) + 1);
+        setCurrentPhase(Math.min(Math.max(...phases) + 1, PHASE_LABELS.length));
       }
 
       // If all phases complete, stop here

@@ -181,7 +181,7 @@ public class APIResource {
         .sorted((a, b) -> Integer.compare(a.phase(), b.phase()))
         .toList();
     int nextPhase = phases.isEmpty() ? 1
-        : Math.min(phases.getLast().phase() + 1, 6);
+        : Math.min(phases.getLast().phase() + 1, 5);
     var project = projectRepository.findById(projectId);
     String status = (project != null && "complete".equals(project.getWorkflowStatus())) ? "complete" : "running";
     return Response.ok(new WorkflowState(projectId,

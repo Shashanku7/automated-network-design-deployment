@@ -271,7 +271,7 @@ function projectReducer(state, action) {
       return { ...state, cliConfig: action.payload };
 
     case "WORKFLOW_COMPLETE":
-      return { ...state, workflowStatus: "complete", wsRef: null };
+      return { ...state, workflowStatus: "complete", currentPhase: 0, currentPhaseName: "", wsRef: null };
 
     case "WORKFLOW_ERROR":
       return { ...state, workflowStatus: "error", wsRef: null };
