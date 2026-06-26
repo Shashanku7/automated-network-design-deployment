@@ -21,7 +21,7 @@ public class PipelineState {
   }
 
   public String buildInputContext() {
-    return switch (currentPhase) {
+    var ctx = switch (currentPhase) {
       case 1 -> lastOutput; // Initial user prompt
       case 2 -> rephrasedPrompt;
       case 3 ->
@@ -44,5 +44,10 @@ public class PipelineState {
               + "\n```";
       default -> "";
     };
+    if (currentPhase >= 2 && lastOutput != null && lastOutput.contains("## Revision Request\n")) {
+      int revIdx = lastOutput.indexOf("## Revision Request\n");
+      ctx = ctx + "\n\n" + lastOutput.substring(revIdx);
+    }
+    return ctx;
   }
 }

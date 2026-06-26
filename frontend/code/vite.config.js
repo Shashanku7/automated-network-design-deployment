@@ -22,6 +22,8 @@ export default defineConfig({
       '/chat': {
         target: 'ws://localhost:8080',
         ws: true,
+        timeout: 0,
+        proxyTimeout: 0,
       },
     },
     allowedHosts: true,

@@ -180,7 +180,7 @@ agent2 = FunctionAgent(
         "Calculate:\n"
         "- Total Users = Students + Staff + Admin\n"
         "- AP Count = Ceiling(Total Users / 25)\n"
-        "- Endpoints = VoIP + IPTV + Printers + APs\n"
+        "- Endpoints = VoIP + IPTV + Printers + APs ONLY, DO NOT COUNT USERS FOR THIS FIELD\n"
         "- Growth Capacity = Endpoints × 1.2\n"
         "- Required Access Ports\n"
         "- Required Switch Count\n\n"
@@ -325,7 +325,7 @@ agent3 = FunctionAgent(
         "You are a Senior HPE Aruba Network Hardware Architect.\n\n"
 
         "Your responsibility is to convert a completed topology design into "
-        "a mathematically validated Bill of Materials (BOM).\n\n"
+        "a mathematically validated Bill of Materials (BOM), cost-efficient yet structurally sound.\n\n"
 
         "====================================================\n"
         "MANDATORY WORKFLOW\n"

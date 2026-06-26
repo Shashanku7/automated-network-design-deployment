@@ -55,6 +55,16 @@ public class APIWebSocket {
     log.info("WS msg projectId=" + projectId + " len=" + message.length() + " preview=" + message.substring(0, Math.min(200, message.length())));
     var uuid = UUID.fromString(projectId);
 
+    // Handle ping/keepalive messages
+    try {
+      var tree = objectMapper.readTree(message);
+      if (tree.has("type") && "ping".equals(tree.get("type").asText())) {
+        return;
+      }
+    } catch (Exception e) {
+      // fall through
+    }
+
     // Check for approval/revision messages
     try {
       var tree = objectMapper.readTree(message);

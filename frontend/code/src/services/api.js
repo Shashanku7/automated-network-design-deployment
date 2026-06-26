@@ -150,7 +150,7 @@ function stripHost(url) {
   return url.replace(/^https?:\/\/[^\/]+/, "");
 }
 
-function makeWorkflowHandler(results, onEvent, resolve, reject, ws, projectId) {
+function makeWorkflowHandler(results, onEvent, resolve, reject, wsRef, projectId) {
   let currentPhase = 0;
   let settled = false;
 
@@ -158,7 +158,7 @@ function makeWorkflowHandler(results, onEvent, resolve, reject, ws, projectId) {
     if (settled) return;
     settled = true;
     onEvent({ type: "workflow_complete" });
-    ws.close();
+    wsRef.current?.close();
     resolve(results);
   };
 
@@ -284,7 +284,7 @@ function makeWorkflowHandler(results, onEvent, resolve, reject, ws, projectId) {
         }
         onEvent({
           type: "approval_request",
-          ws,
+          ws: wsRef.current,
           approval: { taskId: approvalTaskId, phase: approvalPhase },
           timestamp,
         });
@@ -318,7 +318,11 @@ function makeWorkflowHandler(results, onEvent, resolve, reject, ws, projectId) {
 
       if (event_type === "ERROR") {
         onEvent({ type: "error", message: data || "Unknown error", timestamp });
-        ws.close();
+        // Soft errors (approval/revision related) don't close WS or reject — let UI retry
+        if (data && /approval|Revision|feedback/.test(data)) {
+          return;
+        }
+        wsRef.current?.close();
         if (!settled) {
           settled = true;
           reject(new Error(data || "Unknown error"));
@@ -336,7 +340,6 @@ export function runWorkflow(projectId, requirements, solutionType, onEvent, isRe
     const prompt = buildPromptFromRequirements(requirements, solutionType);
     const wsProtocol = window.location.protocol === "https:" ? "wss:" : "ws:";
     const wsUrl = `${wsProtocol}//${window.location.host}/chat/${projectId}`;
-    const ws = new WebSocket(wsUrl);
 
     const results = {
       prompt,
@@ -349,38 +352,73 @@ export function runWorkflow(projectId, requirements, solutionType, onEvent, isRe
       cliConfig: "",
     };
 
-    ws.onopen = () => {
-      console.log("[WS] open projectId=" + projectId);
-      const msg = JSON.stringify({ content: prompt, projectId, restart: isRestart });
-      console.log(
-        "[WS] send len=" + msg.length + " preview=" + msg.substring(0, 150),
-      );
-      ws.send(msg);
-    };
+    let ws = null;
+    let wsRef = { current: null };
+    let reconnectAttempts = 0;
+    let reconnectTimer = null;
+    let heartbeatTimer = null;
+    let closed = false;
+    let hasConnectedOnce = false;
 
-    ws.onmessage = makeWorkflowHandler(
-      results,
-      onEvent,
-      resolve,
-      reject,
-      ws,
-      projectId,
-    );
+    const handler = makeWorkflowHandler(results, onEvent, resolve, reject, wsRef, projectId);
 
-    ws.onerror = () => {
-      console.error("[WS] error projectId=" + projectId);
-      reject(new Error("WebSocket connection failed"));
-    };
-    ws.onclose = (ev) => {
-      console.log(
-        "[WS] close projectId=" +
-          projectId +
-          " code=" +
-          ev.code +
-          " reason=" +
-          ev.reason,
-      );
-    };
+    function cleanup() {
+      closed = true;
+      if (reconnectTimer) clearTimeout(reconnectTimer);
+      if (heartbeatTimer) clearInterval(heartbeatTimer);
+      if (ws && ws.readyState === WebSocket.OPEN) ws.close();
+    }
+
+    function doConnect() {
+      if (closed) return;
+
+      ws = new WebSocket(wsUrl);
+      wsRef.current = ws;
+
+      ws.onopen = () => {
+        console.log("[WS] open projectId=" + projectId + (hasConnectedOnce ? " (reconnect)" : ""));
+        reconnectAttempts = 0;
+
+        if (heartbeatTimer) clearInterval(heartbeatTimer);
+        heartbeatTimer = setInterval(() => {
+          if (ws.readyState === WebSocket.OPEN) {
+            ws.send(JSON.stringify({ type: "ping" }));
+          }
+        }, 25000);
+
+        if (hasConnectedOnce) {
+          ws.send(JSON.stringify({ resume: true }));
+        } else {
+          hasConnectedOnce = true;
+          const msg = JSON.stringify({ content: prompt, projectId, restart: isRestart });
+          console.log("[WS] send len=" + msg.length + " preview=" + msg.substring(0, 150));
+          ws.send(msg);
+        }
+      };
+
+      ws.onmessage = handler;
+
+      ws.onerror = () => {
+        console.error("[WS] error projectId=" + projectId);
+      };
+
+      ws.onclose = (ev) => {
+        console.log("[WS] close projectId=" + projectId + " code=" + ev.code + " reason=" + ev.reason);
+        if (closed) return;
+        if (heartbeatTimer) clearInterval(heartbeatTimer);
+        if (reconnectAttempts < 3) {
+          reconnectAttempts++;
+          const delay = Math.min(1000 * Math.pow(2, reconnectAttempts - 1), 8000);
+          console.log("[WS] reconnect attempt " + reconnectAttempts + "/3 in " + delay + "ms");
+          reconnectTimer = setTimeout(doConnect, delay);
+        } else {
+          cleanup();
+          reject(new Error("WebSocket connection failed after 3 attempts"));
+        }
+      };
+    }
+
+    doConnect();
   });
 }
 
@@ -388,7 +426,6 @@ export function resumeWorkflow(projectId, onEvent) {
   return new Promise((resolve, reject) => {
     const wsProtocol = window.location.protocol === "https:" ? "wss:" : "ws:";
     const wsUrl = `${wsProtocol}//${window.location.host}/chat/${projectId}`;
-    const ws = new WebSocket(wsUrl);
 
     const results = {
       prompt: "",
@@ -401,34 +438,65 @@ export function resumeWorkflow(projectId, onEvent) {
       cliConfig: "",
     };
 
-    ws.onopen = () => {
-      console.log("[WS] resume open projectId=" + projectId);
-      ws.send(JSON.stringify({ resume: true }));
-    };
+    let ws = null;
+    let wsRef = { current: null };
+    let reconnectAttempts = 0;
+    let reconnectTimer = null;
+    let heartbeatTimer = null;
+    let closed = false;
 
-    ws.onmessage = makeWorkflowHandler(
-      results,
-      onEvent,
-      resolve,
-      reject,
-      ws,
-      projectId,
-    );
+    const handler = makeWorkflowHandler(results, onEvent, resolve, reject, wsRef, projectId);
 
-    ws.onerror = () => {
-      console.error("[WS] resume error projectId=" + projectId);
-      reject(new Error("WebSocket connection failed"));
-    };
-    ws.onclose = (ev) => {
-      console.log(
-        "[WS] resume close projectId=" +
-          projectId +
-          " code=" +
-          ev.code +
-          " reason=" +
-          ev.reason,
-      );
-    };
+    function cleanup() {
+      closed = true;
+      if (reconnectTimer) clearTimeout(reconnectTimer);
+      if (heartbeatTimer) clearInterval(heartbeatTimer);
+      if (ws && ws.readyState === WebSocket.OPEN) ws.close();
+    }
+
+    function doConnect() {
+      if (closed) return;
+
+      ws = new WebSocket(wsUrl);
+      wsRef.current = ws;
+
+      ws.onopen = () => {
+        console.log("[WS] resume open projectId=" + projectId + (reconnectAttempts > 0 ? " (reconnect)" : ""));
+        reconnectAttempts = 0;
+
+        if (heartbeatTimer) clearInterval(heartbeatTimer);
+        heartbeatTimer = setInterval(() => {
+          if (ws.readyState === WebSocket.OPEN) {
+            ws.send(JSON.stringify({ type: "ping" }));
+          }
+        }, 25000);
+
+        ws.send(JSON.stringify({ resume: true }));
+      };
+
+      ws.onmessage = handler;
+
+      ws.onerror = () => {
+        console.error("[WS] resume error projectId=" + projectId);
+      };
+
+      ws.onclose = (ev) => {
+        console.log("[WS] resume close projectId=" + projectId + " code=" + ev.code + " reason=" + ev.reason);
+        if (closed) return;
+        if (heartbeatTimer) clearInterval(heartbeatTimer);
+        if (reconnectAttempts < 3) {
+          reconnectAttempts++;
+          const delay = Math.min(1000 * Math.pow(2, reconnectAttempts - 1), 8000);
+          console.log("[WS] resume reconnect attempt " + reconnectAttempts + "/3 in " + delay + "ms");
+          reconnectTimer = setTimeout(doConnect, delay);
+        } else {
+          cleanup();
+          reject(new Error("WebSocket connection failed after 3 attempts"));
+        }
+      };
+    }
+
+    doConnect();
   });
 }
 

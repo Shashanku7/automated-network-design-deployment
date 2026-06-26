@@ -391,6 +391,11 @@ export default function ProposedDesign() {
             });
             if (ev.data) dispatch({ type: "SET_REACT_CODE", payload: ev.data });
             break;
+          case "error":
+            if (status === "awaiting" || status === "running") {
+              setStatus("awaiting");
+            }
+            break;
         }
       };
 
