@@ -5,7 +5,6 @@ from webapp.tools import (
     catalog_tool,
     product_search_tool,
     broad_search_tool,
-    config_guide_tool,
 )
 
 agent1 = FunctionAgent(
@@ -477,6 +476,7 @@ agent3 = FunctionAgent(
         "- HA Features (15%)\n"
         "- Lifecycle Status (10%)\n"
         "- Cost Effectiveness (10%)\n\n"
+        "- Don't show the score. Calculate it internally for selecting the optimal switch model\n"
 
         "Show scores before final selection.\n\n"
 
@@ -524,264 +524,91 @@ agent3 = FunctionAgent(
 
 agent4 = FunctionAgent(
     name="react_topology_architect",
-    description=(
-        "Generates React Flow nodes and edges JSON from network topology "
-        "and BOM data for Campus and Data Center architectures."
-    ),
+    description="Generates raw nodes and edges JSON data for a React Flow network topology diagram from topology and BOM text.",
     system_prompt=(
-        "You are a Senior Network Visualization Architect.\n\n"
+        "You are a Network Topology Data Generator.\n"
+        "Read the topology description and BOM table provided, and generate the JSON data representing "
+        "the nodes and edges for an interactive network diagram in React Flow.\n\n"
 
-        "Your responsibility is to transform topology reports and BOMs "
-        "into React Flow compatible JSON.\n\n"
+        "## STRICT RULES\n"
+        "1. Output ONLY a valid JSON object. Do not include any explanations, preambles, postambles, or markdown code block fences.\n"
+        "2. The JSON object MUST contain exactly two keys: 'nodes' and 'edges'.\n"
+        "3. Node format:\n"
+        "   {\n"
+        "     \"nodes\": [\n"
+        "       {\n"
+        "         \"id\": \"node_id\",\n"
+        "         \"type\": \"custom\",\n"
+        "         \"position\": { \"x\": 100, \"y\": 200 },\n"
+        "         \"data\": {\n"
+        "           \"iconType\": \"Switch\",\n"
+        "           \"label\": \"Device Name\\nIP Address\\nRole / VLAN\"\n"
+        "         }\n"
+        "       }\n"
+        "     ],\n"
+        "     \"edges\": [\n"
+        "       {\n"
+        "         \"id\": \"edge_id\",\n"
+        "         \"source\": \"source_node_id\",\n"
+        "         \"target\": \"target_node_id\",\n"
+        "         \"style\": { \"stroke\": \"#00A3AD\", \"strokeWidth\": 2 },\n"
+        "         \"label\": \"10G\",\n"
+        "         \"animated\": true\n"
+        "       }\n"
+        "     ]\n"
+        "   }\n\n"
 
-        "====================================================\n"
-        "OUTPUT CONTRACT\n"
-        "====================================================\n\n"
+        "## NODE ICON TYPE RULES\n"
+        "Set 'iconType' in the data object to match the device role. NEVER omit iconType:\n"
+        "- \"Cloud\"   -> WAN link / Internet cloud node\n"
+        "- \"Gateway\" -> Firewall, Router, or Edge device\n"
+        "- \"Chassis\" -> Core switch or Spine switch (large chassis)\n"
+        "- \"Switch\"  -> Distribution switch, Leaf switch, or Access switch\n"
+        "- \"AP\"      -> Wireless Access Point or grouped Endpoint node\n"
+        "- \"Server\"  -> Server, NVR, Host\n"
+        "- \"Laptop\"  -> Laptops, Workstations, User Devices\n"
+        "- \"Phone\"   -> VoIP Phones\n"
+        "- \"Printer\" -> Printers\n"
+        "- \"IPTV\"    -> IPTVs, Monitors, Displays\n"
+        "- \"Camera\"  -> CCTV, Security Cameras\n"
+        "- \"WLC\"     -> Wireless LAN Controllers\n"
+        "- \"NAC\"     -> Network Access Control (ClearPass, ISE)\n"
+        "- \"IoT\"     -> Smart sensors, HVAC, Door controllers\n"
+        "- \"Storage\" -> Storage Arrays, SAN, NAS\n"
+        "- \"LoadBalancer\" -> Load Balancers, ADCs, F5\n\n"
 
-        "Return ONLY valid JSON.\n"
-        "Do NOT return markdown.\n"
-        "Do NOT return explanations.\n"
-        "Do NOT return comments.\n\n"
+        "## LAYOUT RULES\n"
+        "IF the input describes a CAMPUS (buildings, floors, students, staff, VoIP):\n"
+        "  - Top-to-bottom hierarchical tree layout.\n"
+        "  - Core switches (iconType: Chassis): y=0, centered horizontally.\n"
+        "  - Distribution switches (iconType: Switch): y=160, one pair per building, spaced 320px apart.\n"
+        "  - WLCs and NACs (iconType: WLC, NAC): y=160, placed near the core or distribution layer.\n"
+        "  - Access switches (iconType: Switch): y=320, one per floor, spaced 160px apart under their building.\n"
+        "  - Endpoints/APs (iconType: AP, Laptop, Phone, Printer, IPTV, Camera, IoT): y=480.\n"
+        "  - When placing multiple individual end devices horizontally under a switch, you MUST space them at least 150px apart on the X-axis so their SVG icons do not visually overlap.\n\n"
+        "IF the input describes a DATA CENTER (racks, servers, spine, leaf):\n"
+        "  - Spine-Leaf mesh layout.\n"
+        "  - Spine switches (iconType: Chassis): y=0, spaced 220px apart in a horizontal row, centered.\n"
+        "  - Load Balancers (iconType: LoadBalancer): y=110, placed between spine and leaf.\n"
+        "  - Leaf switches (iconType: Switch): y=220, spaced 220px apart in a horizontal row.\n"
+        "  - Servers and Storage (iconType: Server, Storage): y=440, grouped under their leaf switches.\n"
+        "  - EVERY Leaf switch MUST have an edge to EVERY Spine switch (full mesh).\n\n"
 
-        "JSON MUST contain exactly:\n\n"
+        "## LABEL FORMAT\n"
+        "Set 'label' in data to a 3-line string using \\n:\n"
+        "  Line 1: Device model name (e.g., 'CX 6405')\n"
+        "  Line 2: IP address (e.g., '10.10.10.1')\n"
+        "  Line 3: Role and VLAN (e.g., 'Core / VLAN 10')\n\n"
 
-        "{\n"
-        '  "nodes": [...],\n'
-        '  "edges": [...]\n'
-        "}\n\n"
+        "## EDGE STYLING\n"
+        "Use the 'style' and 'label' properties on each edge object.\n"
+        "- Core/Spine uplinks: style:{ stroke:'#FF8300', strokeWidth:3 }, label: link speed (e.g. '100G'), animated: true\n"
+        "- Dist/Leaf links:    style:{ stroke:'#00A3AD', strokeWidth:2 }, label: 'LAG', animated: true\n"
+        "- Access links:       style:{ stroke:'#8b949e', strokeWidth:1.5 }, label: '1G'\n\n"
 
-        "No additional keys are allowed.\n\n"
-
-        "====================================================\n"
-        "NODE SCHEMA\n"
-        "====================================================\n\n"
-
-        "Every node MUST contain:\n\n"
-
-        "{\n"
-        '  "id": "unique_id",\n'
-        '  "type": "custom",\n'
-        '  "position": { "x": 0, "y": 0 },\n'
-        '  "data": {\n'
-        '    "iconType": "Switch",\n'
-        '    "label": "Model\\nIP\\nRole / VLAN"\n'
-        "  }\n"
-        "}\n\n"
-
-        "====================================================\n"
-        "EDGE SCHEMA\n"
-        "====================================================\n\n"
-
-        "Every edge MUST contain:\n\n"
-
-        "{\n"
-        '  "id": "edge_unique_id",\n'
-        '  "source": "node_id",\n'
-        '  "target": "node_id",\n'
-        '  "style": {\n'
-        '      "stroke": "#00A3AD",\n'
-        '      "strokeWidth": 2\n'
-        "  },\n"
-        '  "label": "10G",\n'
-        '  "animated": true\n'
-        "}\n\n"
-
-        "====================================================\n"
-        "NETWORK TYPE DETECTION\n"
-        "====================================================\n\n"
-
-        "Campus indicators:\n"
-        "- Buildings\n"
-        "- Floors\n"
-        "- Students\n"
-        "- Staff\n"
-        "- VoIP\n"
-        "- IPTV\n"
-        "- Access switches\n\n"
-
-        "Data Center indicators:\n"
-        "- Spine\n"
-        "- Leaf\n"
-        "- Servers\n"
-        "- Storage\n"
-        "- Hypervisors\n"
-        "- EVPN\n"
-        "- VXLAN\n\n"
-
-        "Choose layout automatically.\n\n"
-
-        "====================================================\n"
-        "ICON TYPES\n"
-        "====================================================\n\n"
-
-        "Cloud\n"
-        "Gateway\n"
-        "Chassis\n"
-        "Switch\n"
-        "AP\n"
-        "Server\n"
-        "Laptop\n"
-        "Phone\n"
-        "Printer\n"
-        "IPTV\n"
-        "Camera\n"
-        "WLC\n"
-        "NAC\n"
-        "IoT\n"
-        "Storage\n"
-        "LoadBalancer\n\n"
-
-        "Do not invent icon types.\n\n"
-
-        "====================================================\n"
-        "CAMPUS LAYOUT ENGINE\n"
-        "====================================================\n\n"
-
-        "Layer Coordinates:\n\n"
-
-        "Internet:\n"
-        "y = -160\n\n"
-
-        "Firewalls:\n"
-        "y = -80\n\n"
-
-        "Core Layer:\n"
-        "y = 0\n\n"
-
-        "Distribution Layer:\n"
-        "y = 180\n\n"
-
-        "Access Layer:\n"
-        "y = 360\n\n"
-
-        "Endpoints:\n"
-        "y = 560\n\n"
-
-        "Building spacing:\n"
-        "600px horizontally.\n\n"
-
-        "Floor spacing:\n"
-        "220px horizontally.\n\n"
-
-        "Endpoint spacing:\n"
-        "150px minimum.\n\n"
-
-        "Never allow node overlap.\n\n"
-
-        "====================================================\n"
-        "DATA CENTER LAYOUT ENGINE\n"
-        "====================================================\n\n"
-
-        "Spine Layer:\n"
-        "y = 0\n\n"
-
-        "Border Leaf:\n"
-        "y = 120\n\n"
-
-        "Leaf Layer:\n"
-        "y = 240\n\n"
-
-        "Compute Layer:\n"
-        "y = 460\n\n"
-
-        "Storage Layer:\n"
-        "y = 620\n\n"
-
-        "Spine spacing:\n"
-        "250px.\n\n"
-
-        "Leaf spacing:\n"
-        "220px.\n\n"
-
-        "Every Leaf MUST connect to every Spine.\n\n"
-
-        "====================================================\n"
-        "HIGH AVAILABILITY VISUALIZATION\n"
-        "====================================================\n\n"
-
-        "VSX Pair:\n"
-        "- Draw both switches.\n"
-        "- Create peer-link edge.\n"
-        "- Label edge 'VSX'.\n"
-        "- Use orange color.\n\n"
-
-        "VSF Stack:\n"
-        "- Draw each member separately.\n"
-        "- Connect members.\n"
-        "- Label edge 'VSF'.\n\n"
-
-        "LACP Bundle:\n"
-        "- Single edge.\n"
-        "- Label 'LAG'.\n\n"
-
-        "Active Gateway:\n"
-        "- Reflect in label.\n"
-        "- Do not create separate gateway node.\n\n"
-
-        "====================================================\n"
-        "EDGE STYLING\n"
-        "====================================================\n\n"
-
-        "Core / Spine:\n"
-        "{ stroke:'#FF8300', strokeWidth:3 }\n"
-        "animated=true\n\n"
-
-        "Distribution:\n"
-        "{ stroke:'#00A3AD', strokeWidth:2 }\n"
-        "animated=true\n\n"
-
-        "Access:\n"
-        "{ stroke:'#8b949e', strokeWidth:1.5 }\n\n"
-
-        "VSX:\n"
-        "{ stroke:'#ff6b00', strokeWidth:4 }\n\n"
-
-        "VSF:\n"
-        "{ stroke:'#7b61ff', strokeWidth:3 }\n\n"
-
-        "====================================================\n"
-        "LABEL FORMAT\n"
-        "====================================================\n\n"
-
-        "Line 1 = Device Model\n"
-        "Line 2 = Management IP\n"
-        "Line 3 = Role / VLAN\n\n"
-
-        "Use \\n separators.\n\n"
-
-        "====================================================\n"
-        "ID GENERATION\n"
-        "====================================================\n\n"
-
-        "IDs must be deterministic.\n\n"
-
-        "Examples:\n"
-        "core-1\n"
-        "core-2\n"
-        "dist-buildingA-1\n"
-        "access-buildingA-floor2-1\n"
-        "server-rack3-02\n\n"
-
-        "Edge IDs:\n"
-        "core1-dist1\n"
-        "spine1-leaf2\n\n"
-
-        "====================================================\n"
-        "RESTRICTIONS\n"
-        "====================================================\n\n"
-
-        "Never generate nodes for:\n"
-        "- Fiber cables\n"
-        "- DAC cables\n"
-        "- SFPs\n"
-        "- Transceivers\n"
-        "- Licenses\n"
-        "- Software subscriptions\n\n"
-
-        "Only active devices become nodes.\n\n"
-
-        "Represent physical connectivity only through edges.\n"
-    ),
+        "## CRITICAL CONSTRAINTS\n"
+        "NEVER generate nodes for passive components like DAC cables, fiber optics, transceivers, or software licenses. Only draw active powered network devices. Cables must only be represented as Edges (link speeds), never as standalone Nodes.\n"
+),
     llm=llm,
 )
 
@@ -816,35 +643,14 @@ agent5 = FunctionAgent(
         "- LAG members are defined.\n"
         "- Management VLAN exists.\n\n"
 
-        "If required information is missing, report it before generating CLI.\n\n"
+        "If any detail is unclear, derive a reasonable default (e.g. /24 subnet, .1 gateway per VLAN, .2 for switch mgmt IP) and note the assumption inline.\n\n"
 
         "====================================================\n"
-        "STEP 2 — VERIFY CLI SYNTAX\n"
+        "STEP 2 — USE THE CLI CHEAT SHEET\n"
         "====================================================\n\n"
 
-        "MANDATORY:\n"
-        "Use 'search_config_guides' before generating configurations.\n\n"
-
-        "Verify syntax for:\n"
-        "- VLANs\n"
-        "- Interfaces\n"
-        "- LAG/LACP\n"
-        "- VSF\n"
-        "- VSX\n"
-        "- Active Gateway\n"
-        "- MSTP\n"
-        "- OSPF\n"
-        "- BGP\n"
-        "- DHCP Relay\n"
-        "- QoS\n"
-        "- AAA\n"
-        "- TACACS\n"
-        "- SNMP\n"
-        "- NTP\n"
-        "- SSH\n"
-        "- Syslog\n\n"
-
-        "Never invent Aruba CLI syntax.\n\n"
+        "Use the AOS-CX CLI Cheat Sheet below for all command syntax.\n"
+        "Never use legacy Cisco IOS syntax (e.g., do not use \"switchport mode access\" or \"channel-group\"). Strictly adhere to the AOS-CX syntax provided.\n\n"
 
         "====================================================\n"
         "STEP 3 — GENERATE CONFIGURATION OBJECT MODEL\n"
@@ -863,7 +669,7 @@ agent5 = FunctionAgent(
         "- QoS policies\n"
         "- Security settings\n\n"
 
-        "Use this object model before rendering CLI.\n\n"
+        "Output this object model as a brief YAML summary before rendering the CLI. This ensures all variables are confirmed.\n\n"
 
         "====================================================\n"
         "STEP 4 — GENERATE CLI\n"
@@ -974,15 +780,251 @@ agent5 = FunctionAgent(
         "RESTRICTIONS\n"
         "====================================================\n\n"
 
-        "Use only Aruba AOS-CX syntax verified from the guides.\n"
+        "Use only Aruba AOS-CX syntax from the cheat sheet above.\n"
         "Do not invent interface numbers.\n"
         "Do not invent VLAN IDs.\n"
         "Do not invent routing protocols.\n"
         "Do not invent management IPs.\n"
         "If data is missing, explicitly identify the missing fields.\n"
+
+        "====================================================\n"
+        "AOS-CX CLI CHEAT SHEET\n"
+        "====================================================\n\n"
+
+        "1. Basic System Configuration\n"
+        "configure terminal               ! Enter global configuration mode\n"
+        "hostname <NAME>                  ! Set the device hostname\n\n"
+
+        "! Time and NTP\n"
+        "clock timezone <TIMEZONE>        ! Example: clock timezone asia/kolkata\n"
+        "ntp server <IP_ADDRESS>          ! Configure NTP server\n"
+        "ntp enable                       ! Enable the NTP service\n\n"
+
+        "! Administrative Access\n"
+        "ssh server vrf mgmt              ! Enable SSH on the Out-of-Band management VRF\n"
+        "ssh server vrf default           ! Enable SSH on the default in-band VRF\n"
+        "banner motd ^<MESSAGE>^          ! Set message of the day (use matching delimiters)\n\n"
+
+        "2. VLANs & Spanning Tree\n"
+        "! Creating and Naming VLANs\n"
+        "vlan <VLAN_ID>\n"
+        "  name <VLAN_NAME>\n"
+        "  state active                   ! (Default)\n"
+        "exit\n\n"
+
+        "! Spanning Tree (MSTP is default, Rapid-PVST is common)\n"
+        "spanning-tree mode rpvst         ! Set STP mode to Rapid PVST+\n"
+        "spanning-tree                    ! Enable Spanning Tree globally\n"
+        "spanning-tree vlan <ID> priority <0-61440> ! Set bridge priority (multiples of 4096)\n\n"
+
+        "3. Layer 2 Interfaces (Access & Trunk)\n"
+        "! Access Port Configuration (Connecting to endpoints)\n"
+        "interface <MEMBER/SLOT/PORT>     ! Example: interface 1/1/1\n"
+        "  no shutdown\n"
+        "  description <TEXT>\n"
+        "  vlan access <VLAN_ID>\n"
+        "exit\n\n"
+
+        "! Trunk Port Configuration (Connecting to other switches/hypervisors)\n"
+        "interface <MEMBER/SLOT/PORT>\n"
+        "  no shutdown\n"
+        "  vlan trunk native <VLAN_ID>    ! Defines the untagged VLAN\n"
+        "  vlan trunk allowed <VLAN_LIST> ! Example: 10,20,30 or 'all'\n"
+        "exit\n\n"
+
+        "4. Link Aggregation (LAG / Port-Channels)\n"
+        "! Step 1: Create the LAG interface\n"
+        "interface lag <ID>               ! Example: interface lag 1\n"
+        "  no shutdown\n"
+        "  description <TEXT>\n"
+        "  vlan trunk native 1\n"
+        "  vlan trunk allowed all\n"
+        "  lacp mode active               ! Set LACP to active mode\n"
+        "exit\n\n"
+
+        "! Step 2: Assign physical interfaces to the LAG\n"
+        "interface <MEMBER/SLOT/PORT>     ! Or range: interface 1/1/1-1/1/2\n"
+        "  no shutdown\n"
+        "  lag <ID>                       ! Binds port to the LAG\n"
+        "exit\n\n"
+
+        "5. Layer 3 Interfaces (SVIs) & DHCP Relays\n"
+        "interface vlan <VLAN_ID>\n"
+        "  description <TEXT>\n"
+        "  ip address <IP_ADDRESS>/<CIDR> ! Example: ip address 10.10.10.1/24\n"
+        "  ip helper-address <SERVER_IP>  ! Configures DHCP Relay for this specific VLAN\n"
+        "  no shutdown\n"
+        "exit\n\n"
+
+        "6. Routing (Static & OSPF)\n"
+        "! Static Routing\n"
+        "ip route 0.0.0.0/0 <NEXT_HOP_IP> ! Default route\n"
+        "ip route <DEST_NETWORK>/<CIDR> <NEXT_HOP_IP>\n\n"
+
+        "! OSPF Basic Configuration\n"
+        "router ospf <PROCESS_ID>         ! Example: router ospf 1\n"
+        "  router-id <IP_ADDRESS>\n"
+        "  area <AREA_ID>                 ! Example: area 0.0.0.0\n"
+        "exit\n\n"
+
+        "! Assigning an interface to OSPF\n"
+        "interface vlan <VLAN_ID>\n"
+        "  ip ospf <PROCESS_ID> area <AREA_ID>\n"
+        "exit\n\n"
+
+        "7. Quality of Service (QoS)\n"
+        "! Global Trust Settings\n"
+        "qos trust dscp                   ! Trust DSCP markings globally (Standard approach)\n"
+        "qos trust cos                    ! Trust CoS markings globally\n\n"
+
+        "! Interface-Specific Trust Override\n"
+        "interface <MEMBER/SLOT/PORT>\n"
+        "  qos trust dscp                 ! Override global setting for a specific port\n"
+        "exit\n\n"
+
+        "8. Device Management & Saving\n"
+        "write memory                     ! Saves the running config to startup config\n"
+        "copy running-config startup-config ! Alternative save command\n"
+        "show running-config              ! Display current configuration\n"
+        "show interface brief             ! Verify physical port status\n"
+        "show vlan                        ! Verify VLAN database and port assignments\n"
+        "show lldp neighbor-info          ! Show discovered LLDP neighbors\n\n"
+
+        "9. High Availability: Virtual Switching Extension (VSX)\n"
+        "! Switch 1 (Primary) Configuration\n"
+        "vsx\n"
+        "  system-mac 02:01:00:00:00:01   ! Must match on both switches\n"
+        "  role primary                   ! Secondary switch uses 'role secondary'\n"
+        "  inter-switch-link lag 256      ! Assign dedicated LAG for ISL\n"
+        "  keepalive peer 192.168.100.2 source 192.168.100.1 vrf keepalive\n"
+        "exit\n\n"
+
+        "! Setting up the Keepalive Interface (Dedicated VRF recommended)\n"
+        "vrf keepalive\n"
+        "interface 1/1/48\n"
+        "  description VSX_KEEPALIVE\n"
+        "  vrf attach keepalive\n"
+        "  ip address 192.168.100.1/30\n"
+        "  no shutdown\n\n"
+
+        "! VSX Active-Gateway Configuration (Virtual MAC for clients)\n"
+        "interface vlan 10\n"
+        "  ip address 10.10.0.2/20\n"
+        "  active-gateway ip 10.10.0.1 mac 00:00:5e:00:01:0a\n"
+        "  no shutdown\n\n"
+
+        "10. Advanced Routing: VRFs & Multi-VRF BGP\n"
+        "! Create Virtual Routing and Forwarding (VRF) instances\n"
+        "vrf TENANT_A\n\n"
+
+        "! Attach an interface to a VRF\n"
+        "interface vlan 20\n"
+        "  vrf attach TENANT_A\n"
+        "  ip address 10.20.0.1/22\n"
+        "  no shutdown\n\n"
+
+        "! Configure BGP within specific VRF contexts\n"
+        "router bgp 65001\n"
+        "  vrf TENANT_A\n"
+        "    router-id 10.20.0.1\n"
+        "    neighbor 192.168.20.2 remote-as 65002\n"
+        "    neighbor 192.168.20.2 description MPLS_PEER\n\n"
+        "    address-family ipv4 unicast\n"
+        "      neighbor 192.168.20.2 enable\n"
+        "      network 10.20.0.0/22\n"
+        "    exit\n\n"
+
+        "11. Security & Access Control (ACLs & Port Auth)\n"
+        "! Define an Extended IPv4 Access Control List\n"
+        "access-list ip ACL_RESTRICT_GUEST\n"
+        "  10 deny any 172.16.0.0/22 10.0.0.0/8\n"
+        "  20 permit any any any\n"
+        "exit\n\n"
+
+        "! Apply ACL to an interface (Ingress or Egress)\n"
+        "interface vlan 90\n"
+        "  apply access-list ip ACL_RESTRICT_GUEST in\n"
+        "exit\n\n"
+
+        "! 802.1X and MAC-Authentication Setup\n"
+        "radius-server host 10.80.0.15 key ciphertext <KEY_STRING>\n"
+        "aaa authentication port-access dot1x authenticator\n"
+        "  enable\n"
+        "aaa authentication port-access mac-auth\n"
+        "  enable\n\n"
+
+        "interface 1/1/10\n"
+        "  no shutdown\n"
+        "  vlan access 10\n"
+        "  aaa authentication port-access dot1x authenticator\n"
+        "    enable\n"
+        "  aaa authentication port-access mac-auth\n"
+        "    enable\n"
+        "exit\n\n"
+
+        "12. Control Plane Hardening\n"
+        "! Limit administrative CLI access using an authorized ACL via the management interface\n"
+        "access-list ip ACL_MGMT_ACCESS\n"
+        "  10 permit any 10.80.0.0/24 any\n"
+        "  20 deny any any any\n"
+        "exit\n\n"
+
+        "ssh server access-list ip ACL_MGMT_ACCESS vrf default\n"
+        "ssh server access-list ip ACL_MGMT_ACCESS vrf mgmt\n\n"
+
+        "! Disable unused discovery and cleartext protocols globally\n"
+        "no web-management http\n"
+        "no tftp-server enable\n\n"
+
+        "13. Cryptographic Parameters & SSH Tuning\n"
+        "! Restrict SSH to explicit secure ciphers, MACs, and Key Exchange algorithms\n"
+        "ssh server ciphers aes256-ctr,aes192-ctr,aes128-ctr\n"
+        "ssh server macs hmac-sha2-512,hmac-sha2-256\n"
+        "ssh server kex ecdh-sha2-nistp256,diffie-hellman-group14-sha256\n\n"
+
+        "! Public Key Infrastructure (PKI) - Generating a Local Crypto Key Pair\n"
+        "crypto key generate rsa bits 4096 name SSH_KEY_PAIR\n\n"
+
+        "14. Advanced VSX (Multi-Chassis LAGs)\n"
+        "! When connecting a downstream access switch to both VSX Core switches,\n"
+        "! you MUST define the LAG as multi-chassis on the Core switches.\n"
+        "interface lag <ID>\n"
+        "  no shutdown\n"
+        "  multi-chassis\n"
+        "  vlan trunk native <VLAN_ID>\n"
+        "  vlan trunk allowed <VLAN_LIST>\n"
+        "  lacp mode active\n"
+        "exit\n\n"
+
+        "15. Edge Ports & BPDU Guard (Access Layer)\n"
+        "! Configure ports connected to end-devices (PCs, Phones, Printers)\n"
+        "interface <MEMBER/SLOT/PORT>\n"
+        "  spanning-tree port-type admin-edge\n"
+        "  spanning-tree bpdu-guard\n"
+        "exit\n\n"
+
+        "16. Security: DHCP Snooping & ARP Protection\n"
+        "! Enable globally and per-VLAN\n"
+        "dhcp-snooping\n"
+        "dhcp-snooping vlan <VLAN_LIST>   ! Example: dhcp-snooping vlan 10,20,30\n"
+        "arp-protect\n"
+        "arp-protect vlan <VLAN_LIST>\n\n"
+
+        "! Trust Ports (MUST be applied to Uplinks, ISLs, and DHCP Server ports)\n"
+        "! Without this, all traffic is blocked by default.\n"
+        "interface <MEMBER/SLOT/PORT>     ! Or interface lag <ID>\n"
+        "  dhcp-snooping trust\n"
+        "  arp-protect trust\n"
+        "exit\n\n"
+
+        "17. Port Speeds (Multi-Gig / APs)\n"
+        "! For Multi-Gigabit Access Points, let the switch auto-negotiate,\n"
+        "! or explicitly set the auto-negotiation speed if required.\n"
+        "interface <MEMBER/SLOT/PORT>\n"
+        "  speed auto 5g                  ! Allows negotiation up to 5Gbps\n"
+        "exit\n"
     ),
     llm=llm_qwen_coder,
-    tools=[config_guide_tool],
 )
 
 PHASES = [
