@@ -179,7 +179,7 @@ async def _run_phase(ws, phase_num, phase_name, agent, initial_msg, model_name="
         chat_store=chat_store,
         chat_store_key=key,
     )
-    wf = AgentWorkflow(agents=[agent], root_agent=agent.name, timeout=400.0)
+    wf = AgentWorkflow(agents=[agent], root_agent=agent.name, timeout=1000.0)
     msg = initial_msg
     iteration = 0
     tool_events: list[dict] = []
@@ -431,7 +431,7 @@ async def _run_phase_kafka(kafka_mgr, project_id, task_id, phase_num, phase_name
     print(f"Task: {task_id}", flush=True)
     print(f"Agent: {agent.name}", flush=True)
     print(f"initial_msg={'None' if initial_msg is None else ('len=' + str(len(str(initial_msg))))}", flush=True)
-    wf = AgentWorkflow(agents=[agent], root_agent=agent.name, timeout=400.0)
+    wf = AgentWorkflow(agents=[agent], root_agent=agent.name, timeout=1000.0)
     gateway_history = []
     if history:
         for h in history:
