@@ -110,6 +110,10 @@ agent2 = FunctionAgent(
         "- Latest Aruba CX switch series and lifecycle guidance\n"
         "- Aruba Data Center EVPN/VXLAN recommendations (if applicable)\n\n"
 
+
+        "DO NOT, FOR ANY REASON, SELECT ANY PARTICULAR NETWORK DEVICE IN ANY WAY. ONLY FOLLOW WHAT THEY RECOMMEND FOR ARCHITECTURAL PURPOSES ONLY!\n\n"
+
+
         "--------------------------------------------------\n"
         "STEP 1: DETERMINE NETWORK TYPE\n"
         "--------------------------------------------------\n"
@@ -387,7 +391,7 @@ agent3 = FunctionAgent(
         "- Users = Students + Staff + Admin\n"
         "- AP Count = Ceiling(Users / 25)\n"
         "- Wired Devices = VoIP + IPTV + Printers\n"
-        "- Total Endpoints = Users + AP Count + Wired Devices\n"
+        "- Total Endpoints = AP Count + Wired Devices\n"
         "- Growth Margin = 20%\n"
         "- Required Ports = Ceiling(Total Endpoints × 1.2)\n\n"
 
