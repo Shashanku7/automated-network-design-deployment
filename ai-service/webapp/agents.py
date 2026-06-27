@@ -45,7 +45,7 @@ agent1 = FunctionAgent(
         "IF THE REQUEST CONTAINS A BUILDING/FLOOR/DEPARTMENT BREAKDOWN:\n"
         "- Preserve all tables exactly.\n"
         "- Keep per-building and per-department user/device counts.\n"
-        "- Include student, staff, admin, VoIP, IPTV, printer, and endpoint counts.\n\n"
+        "- Include user, staff, admin, VoIP, IPTV, printer, and endpoint counts.\n\n"
 
         "FOR CAMPUS NETWORK PROJECTS, CREATE A PROMPT THAT REQUESTS:\n"
         "1. Project Overview\n"
@@ -124,7 +124,7 @@ agent2 = FunctionAgent(
 
         "A. CAMPUS NETWORK\n"
         "- Buildings, classrooms, offices, departments\n"
-        "- Student/staff/admin users\n"
+        "- User/staff/admin users\n"
         "- VoIP phones\n"
         "- IPTV devices\n"
         "- Printers\n"
@@ -180,7 +180,7 @@ agent2 = FunctionAgent(
         "For every department:\n\n"
 
         "Calculate:\n"
-        "- Total Users = Students + Staff + Admin\n"
+        "- Total Users = Users + Staff + Admin\n"
         "- AP Count = Ceiling(Total Users / 25)\n"
         "- Endpoints = VoIP + IPTV + Printers + APs ONLY, DO NOT COUNT USERS FOR THIS FIELD\n"
         "- Growth Capacity = Endpoints × 1.2\n"
@@ -265,7 +265,7 @@ agent2 = FunctionAgent(
         "Keep departments isolated.\n\n"
 
         "Generate VLANs for:\n"
-        "- Students\n"
+        "- Users\n"
         "- Staff\n"
         "- Admin\n"
         "- Voice\n"
@@ -437,7 +437,7 @@ agent3 = FunctionAgent(
         "For every department:\n\n"
 
         "Calculate:\n"
-        "- Users = Students + Staff + Admin\n"
+        "- Total Users = Users + Staff + Admin\n"
         "- AP Count = Ceiling(Users / 25)\n"
         "- Wired Devices = VoIP + IPTV + Printers\n"
         "- Total Endpoints = AP Count + Wired Devices\n"
@@ -627,7 +627,7 @@ agent4 = FunctionAgent(
         "All cabling and physical connectivity must be represented exclusively as Edges.\n"
 
         "## LAYOUT RULES\n"
-        "IF the input describes a CAMPUS (buildings, floors, students, staff, VoIP):\n"
+        "IF the input describes a CAMPUS (buildings, floors, Users, staff, VoIP):\n"
         "  - Top-to-bottom hierarchical tree layout.\n"
         "  - Core switches (iconType: Chassis): y=0, centered horizontally.\n"
         "  - Distribution switches (iconType: Switch): y=160, one pair per building, spaced 320px apart.\n"

@@ -37,14 +37,14 @@ function buildPromptFromRequirements(req, solutionType) {
     });
 
     let prompt = `Design a campus network for an organization with ${totalBuildings} building(s).`;
-    prompt += ` Across all buildings, there are approximately ${totalStudents} students/visitors, ${totalStaff} staff/faculty, ${totalAdmins} administrators, ${totalVoip} VoIP phones, ${totalIptv} IPTVs, and ${totalPrinters} printers.\n\n`;
+    prompt += ` Across all buildings, there are approximately ${totalStudents} users/visitors, ${totalStaff} staff/faculty, ${totalAdmins} administrators, ${totalVoip} VoIP phones, ${totalIptv} IPTVs, and ${totalPrinters} printers.\n\n`;
 
     // Per-building, per-department breakdown
     prompt += `## Building & Department Breakdown\n`;
     req.buildings?.forEach((b, bIdx) => {
       prompt += `\n### Building ${bIdx + 1}: ${b.name || 'Unnamed'} (${b.departmentCount || 0} departments)\n`;
       if (b.departments?.length) {
-        prompt += `| Department | Floor No. | Students | Staff | Admins | VoIP Phones | IPTVs | Printers |\n`;
+        prompt += `| Department | Floor No. |  Users   | Staff | Admins | VoIP Phones | IPTVs | Printers |\n`;
         prompt += `|------------|-----------|----------|-------|--------|-------------|-------|----------|\n`;
         b.departments.forEach((d, dIdx) => {
           const deptLabel = d.department || `Department ${dIdx + 1}`;

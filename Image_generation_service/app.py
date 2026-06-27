@@ -176,7 +176,7 @@ def _build_d2_from_topology(topology: str, bom: str = "") -> str:
             for f_idx, floor in enumerate(floors):
                 f_name = floor.get("name", f"Floor {f_idx + 1}")
                 f_id = _sanitize_id(f_name) or f"floor_{f_idx}"
-                students = floor.get("students", "0")
+                students = floor.get("users", "0")
                 staff = floor.get("staff", "0")
                 admins = floor.get("admins", "0")
 
@@ -250,7 +250,7 @@ def _build_d2_from_topology(topology: str, bom: str = "") -> str:
                     # Fallback if no subnets found
                     user_parts = []
                     if int(students) if str(students).isdigit() else 0:
-                        user_parts.append(f"{students} Students")
+                        user_parts.append(f"{students} Users")
                     if int(staff) if str(staff).isdigit() else 0:
                         user_parts.append(f"{staff} Staff")
                     if int(admins) if str(admins).isdigit() else 0:
@@ -360,7 +360,7 @@ def _extract_floors_for_building(text: str, building_name: str, default_count: i
     """Extract floor details from text near a building reference."""
     floors = []
 
-    # Look for table rows with floor data: | 1 | Name | students | staff | admins |
+    # Look for table rows with floor data: | 1 | Name | Users | staff | admins |
     table_pattern = r"\|\s*(\d+)\s*\|\s*([^|]+?)\s*\|\s*(\d+)\s*\|\s*(\d+)\s*\|\s*(\d+)\s*\|"
 
     # Find section around the building name
@@ -370,7 +370,7 @@ def _extract_floors_for_building(text: str, building_name: str, default_count: i
         for m in re.finditer(table_pattern, section):
             floors.append({
                 "name": m.group(2).strip(),
-                "students": m.group(3),
+                "users": m.group(3),
                 "staff": m.group(4),
                 "admins": m.group(5),
             })
@@ -379,7 +379,7 @@ def _extract_floors_for_building(text: str, building_name: str, default_count: i
         for i in range(default_count):
             floors.append({
                 "name": "Ground Floor" if i == 0 else f"Floor {i}",
-                "students": "?",
+                "users": "?",
                 "staff": "?",
                 "admins": "?",
             })

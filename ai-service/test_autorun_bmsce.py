@@ -25,12 +25,12 @@ except ImportError:
 C = "\033[96m"; G = "\033[92m"; Y = "\033[93m"; R = "\033[91m"
 M = "\033[95m"; B = "\033[1m"; D = "\033[2m"; RST = "\033[0m"
 
-TEST_PROMPT = """Design a campus network for the BMS College of Engineering (BMSCE) utilizing 3 of its primary academic blocks. Across these buildings, there are approximately 1,900 students/visitors, 205 staff/faculty, 22 administrators, 48 VOIP phones, 17 IPTV devices, and 12 printers.
+TEST_PROMPT = """Design a campus network for the BMS College of Engineering (BMSCE) utilizing 3 of its primary academic blocks. Across these buildings, there are approximately 1,900 users/visitors, 205 staff/faculty, 22 administrators, 48 VOIP phones, 17 IPTV devices, and 12 printers.
 
 ## Building & Department Breakdown
 
 ### Building 1: PG Block (3 departments)
-| Department | Floor No. | Students | Staff | Admins | VOIP Phones | IPTV Devices | Printers |
+| Department | Floor No. |   Users  | Staff | Admins | VOIP Phones | IPTV Devices | Printers |
 |------------|-----------|----------|-------|--------|-------------|--------------|----------|
 | BMSCE Data Center & Admin | 1 | 20 | 15 | 5 | 8 | 2 | 4 |
 | Master of Computer Applications (MCA) | 2 | 200 | 20 | 2 | 5 | 2 | 3 |
@@ -38,7 +38,7 @@ TEST_PROMPT = """Design a campus network for the BMS College of Engineering (BMS
 | **Total** | | **400** | **50** | **9** | **17** | **5** | **9** |
 
 ### Building 2: New Academic Block (3 departments)
-| Department | Floor No. | Students | Staff | Admins | VOIP Phones | IPTV Devices | Printers |
+| Department | Floor No. | Users | Staff | Admins | VOIP Phones | IPTV Devices | Printers |
 |------------|-----------|----------|-------|--------|-------------|--------------|----------|
 | Central Library & Reading Room | 1 | 300 | 15 | 2 | 4 | 2 | 1 |
 | CSE, AI & Data Science (AI & DS) | 2 | 400 | 40 | 3 | 8 | 4 | 5 |
@@ -46,7 +46,7 @@ TEST_PROMPT = """Design a campus network for the BMS College of Engineering (BMS
 | **Total** | | **1000** | **90** | **7** | **18** | **9** | **10** |
 
 ### Building 3: Core Engineering Block (3 departments)
-| Department | Floor No. | Students | Staff | Admins | VOIP Phones | IPTV Devices | Printers |
+| Department | Floor No. |   Users  | Staff | Admins | VOIP Phones | IPTV Devices | Printers |
 |------------|-----------|----------|-------|--------|-------------|--------------|----------|
 | Mechanical Engg & Workshops | 1 | 200 | 25 | 2 | 5 | 1 | 2 |
 | Civil & Environmental Engg Labs | 2 | 150 | 20 | 2 | 4 | 1 | 1 |

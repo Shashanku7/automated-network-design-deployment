@@ -2,7 +2,7 @@
  * Requirements — Single-page simple form (replaces old Steps 1-3)
  *
  * DYNAMICALLY adapts based on solution type:
- *   - Campus: buildings, students, staff, sensitive areas
+ *   - Campus: buildings, user, staff, sensitive areas
  *   - Data Center: server racks, compute, storage, redundancy
  *
  * ALL questions in plain English. Zero technical jargon.
@@ -375,7 +375,7 @@ export default function Requirements() {
                                     Floor No.*
                                   </th>
                                   <th className="px-4 py-3 text-left font-medium">
-                                    Students*
+                                    Users*
                                   </th>
                                   <th className="px-4 py-3 text-left font-medium">
                                     Staff*
