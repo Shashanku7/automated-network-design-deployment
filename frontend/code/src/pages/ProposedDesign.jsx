@@ -701,8 +701,8 @@ nded-lg hover:brightness-110 transition-all text-sm"
         <div className="px-6 py-3 flex gap-2">
           {PHASE_LABELS.map((name, i) => {
             const phaseNum = i + 1;
-            const isPast = currentPhase > phaseNum;
-            const isActive = currentPhase === phaseNum;
+            const isPast = currentPhase > phaseNum || status === "complete";
+            const isActive = currentPhase === phaseNum && status !== "complete";
             return (
               <div
                 key={i}
@@ -720,10 +720,10 @@ nded-lg hover:brightness-110 transition-all text-sm"
         </div>
 
         {/* Completed phases summary */}
-        {(status === "awaiting" || status === "running") &&
-          currentPhase > 1 && (
+        {(status === "awaiting" || status === "running" || status === "complete") &&
+          (currentPhase > 1 || status === "complete") && (
             <div className="px-6 py-2 flex gap-2 flex-wrap items-center">
-              {Array.from({ length: currentPhase - 1 }, (_, i) => (
+              {Array.from({ length: status === "complete" ? PHASE_LABELS.length : currentPhase - 1 }, (_, i) => (
                 <div
                   key={i}
                   className="flex items-center gap-1.5 text-[11px] text-tertiary bg-tertiary/10 px-2.5 py-1 rounded-full"
