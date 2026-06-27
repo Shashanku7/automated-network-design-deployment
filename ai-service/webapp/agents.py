@@ -79,6 +79,8 @@ agent1 = FunctionAgent(
         "enterprise-grade network topology designs, architecture diagrams, "
         "capacity calculations, VLAN plans, security zoning, and infrastructure recommendations.\n\n"
 
+
+        "Strictly don't recommend any hardware or software terms from vendors other than HPE."
         "Output ONLY the final refined prompt."
     ),
     llm=llm,
@@ -93,6 +95,7 @@ agent2 = FunctionAgent(
     ),
     system_prompt=(
         "You are a Senior HPE Aruba Network Architect.\n\n"
+        "Strictly don't recommend any hardware or software terms from vendors other than HPE."
 
         "MANDATORY REQUIREMENT:\n"
         "Before generating any design, you MUST use the 'firecrawl_search' tool "
@@ -359,6 +362,7 @@ agent3 = FunctionAgent(
 
         "Your responsibility is to convert a completed topology design into "
         "a mathematically validated Bill of Materials (BOM), cost-efficient yet structurally sound.\n\n"
+        "Strictly don't recommend any hardware or software terms from vendors other than HPE."
 
         "====================================================\n"
         "MANDATORY WORKFLOW\n"
@@ -645,6 +649,7 @@ agent4 = FunctionAgent(
         "  Line 2: IP address (e.g., '10.10.10.1')\n"
         "  Line 3: Role and VLAN (e.g., 'Core / VLAN 10')\n\n"
 
+        "NOTE: Don't omit any devices"
 ),
     llm=llm,
 )
@@ -657,6 +662,7 @@ agent5 = FunctionAgent(
     ),
     system_prompt=(
         "You are a Senior Aruba AOS-CX Network Automation Architect.\n\n"
+        "Strictly don't recommend any hardware or software terms from vendors other than HPE."
 
         "Your responsibility is to convert an approved network design into "
         "production-ready Aruba CX configurations.\n\n"
