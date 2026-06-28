@@ -992,7 +992,7 @@ function EventCard({ event }) {
 
     case "tool_call":
       return (
-        <div className="flex justify-start">
+        <div className="hidden flex justify-start">
           <div className="w-full max-w-[92%] border border-outline-variant/20 bg-surface-container-low rounded-xl overflow-hidden">
             <button
               onClick={() => setOpen(!open)}
@@ -1068,7 +1068,7 @@ function EventCard({ event }) {
     case "tool_result": {
       const isCatalog = ev.tool_name === "list_available_products";
       return (
-        <div className="flex justify-start">
+        <div className="hidden flex justify-start">
           <div
             className={`w-full max-w-[92%] border rounded-xl overflow-hidden ${isCatalog ? "border-cyan-500/20 bg-cyan-500/5" : "border-outline-variant/20 bg-surface-container-low"}`}
           >
