@@ -176,7 +176,13 @@ public class APIResource {
               if (b.getCompletedAt() == null) return a;
               return a.getCompletedAt().isAfter(b.getCompletedAt()) ? a : b;
             }));
+    // Exclude phases awaiting user approval (AI finished but HITL not yet given)
+    var latestCompleted = agentTaskRepository.findLatestCompletedByProjectId(projectId);
+    boolean hasPendingApproval = latestCompleted.isPresent()
+        && !agentTaskRepository.existsByProjectIdAndPhase(projectId, latestCompleted.get().getPhase() + 1);
+
     var phases = latestPerPhase.values().stream()
+        .filter(t -> !hasPendingApproval || !t.getTaskId().equals(latestCompleted.get().getTaskId()))
         .map(t -> new PhaseResult(t.getPhase(), t.getAgentTarget(), t.getOutput(), t.getStatus()))
         .sorted((a, b) -> Integer.compare(a.phase(), b.phase()))
         .toList();

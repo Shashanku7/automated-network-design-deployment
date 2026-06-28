@@ -37,16 +37,22 @@ public class APIWebSocket {
   public void onOpen(WebSocketConnection connection, @PathParam("projectId") String projectId) {
     log.info("WS open projectId=" + projectId);
     var uuid = UUID.fromString(projectId);
-    connections.putIfAbsent(uuid, connection);
+    // Replace any stale connection — ensures new WS receives messages
+    var old = connections.put(uuid, connection);
+    if (old != null && old != connection && old.isOpen()) {
+      old.close().subscribe().with(v -> {}, f -> {});
+    }
     pipelineManager.rehydrateFromDb(uuid);
     kafkaService.replayPendingApproval(uuid);
   }
 
   @OnClose
-  public void onClose(@PathParam("projectId") String projectId) {
+  public void onClose(WebSocketConnection closing, @PathParam("projectId") String projectId) {
     log.info("WS close projectId=" + projectId);
     var uuid = UUID.fromString(projectId);
-    connections.remove(uuid);
+    // Only remove if closing connection matches — prevents stale close from
+    // wiping out a newer connection that replaced it in onOpen
+    connections.remove(uuid, closing);
   }
 
   @Blocking

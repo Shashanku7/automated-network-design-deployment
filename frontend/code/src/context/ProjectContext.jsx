@@ -279,6 +279,9 @@ function projectReducer(state, action) {
     case "SET_REACT_CODE":
       return { ...state, reactCode: action.payload };
 
+    case "SET_WORKFLOW_STATUS":
+      return { ...state, workflowStatus: action.payload };
+
     default:
       return state;
   }

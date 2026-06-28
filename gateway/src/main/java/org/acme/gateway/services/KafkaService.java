@@ -18,6 +18,7 @@ import org.acme.gateway.models.AgentTask;
 import org.acme.gateway.repositories.AgentTaskRepository;
 import org.acme.gateway.repositories.ConversationRepository;
 import org.acme.gateway.repositories.MessageRepository;
+import org.acme.gateway.repositories.ProjectRepository;
 import org.eclipse.microprofile.reactive.messaging.Channel;
 import org.eclipse.microprofile.reactive.messaging.Emitter;
 import org.eclipse.microprofile.reactive.messaging.Incoming;
@@ -35,6 +36,7 @@ public class KafkaService {
   @Inject ConversationRepository conversationRepository;
   @Inject MessageRepository messageRepository;
   @Inject AgentTaskRepository agentTaskRepository;
+  @Inject ProjectRepository projectRepository;
   private final Map<UUID, PendingApproval> pendingApprovals = new ConcurrentHashMap<>();
 
   @Transactional
@@ -118,24 +120,33 @@ public class KafkaService {
       // Store output but DON'T auto-advance — wait for HITL approval
       pipelineManager.storePhaseOutput(event.projectId(), event.data());
       int phase = pipelineManager.getOrCreateState(event.projectId()).getCurrentPhase();
-      pendingApprovals.put(event.projectId(), new PendingApproval(event.taskId(), phase, event.agentName()));
 
-      // Send APPROVAL_REQUIRED event to frontend
-      try {
-        var approvalEvent = new AgentEvent(
-            event.projectId(), event.taskId(), event.agentName(),
-            AgentEvent.EventType.APPROVAL_REQUIRED,
-            "Phase completed, awaiting approval",
-            Map.of(
-                "task_id", event.taskId().toString(),
-                "phase", phase,
-                "agent_name", event.agentName()),
-            false,
-            java.time.OffsetDateTime.now());
-        var approvalJson = objectMapper.writeValueAsString(approvalEvent);
-        webSocket.sendMessage(event.projectId().toString(), approvalJson);
-      } catch (Exception e) {
-        log.severe("Failed to send APPROVAL_REQUIRED event: " + e.getMessage());
+      // Phase 5 is the final phase — auto-complete, no HITL approval needed
+      if (phase >= 5) {
+        projectRepository.findByIdOptional(event.projectId()).ifPresent(p -> {
+          p.setWorkflowStatus("complete");
+        });
+      } else {
+        // Phases 1-4 require HITL approval
+        pendingApprovals.put(event.projectId(), new PendingApproval(event.taskId(), phase, event.agentName()));
+
+        // Send APPROVAL_REQUIRED event to frontend
+        try {
+          var approvalEvent = new AgentEvent(
+              event.projectId(), event.taskId(), event.agentName(),
+              AgentEvent.EventType.APPROVAL_REQUIRED,
+              "Phase completed, awaiting approval",
+              Map.of(
+                  "task_id", event.taskId().toString(),
+                  "phase", phase,
+                  "agent_name", event.agentName()),
+              false,
+              java.time.OffsetDateTime.now());
+          var approvalJson = objectMapper.writeValueAsString(approvalEvent);
+          webSocket.sendMessage(event.projectId().toString(), approvalJson);
+        } catch (Exception e) {
+          log.severe("Failed to send APPROVAL_REQUIRED event: " + e.getMessage());
+        }
       }
     }
 
@@ -305,6 +316,15 @@ public class KafkaService {
       return Optional.empty();
     }
     var task = latestCompleted.get();
+    // If project is already complete, no phase is pending
+    var project = projectRepository.findByIdOptional(projectId);
+    if (project.isPresent() && "complete".equals(project.get().getWorkflowStatus())) {
+      return Optional.empty();
+    }
+    // Phase 5 is the final phase — never pending approval
+    if (task.getPhase() >= 5) {
+      return Optional.empty();
+    }
     if (agentTaskRepository.existsByProjectIdAndPhase(projectId, task.getPhase() + 1)) {
       return Optional.empty();
     }

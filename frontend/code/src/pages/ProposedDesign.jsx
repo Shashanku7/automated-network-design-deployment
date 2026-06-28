@@ -251,7 +251,7 @@ export default function ProposedDesign() {
 
   // Start workflow on mount if flagged
   useEffect(() => {
-    if (state.workflowStatus !== "running" || hasStarted.current) return;
+    if ((state.workflowStatus !== "running" && state.workflowStatus !== "awaiting_approval") || hasStarted.current) return;
     hasStarted.current = true;
 
     let cancelled = false;
@@ -279,6 +279,8 @@ export default function ProposedDesign() {
             dispatch({ type: "SET_TOPOLOGY", payload: p.output });
           else if (p.phase === 3)
             dispatch({ type: "SET_DEVICES", payload: p.output });
+          else if (p.phase === 4)
+            dispatch({ type: "SET_REACT_CODE", payload: p.output });
           else if (p.phase === 5)
             dispatch({ type: "SET_CLI_CONFIG", payload: p.output });
           if (!existingApprovedPhases.has(p.phase)) {
@@ -349,10 +351,12 @@ export default function ProposedDesign() {
             setStatus("awaiting");
             wsRef.current = ev.ws;
             pendingApprovalRef.current = ev.approval || null;
+            dispatch({ type: "SET_WORKFLOW_STATUS", payload: "awaiting_approval" });
             break;
           case "phase_approved":
             setStatus("running");
             pendingApprovalRef.current = null;
+            dispatch({ type: "SET_WORKFLOW_STATUS", payload: "running" });
             break;
           case "workflow_complete":
             setStatus("complete");
@@ -493,6 +497,7 @@ export default function ProposedDesign() {
       type: "WORKFLOW_EVENT",
       payload: { type: "phase_approved", phase: currentPhase },
     });
+    dispatch({ type: "SET_WORKFLOW_STATUS", payload: "running" });
     setStatus("running");
   }
 
