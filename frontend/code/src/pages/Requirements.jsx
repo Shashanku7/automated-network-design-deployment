@@ -769,7 +769,7 @@ export default function Requirements() {
           </div>
         </Section>
 
-        <Section title="Anything else?" icon="chat">
+        <Section title="Anything else (optional: mention the split of users using AP and ethernet)?" icon="chat">
           <textarea
             value={form.additionalNotes}
             onChange={(e) => set("additionalNotes", e.target.value)}
