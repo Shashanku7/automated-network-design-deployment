@@ -68,7 +68,7 @@ export default function ProposedDesign() {
     pendingApprovalRef.current = null;
     wsRef.current = null;
     setCurrentPhase(0);
-    setStatus(state.workflowStatus === "complete" ? "complete" : "idle");
+    setStatus(state.workflowStatus === "complete" ? "complete" : state.workflowStatus === "awaiting_approval" ? "awaiting" : "idle");
   }, [projectId]); // reset per project to avoid stale run guard
 
   const mergedTimeline = useMemo(() => {
@@ -251,8 +251,9 @@ export default function ProposedDesign() {
 
   // Start workflow on mount if flagged
   useEffect(() => {
-    if (state.workflowStatus !== "running" || hasStarted.current) return;
+    if ((state.workflowStatus !== "running" && state.workflowStatus !== "awaiting_approval") || hasStarted.current) return;
     hasStarted.current = true;
+    const isReconnect = state.workflowStatus === "awaiting_approval";
 
     let cancelled = false;
     (async () => {
@@ -336,7 +337,7 @@ export default function ProposedDesign() {
       }
 
       // Otherwise start/resume workflow for remaining phases
-      setStatus("running");
+      if (!isReconnect) setStatus("running");
 
       const handleEvent = (ev) => {
         dispatch({ type: "WORKFLOW_EVENT", payload: ev });
@@ -349,9 +350,11 @@ export default function ProposedDesign() {
             setStatus("awaiting");
             wsRef.current = ev.ws;
             pendingApprovalRef.current = ev.approval || null;
+            dispatch({ type: "AWAITING_APPROVAL" });
             break;
           case "phase_approved":
             setStatus("running");
+            dispatch({ type: "WORKFLOW_RESUME" });
             pendingApprovalRef.current = null;
             break;
           case "workflow_complete":
