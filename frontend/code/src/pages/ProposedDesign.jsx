@@ -47,6 +47,7 @@ export default function ProposedDesign() {
   const { state, dispatch, loadProject } = useProject();
   const wsRef = useRef(null);
   const pendingApprovalRef = useRef(null);
+  const keepWsOpenRef = useRef(false);
   const [status, setStatus] = useState("idle"); // idle | running | awaiting | complete | error
   const [currentPhase, setCurrentPhase] = useState(0);
   const [historyLoading, setHistoryLoading] = useState(false);
@@ -348,12 +349,14 @@ export default function ProposedDesign() {
             setShowFeedback(false);
             break;
           case "approval_request":
+            keepWsOpenRef.current = true;
             setStatus("awaiting");
             wsRef.current = ev.ws;
             pendingApprovalRef.current = ev.approval || null;
             dispatch({ type: "SET_WORKFLOW_STATUS", payload: "awaiting_approval" });
             break;
           case "phase_approved":
+            keepWsOpenRef.current = true;
             setStatus("running");
             pendingApprovalRef.current = null;
             dispatch({ type: "SET_WORKFLOW_STATUS", payload: "running" });
@@ -469,10 +472,13 @@ export default function ProposedDesign() {
 
     return () => {
       cancelled = true;
-      const ws = wsRef.current;
-      if (ws && ws.readyState === WebSocket.OPEN) {
-        ws.close();
+      if (!keepWsOpenRef.current) {
+        const ws = wsRef.current;
+        if (ws && ws.readyState === WebSocket.OPEN) {
+          ws.close();
+        }
       }
+      keepWsOpenRef.current = false;
       wsRef.current = null;
       pendingApprovalRef.current = null;
     };
@@ -492,6 +498,7 @@ export default function ProposedDesign() {
   }
 
   function handleApprove() {
+    keepWsOpenRef.current = true;
     sendApproval(wsRef.current, pendingApprovalRef.current || {});
     dispatch({
       type: "WORKFLOW_EVENT",
