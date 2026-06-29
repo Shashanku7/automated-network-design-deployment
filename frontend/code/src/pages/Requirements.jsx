@@ -759,6 +759,17 @@ export default function Requirements() {
         </Section>
 
         <Section title="Future plans" icon="trending_up">
+          <div className="mb-4 p-4 bg-primary/10 border border-primary/30 rounded-lg flex items-start gap-3">
+            <span className="material-symbols-outlined text-primary mt-0.5">info</span>
+            <p className="text-sm text-on-surface font-medium">
+              All designs include a{" "}
+                 <strong className="text-primary">
+                  1.2x (20% growth margin — applied by default)
+                </strong>{" "}
+              on top of your current user/device counts — automatically applied
+              to future-proof the network.
+            </p>
+          </div>
           <div className="max-w-xs">
             <NumberInput
               label={
