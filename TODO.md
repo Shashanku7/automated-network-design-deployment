@@ -2,8 +2,8 @@
 
 First ! - Breaking change / Regression
 
-- [ ] 0 Remove the stars in Requirement
-- [ ] 0 Default to zero
+- [x] 0 Remove the stars in Requirement
+- [x] 0 Default to zero
 - [ ] 0 !?User value diff approach?
 - [ ] 0 PH3 Show calculation of AP
 - [ ] 0 Mention warning info
@@ -21,4 +21,4 @@ First ! - Breaking change / Regression
 - [ ] 3 PH4 Outline the logical devision(B1 separate, B2)
 - [ ] 3 PH4 Add all devices, esp. security
 - [ ] 3 Fix Back button in requirements
-- [ ] 3 Chunk other datasheets
+- [ ] 3 Add all products list. 
