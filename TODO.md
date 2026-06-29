@@ -14,7 +14,7 @@ First ! - Breaking change / Regression
 - [ ] 1 PH3 BOM mention all devices
 - [ ] 1 !User Authentication
 - [ ] 2 Show previous runs as an example
-- [ ] 2 PH4 Reduce hallucination
+- [ ] 2 PH4 Reduce hallucination (updated the prompt yet to test)
 - [ ] 2 PH4 Mention VSX
 - [ ] 3 PH1 Rephrase Agent to be HPE Network Assistant
 - [ ] 3 PH2 MAC Auth, among others
