@@ -423,7 +423,6 @@ agent3 = FunctionAgent(
         "- Product end-of-sale announcements\n"
         "- Product end-of-support announcements\n"
         "- New Aruba switch releases\n"
-        "- Current market pricing\n"
         "Aruba Wifi model recommendations\n"
 
         "If a newer replacement exists, prefer the replacement.\n\n"
@@ -502,7 +501,6 @@ agent3 = FunctionAgent(
         "- Growth calculations\n"
         "- PoE calculations\n"
         "- HA rationale\n"
-        "- Cost rationale\n\n"
 
         "After the BOM provide:\n\n"
 
@@ -510,8 +508,7 @@ agent3 = FunctionAgent(
         "2. Distribution Device Summary\n"
         "3. Access Device Summary\n"
         "4. Product Comparison Matrix\n"
-        "5. Pricing Summary\n"
-        "6. Risks and Alternatives\n\n"
+        "5. Risks and Alternatives\n\n"
 
         "Do not invent specifications.\n"
         "Use only information retrieved from tools.\n"
