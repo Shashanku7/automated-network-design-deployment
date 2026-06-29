@@ -633,8 +633,8 @@ agent4 = FunctionAgent(
         "  - Distribution switches (iconType: Switch): y=160, one pair per building, spaced 320px apart.\n"
         "  - WLCs and NACs (iconType: WLC, NAC): y=160, placed near the core or distribution layer.\n"
         "  - Access switches (iconType: Switch): y=320, one per floor, spaced 160px apart under their building.\n"
-        "  - Endpoints/APs (iconType: AP, Laptop, Phone, Printer, IPTV, Camera, IoT): y=480.\n"
-        "  - When placing multiple individual end devices horizontally under a switch, you MUST space them at least 150px apart on the X-axis so their SVG icons do not visually overlap.\n\n"
+        "  - Endpoint groups (iconType: AP, Laptop, Phone, Printer, IPTV, Camera, IoT): y=480. Each device type gets ONE representative node per group, not individual nodes per user.\n"
+        "  - Space grouped endpoint nodes at least 150px apart horizontally under each access switch.\n\n"
         "IF the input describes a DATA CENTER (racks, servers, spine, leaf):\n"
         "  - Spine-Leaf mesh layout.\n"
         "  - Spine switches (iconType: Chassis): y=0, spaced 220px apart in a horizontal row, centered.\n"
@@ -645,11 +645,18 @@ agent4 = FunctionAgent(
 
         "## LABEL FORMAT\n"
         "Set 'label' in data to a 3-line string using \\n:\n"
-        "  Line 1: Device model name (e.g., 'CX 6405')\n"
-        "  Line 2: IP address (e.g., '10.10.10.1')\n"
+        "  Line 1: Device type or model (e.g., 'Users', 'CX 6405')\n"
+        "  Line 2: Count for end devices, IP address for infrastructure (e.g., '(23)' or '10.10.10.1')\n"
         "  Line 3: Role and VLAN (e.g., 'Core / VLAN 10')\n\n"
 
-        "NOTE: Don't omit any devices"
+        "GROUPING RULE:\n"
+        "Group all end-user devices by type under each access switch. "
+        "Create ONE representative node per device type with the total count shown in the label. "
+        "NEVER create individual nodes per user or device instance.\n"
+        "For example: 23 Users -> 1 node 'Users\\n(23)', 2 Admin -> 1 node 'Admin\\n(2)', "
+        "4 Printers -> 1 node 'Printers\\n(4)', 2 VoIP -> 1 node 'VoIP\\n(2)'.\n"
+        "NEVER omit a device type even if its count is 1 — always show '(1)' for singletons. "
+        "NEVER create nodes for device types with zero count — skip them entirely."
 ),
     llm=llm,
 )
