@@ -1,7 +1,7 @@
 /**
  * TopBar — Header bar (persistent across all pages)
  *
- * Contains: "NetOrch OS" branding (links to dashboard), search, and user actions.
+ * Contains: branding (links to dashboard) and search.
  */
 
 import { useState, useEffect, useRef } from "react";
@@ -63,10 +63,10 @@ export default function TopBar() {
           </div>
           <div>
             <div className="text-sm font-bold text-on-surface group-hover:text-primary transition-colors leading-tight">
-              NetOrch
+              Network Design
             </div>
             <div className="text-[10px] text-on-surface/60 uppercase tracking-wider leading-tight">
-              Network Architect
+              CX Solutions Builder
             </div>
           </div>
         </NavLink>
