@@ -4,10 +4,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.inject.Inject;
 import jakarta.transaction.Transactional;
-import java.util.Map;
-import java.util.Optional;
 import java.util.UUID;
-import java.util.concurrent.ConcurrentHashMap;
 import lombok.extern.java.Log;
 import org.acme.gateway.APIWebSocket;
 import org.acme.gateway.entities.AgentTaskEntity;
@@ -37,7 +34,7 @@ public class KafkaService {
   @Inject MessageRepository messageRepository;
   @Inject AgentTaskRepository agentTaskRepository;
   @Inject ProjectRepository projectRepository;
-  private final Map<UUID, PendingApproval> pendingApprovals = new ConcurrentHashMap<>();
+  @Inject WorkflowOrchestrator orchestrator;
 
   @Transactional
   public void sendTask(String message, UUID projectId) {
@@ -117,37 +114,9 @@ public class KafkaService {
         log.severe("Failed to persist agent response: " + e.getMessage());
       }
 
-      // Store output but DON'T auto-advance — wait for HITL approval
-      pipelineManager.storePhaseOutput(event.projectId(), event.data());
+      // Delegate phase transition orchestration to WorkflowOrchestrator
       int phase = pipelineManager.getOrCreateState(event.projectId()).getCurrentPhase();
-
-      // Phase 5 is the final phase — auto-complete, no HITL approval needed
-      if (phase >= 5) {
-        projectRepository.findByIdOptional(event.projectId()).ifPresent(p -> {
-          p.setWorkflowStatus("complete");
-        });
-      } else {
-        // Phases 1-4 require HITL approval
-        pendingApprovals.put(event.projectId(), new PendingApproval(event.taskId(), phase, event.agentName()));
-
-        // Send APPROVAL_REQUIRED event to frontend
-        try {
-          var approvalEvent = new AgentEvent(
-              event.projectId(), event.taskId(), event.agentName(),
-              AgentEvent.EventType.APPROVAL_REQUIRED,
-              "Phase completed, awaiting approval",
-              Map.of(
-                  "task_id", event.taskId().toString(),
-                  "phase", phase,
-                  "agent_name", event.agentName()),
-              false,
-              java.time.OffsetDateTime.now());
-          var approvalJson = objectMapper.writeValueAsString(approvalEvent);
-          webSocket.sendMessage(event.projectId().toString(), approvalJson);
-        } catch (Exception e) {
-          log.severe("Failed to send APPROVAL_REQUIRED event: " + e.getMessage());
-        }
-      }
+      orchestrator.handlePhaseComplete(event.projectId(), event.taskId(), event.agentName(), phase, event.data());
     }
 
     try {
@@ -169,184 +138,6 @@ public class KafkaService {
     return conv.getId();
   }
 
-  @Transactional
-  public void emitNextTask(UUID projectId) {
-    var nextTask = pipelineManager.advancePhase(projectId);
-    if (nextTask != null) {
-      log.info("emitNextTask projectId=" + projectId + " phase=" + nextTask.phase() + " agent=" + nextTask.agentTarget());
-      try {
-        var convId = ensureConversation(projectId);
-        agentTaskRepository.persist(new AgentTaskEntity(nextTask.taskId(), convId, projectId, nextTask.phase(), nextTask.agentTarget(), nextTask.inputContext()));
-      } catch (Exception e) {
-        log.severe("emitNextTask persist error: " + e.getMessage());
-      }
-      emitTask("emitNextTask", nextTask);
-
-      // Notify frontend phase was approved
-      try {
-        var approvedEvent = new AgentEvent(projectId, nextTask.taskId(), nextTask.agentTarget(),
-            AgentEvent.EventType.PHASE_APPROVED,
-            nextTask != null ? "Phase approved, proceeding to next phase" : "Workflow complete",
-            null, nextTask == null, java.time.OffsetDateTime.now());
-        var approvedJson = objectMapper.writeValueAsString(approvedEvent);
-        webSocket.sendMessage(projectId.toString(), approvedJson);
-      } catch (Exception e) {
-        log.severe("emitNextTask send PHASE_APPROVED error: " + e.getMessage());
-      }
-    } else {
-      log.info("emitNextTask projectId=" + projectId + " workflow complete");
-      try {
-        var doneTaskId = UUID.randomUUID();
-        var doneEvent = new AgentEvent(projectId, doneTaskId, "",
-            AgentEvent.EventType.PHASE_APPROVED,
-            "Workflow complete", Map.of("task_id", doneTaskId.toString(), "phase", 5), true,
-            java.time.OffsetDateTime.now());
-        webSocket.sendMessage(projectId.toString(), objectMapper.writeValueAsString(doneEvent));
-      } catch (Exception e) {
-        log.severe("emitNextTask send complete error: " + e.getMessage());
-      }
-    }
-  }
-
-  public Optional<PendingApproval> getPendingApproval(UUID projectId) {
-    var inMemory = pendingApprovals.get(projectId);
-    if (inMemory != null) {
-      return Optional.of(inMemory);
-    }
-    return recoverPendingApprovalFromDb(projectId);
-  }
-
-  public boolean clearPendingApproval(UUID projectId, UUID taskId, Integer phase) {
-    final boolean[] cleared = {false};
-    pendingApprovals.compute(
-        projectId,
-        (id, current) -> {
-          if (current == null) return null;
-          if (!current.taskId().equals(taskId)) return current;
-          if (phase != null && phase > 0 && current.phase() != phase) return current;
-          cleared[0] = true;
-          return null;
-        });
-    return cleared[0];
-  }
-
-  public void replayPendingApproval(UUID projectId) {
-    var pending = getPendingApproval(projectId).orElse(null);
-    if (pending == null) return;
-    try {
-      var approvalEvent =
-          new AgentEvent(
-              projectId,
-              pending.taskId(),
-              pending.agentName(),
-              AgentEvent.EventType.APPROVAL_REQUIRED,
-              "Phase completed, awaiting approval",
-              Map.of(
-                  "task_id", pending.taskId().toString(),
-                  "phase", pending.phase(),
-                  "agent_name", pending.agentName()),
-              false,
-              java.time.OffsetDateTime.now());
-      webSocket.sendMessage(projectId.toString(), objectMapper.writeValueAsString(approvalEvent));
-    } catch (Exception e) {
-      log.severe("replayPendingApproval failed projectId=" + projectId + " error=" + e.getMessage());
-    }
-  }
-
-  @Transactional
-  public void restartWorkflow(UUID projectId) {
-    log.info("restartWorkflow projectId=" + projectId);
-    pipelineManager.clearState(projectId);
-    agentTaskRepository.delete("projectId", projectId);
-    pendingApprovals.remove(projectId);
-    conversationRepository.find("projectId", projectId).firstResultOptional().ifPresent(conv -> {
-      messageRepository.delete("conversationId", conv.getId());
-      conversationRepository.delete(conv);
-    });
-  }
-
-  @Transactional
-  public void resumeWorkflow(UUID projectId) {
-    log.info("resumeWorkflow projectId=" + projectId);
-    var state = pipelineManager.getOrCreateState(projectId);
-    int phase = state.getCurrentPhase();
-    log.info("resumeWorkflow state phase=" + phase);
-
-    // If all 5 phases already done, send workflow complete
-    if (phase > 5) {
-      log.info("resumeWorkflow workflow already complete");
-      try {
-        var doneTaskId = UUID.randomUUID();
-        var doneEvent = new AgentEvent(projectId, doneTaskId, "",
-            AgentEvent.EventType.PHASE_APPROVED,
-            "Workflow complete", Map.of("task_id", doneTaskId.toString(), "phase", 5), true,
-            java.time.OffsetDateTime.now());
-        webSocket.sendMessage(projectId.toString(), objectMapper.writeValueAsString(doneEvent));
-      } catch (Exception e) {
-        log.severe("resumeWorkflow send complete error: " + e.getMessage());
-      }
-      return;
-    }
-
-    var pending = getPendingApproval(projectId);
-    if (pending.isPresent()) {
-      log.info(
-          "resumeWorkflow phase "
-              + pending.get().phase()
-              + " awaiting approval — re-sending APPROVAL_REQUIRED");
-      replayPendingApproval(projectId);
-      return;
-    }
-
-    var task = pipelineManager.createNextTask(projectId);
-    log.info("resumeWorkflow taskId=" + task.taskId() + " phase=" + task.phase() + " agent=" + task.agentTarget());
-
-    try {
-      var convId = ensureConversation(projectId);
-      agentTaskRepository.persist(new AgentTaskEntity(task.taskId(), convId, projectId, task.phase(), task.agentTarget(), task.inputContext()));
-    } catch (Exception e) {
-      log.severe("resumeWorkflow persist error: " + e.getMessage());
-    }
-    emitTask("resumeWorkflow", task);
-  }
-
-  private Optional<PendingApproval> recoverPendingApprovalFromDb(UUID projectId) {
-    var latestCompleted = agentTaskRepository.findLatestCompletedByProjectId(projectId);
-    if (latestCompleted.isEmpty()) {
-      return Optional.empty();
-    }
-    var task = latestCompleted.get();
-    // If project is already complete, no phase is pending
-    var project = projectRepository.findByIdOptional(projectId);
-    if (project.isPresent() && "complete".equals(project.get().getWorkflowStatus())) {
-      return Optional.empty();
-    }
-    // Phase 5 is the final phase — never pending approval
-    if (task.getPhase() >= 5) {
-      return Optional.empty();
-    }
-    if (agentTaskRepository.existsByProjectIdAndPhase(projectId, task.getPhase() + 1)) {
-      return Optional.empty();
-    }
-    if (task.getOutput() == null || task.getOutput().isBlank()) {
-      return Optional.empty();
-    }
-    var recovered = new PendingApproval(task.getTaskId(), task.getPhase(), task.getAgentTarget());
-    pendingApprovals.put(projectId, recovered);
-    return Optional.of(recovered);
-  }
-
-  private String getAgentTarget(int phase) {
-    return switch (phase) {
-      case 1 -> "prompt_rephraser";
-      case 2 -> "topology_designer";
-      case 3 -> "device_selector";
-      case 4 -> "d2_diagram_generator";
-      case 5 -> "cli_config_generator";
-      default -> "unknown";
-    };
-  }
-
   private String extractContent(String messageJson) {
     try {
       var tree = objectMapper.readTree(messageJson);
@@ -357,7 +148,7 @@ public class KafkaService {
     }
   }
 
-  private void emitTask(String source, AgentTask task) {
+  void emitTask(String source, AgentTask task) {
     try {
       taskEmitter.send(task).whenComplete((ignored, error) -> {
         if (error != null) {
@@ -395,6 +186,4 @@ public class KafkaService {
               + e.getMessage());
     }
   }
-
-  public record PendingApproval(UUID taskId, int phase, String agentName) {}
 }

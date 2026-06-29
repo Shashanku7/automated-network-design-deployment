@@ -253,13 +253,6 @@ function projectReducer(state, action) {
     case "SET_DEVICES":
       return { ...state, deviceSelection: action.payload };
 
-    case "AWAITING_APPROVAL":
-      return {
-        ...state,
-        workflowStatus: "awaiting_approval",
-        wsRef: action.payload.ws,
-      };
-
     case "SET_DIAGRAM":
       return {
         ...state,
@@ -341,7 +334,11 @@ export function ProjectProvider({ children }) {
     const serialized = JSON.stringify(persistable);
     if (serialized !== lastSavedRef.current) {
       lastSavedRef.current = serialized;
-      localStorage.setItem(`project_${state.projectId}`, serialized);
+      try {
+        localStorage.setItem(`project_${state.projectId}`, serialized);
+      } catch (e) {
+        console.warn("[DB] localStorage quota exceeded, skipping local persistence:", e.message);
+      }
       // Also persist to PostgreSQL
       saveProjectToDb(state.projectId, {
         title: state.projectTitle,

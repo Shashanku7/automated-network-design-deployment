@@ -19,6 +19,7 @@ import lombok.extern.java.Log;
 import org.acme.gateway.models.AgentEvent;
 import org.acme.gateway.services.KafkaService;
 import org.acme.gateway.services.PipelineManager;
+import org.acme.gateway.services.WorkflowOrchestrator;
 
 @WebSocket(path = "/chat/{projectId}")
 @ApplicationScoped
@@ -26,6 +27,8 @@ import org.acme.gateway.services.PipelineManager;
 public class APIWebSocket {
   @Inject
   KafkaService kafkaService;
+  @Inject
+  WorkflowOrchestrator orchestrator;
   @Inject
   ObjectMapper objectMapper;
   @Inject
@@ -43,7 +46,7 @@ public class APIWebSocket {
       old.close().subscribe().with(v -> {}, f -> {});
     }
     pipelineManager.rehydrateFromDb(uuid);
-    kafkaService.replayPendingApproval(uuid);
+    orchestrator.replayPendingApproval(uuid);
   }
 
   @OnClose
@@ -76,57 +79,13 @@ public class APIWebSocket {
       var tree = objectMapper.readTree(message);
       if (tree.has("approved")) {
         var approved = tree.get("approved").asBoolean();
-        UUID taskId = null;
-        Integer phase = null;
-        if (tree.has("task_id") && !tree.get("task_id").isNull()) {
-          taskId = UUID.fromString(tree.get("task_id").asText());
-        }
-        if (tree.has("phase") && !tree.get("phase").isNull()) {
-          phase = tree.get("phase").asInt();
-        }
-        var pending = kafkaService.getPendingApproval(uuid);
-        if (pending.isEmpty()) {
-          sendError(projectId, taskId, "No pending approval found for this project.");
-          return;
-        }
-        var expected = pending.get();
-        if (taskId == null || !expected.taskId().equals(taskId)) {
-          sendError(projectId, taskId, "Approval task mismatch. Please refresh and retry.");
-          return;
-        }
-        if (phase != null && phase > 0 && expected.phase() != phase) {
-          sendError(projectId, taskId, "Approval phase mismatch. Please refresh and retry.");
-          return;
-        }
-        if (!approved) {
-          String feedback = tree.has("feedback") ? tree.get("feedback").asText() : "";
-          if (feedback == null || feedback.trim().isEmpty()) {
-            sendError(projectId, taskId, "Revision feedback cannot be empty.");
-            return;
-          }
-          if (feedback.length() > 4000) {
-            sendError(projectId, taskId, "Revision feedback is too long.");
-            return;
-          }
-          if (!kafkaService.clearPendingApproval(uuid, taskId, phase)) {
-            sendError(projectId, taskId, "Approval already processed.");
-            return;
-          }
-        } else if (!kafkaService.clearPendingApproval(uuid, taskId, phase)) {
-          sendError(projectId, taskId, "Approval already processed.");
-          return;
-        }
-        log.info("WS approval msg projectId=" + projectId + " approved=" + approved);
-        if (approved) {
-          kafkaService.emitNextTask(uuid);
-        } else {
-          String feedback = tree.get("feedback").asText();
-          log.info("WS revision msg projectId=" + projectId + " feedback=" + feedback);
-          // Re-run current phase with feedback appended
-          var state = pipelineManager.getOrCreateState(uuid);
-          String lastOut = state.getLastOutput();
-          String revisedInput = (lastOut != null ? lastOut : "") + "\n\n## Revision Request\n" + feedback;
-          kafkaService.sendTask(revisedInput, uuid);
+        UUID taskId = tree.has("task_id") && !tree.get("task_id").isNull()
+            ? UUID.fromString(tree.get("task_id").asText()) : null;
+        Integer phase = tree.has("phase") && !tree.get("phase").isNull()
+            ? tree.get("phase").asInt() : null;
+        String feedback = approved ? null : tree.get("feedback").asText();
+        if (!orchestrator.handleApproval(uuid, approved, feedback, taskId, phase)) {
+          sendError(projectId, taskId, "Approval rejected or already processed.");
         }
         return;
       }
@@ -143,12 +102,12 @@ public class APIWebSocket {
       var tree = objectMapper.readTree(message);
       if (tree.has("resume") && tree.get("resume").asBoolean()) {
         log.info("WS resume projectId=" + projectId);
-        kafkaService.resumeWorkflow(uuid);
+        orchestrator.resumeWorkflow(uuid);
         return;
       }
       if (tree.has("restart") && tree.get("restart").asBoolean()) {
         log.info("WS restart projectId=" + projectId);
-        kafkaService.restartWorkflow(uuid);
+        orchestrator.restartWorkflow(uuid);
         // We will fall through to send the prompt to Kafka as a fresh task
       }
     } catch (Exception e) {

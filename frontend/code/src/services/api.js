@@ -1,8 +1,9 @@
 /**
  * API Service Layer — Real Backend Integration via WebSocket
  *
- * The 3-phase AI workflow (rephrase → topology → device selection)
- * runs over a single WebSocket connection with streaming events.
+ * The 5-phase AI workflow (rephrase → topology → device selection →
+ * topology diagram → CLI config) runs over a single WebSocket
+ * connection with streaming events.
  *
  * The chat copilot also uses WebSocket for follow-up questions.
  */
@@ -136,7 +137,8 @@ export function buildPromptFromRequirements(req, solutionType) {
  *   Events: phase_start, agent_input, tool_call, rag_result, config_rag_result,
  *           agent_response, approval_request, phase_approved, phase_revision,
  *           workflow_complete, error
- * @returns {Promise<Object>} - Resolves with { rephrased, topology, devices, cliConfig } when done
+ * @returns {Promise<Object>} - Resolves with { rephrased, topology, devices,
+ *           diagramCode, diagramUrl, cliConfig } when done
  */
 const PHASE_MAP = {
   prompt_rephraser: 1,
@@ -202,6 +204,9 @@ function makeWorkflowHandler(results, onEvent, resolve, reject, wsRef, projectId
         });
       }
 
+      // Use agent_name as source of truth for phase routing
+      const storePhase = PHASE_MAP[agent_name] || currentPhase;
+
       if (event_type === "TOKEN") {
         console.log(
           "[WS] TOKEN agent=" +
@@ -217,26 +222,34 @@ function makeWorkflowHandler(results, onEvent, resolve, reject, wsRef, projectId
           console.warn("[WS] FINAL_ANSWER expected string data:", event);
         }
         const content = data || "";
-        if (currentPhase === 1) results.rephrased = content;
-        else if (currentPhase === 2) results.topology = content;
-        else if (currentPhase === 3) results.devices = content;
-        else if (currentPhase === 4) results.diagramCode = content;
-        else if (currentPhase === 5) results.cliConfig = content;
+        if (storePhase === 1) results.rephrased = content;
+        else if (storePhase === 2) results.topology = content;
+        else if (storePhase === 3) results.devices = content;
+        else if (storePhase === 4) results.diagramCode = content;
+        else if (storePhase === 5) results.cliConfig = content;
 
-        // let clean = content;
-        // if (clean.startsWith('assistant: ')) clean = clean.slice(11);
-        // onEvent({ type: 'agent_response', phase: currentPhase, content: clean });
         const normalized = content.startsWith("assistant: ")
           ? content.slice(11)
           : content;
         onEvent({
           type: "agent_response",
           content: normalized,
-          phase: currentPhase,
+          phase: storePhase,
           timestamp,
         });
 
-        if (is_final && currentPhase >= 5) {
+        // Auto-dispatch approval_request on FINAL_ANSWER to avoid race condition
+        // where APPROVAL_REQUIRED is sent on stale WS connection.
+        if (is_final && storePhase >= 1 && storePhase < 5) {
+          onEvent({
+            type: "approval_request",
+            ws: wsRef.current,
+            approval: { taskId: event.task_id, phase: storePhase },
+            timestamp,
+          });
+        }
+
+        if (is_final && storePhase >= 5) {
           finalize();
         }
         return;
@@ -245,7 +258,7 @@ function makeWorkflowHandler(results, onEvent, resolve, reject, wsRef, projectId
       if (event_type === "TOOL_CALL") {
         onEvent({
           type: "tool_call",
-          phase: currentPhase,
+          phase: storePhase,
           tool_name: data || agent_name,
           tool_kwargs: payload || {},
           timestamp,
@@ -257,7 +270,7 @@ function makeWorkflowHandler(results, onEvent, resolve, reject, wsRef, projectId
         const toolOutput = payload?.output || data || "";
         onEvent({
           type: "tool_result",
-          phase: currentPhase,
+          phase: storePhase,
           tool_name: agent_name,
           output: toolOutput,
           payload,
@@ -279,7 +292,7 @@ function makeWorkflowHandler(results, onEvent, resolve, reject, wsRef, projectId
       if (event_type === "APPROVAL_REQUIRED") {
         const approvalTaskId = event.task_id || payload?.task_id;
         const approvalPhase =
-          payload?.phase || currentPhase || PHASE_MAP[agent_name] || 0;
+          payload?.phase || storePhase || 0;
         if (!approvalTaskId) {
           console.warn("[WS] APPROVAL_REQUIRED missing task_id:", event);
         }
@@ -320,7 +333,7 @@ function makeWorkflowHandler(results, onEvent, resolve, reject, wsRef, projectId
       if (event_type === "ERROR") {
         onEvent({ type: "error", message: data || "Unknown error", timestamp });
         // Soft errors (approval/revision related) don't close WS or reject — let UI retry
-        if (data && /approval|Revision|feedback/.test(data)) {
+        if (data && /approval|revision|feedback/i.test(data)) {
           return;
         }
         wsRef.closed = true;

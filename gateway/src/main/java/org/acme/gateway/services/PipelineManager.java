@@ -94,7 +94,7 @@ public class PipelineManager {
       case 1 -> "prompt_rephraser";
       case 2 -> "topology_designer";
       case 3 -> "device_selector";
-      case 4 -> "d2_diagram_generator";
+      case 4 -> "react_topology_architect";
       case 5 -> "cli_config_generator";
       default -> "unknown";
     };

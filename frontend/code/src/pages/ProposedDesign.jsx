@@ -2,7 +2,8 @@
  * ProposedDesign — AI Workflow with streaming intermediate steps
  *
  * On mount (after Requirements submit), connects via WebSocket and
- * runs the 3-phase workflow. Shows:
+ * runs the 5-phase workflow (rephrase → topology → BOM → diagram → CLI).
+ * Shows:
  * - Phase banners with progress
  * - Intermediate steps (agent thinking, tool calls, RAG chunks)
  * - Agent responses with markdown rendering
@@ -54,6 +55,7 @@ export default function ProposedDesign() {
   const [historyError, setHistoryError] = useState(null);
   const [feedbackText, setFeedbackText] = useState("");
   const [showFeedback, setShowFeedback] = useState(false);
+  const [approvalError, setApprovalError] = useState(null);
   const [chatInput, setChatInput] = useState("");
   const [sending, setSending] = useState(false);
   const [sidebarOpen, setSidebarOpen] = useState(false);
@@ -351,6 +353,7 @@ export default function ProposedDesign() {
           case "approval_request":
             keepWsOpenRef.current = true;
             setStatus("awaiting");
+            setApprovalError(null);
             wsRef.current = ev.ws;
             pendingApprovalRef.current = ev.approval || null;
             dispatch({ type: "SET_WORKFLOW_STATUS", payload: "awaiting_approval" });
@@ -399,8 +402,8 @@ export default function ProposedDesign() {
             if (ev.data) dispatch({ type: "SET_REACT_CODE", payload: ev.data });
             break;
           case "error":
-            if (status === "awaiting" || status === "running") {
-              setStatus("awaiting");
+            if (status === "awaiting") {
+              setApprovalError(ev.message);
             }
             break;
         }
@@ -499,6 +502,7 @@ export default function ProposedDesign() {
 
   function handleApprove() {
     keepWsOpenRef.current = true;
+    setApprovalError(null);
     sendApproval(wsRef.current, pendingApprovalRef.current || {});
     dispatch({
       type: "WORKFLOW_EVENT",
@@ -840,6 +844,11 @@ nded-lg hover:brightness-110 transition-all text-sm"
               <h4 className="text-sm font-bold text-tertiary mb-3">
                 ✋ Phase {currentPhase} Complete — Review & Approve
               </h4>
+              {approvalError && (
+                <div className="mb-4 px-4 py-2 bg-error/10 border border-error/30 rounded-lg text-sm text-error text-left">
+                  ⚠️ {approvalError}
+                </div>
+              )}
               <div className="flex gap-3 justify-center">
                 <button
                   onClick={handleApprove}
