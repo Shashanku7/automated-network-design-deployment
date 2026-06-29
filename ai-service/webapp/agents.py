@@ -45,7 +45,7 @@ agent1 = FunctionAgent(
         "IF THE REQUEST CONTAINS A BUILDING/FLOOR/DEPARTMENT BREAKDOWN:\n"
         "- Preserve all tables exactly.\n"
         "- Keep per-building and per-department user/device counts.\n"
-        "- Include user, staff, admin, VoIP, IPTV, printer, and endpoint counts.\n\n"
+        "- Include user, admin, VoIP, IPTV, printer, AP, switch, and endpoint counts.\n\n"
 
         "FOR CAMPUS NETWORK PROJECTS, CREATE A PROMPT THAT REQUESTS:\n"
         "1. Project Overview\n"
@@ -124,7 +124,7 @@ agent2 = FunctionAgent(
 
         "A. CAMPUS NETWORK\n"
         "- Buildings, classrooms, offices, departments\n"
-        "- User/staff/admin users\n"
+        "- User/admin users\n"
         "- VoIP phones\n"
         "- IPTV devices\n"
         "- Printers\n"
@@ -180,10 +180,13 @@ agent2 = FunctionAgent(
         "For every department:\n\n"
 
         "Calculate:\n"
-        "- Total Users = Users + Staff + Admin\n"
-        "- AP Count = Ceiling(Total Users / 75)\n"
-        "- Endpoints = VoIP + IPTV + Printers + APs ONLY, DO NOT COUNT USERS FOR THIS FIELD\n"
-        "- Growth Capacity = Endpoints × 1.2\n"
+        "- Total Users = Users (Admin is subset; do NOT double-count)\n"
+        "- AP Fallback = max(0, Users - (AP Users + VoIP Users))\n"
+        "- AP Count = Ceiling((AP Users + VoIP Users + AP Fallback) / 75)\n"
+        "- Wired Switch Users = Switch field value\n"
+        "- Fixed Endpoints = IPTV + Printers\n"
+        "- Required Access Ports = AP Count + Wired Switch Users + Fixed Endpoints\n"
+        "- Growth Capacity = Required Access Ports × 1.2\n"
         "- Required Access Ports\n"
         "- Required Switch Count\n\n"
 
@@ -436,12 +439,12 @@ agent3 = FunctionAgent(
         "For every department:\n\n"
 
         "Calculate:\n"
-        "- Total Users = Users + Staff + Admin\n"
-        "- AP Count = Ceiling(Users / 25)\n"
-        "- Wired Devices = VoIP + IPTV + Printers\n"
-        "- Total Endpoints = AP Count + Wired Devices\n"
-        "- Growth Margin = 20%\n"
-        "- Required Ports = Ceiling(Total Endpoints × 1.2)\n\n"
+        "- Total Users = Users (Admin is subset; do NOT double-count)\n"
+        "- AP Fallback = max(0, Users - (AP Users + VoIP Users))\n"
+        "- AP Count = Ceiling((AP Users + VoIP Users + AP Fallback) / 75)\n"
+        "- Wired Switch Users = Switch field value\n"
+        "- Fixed Endpoints = IPTV + Printers\n"
+        "- Required Ports = Ceiling((AP Count + Wired Switch Users + Fixed Endpoints) × 1.2)\n\n"
 
         "Switch selections MUST satisfy:\n"
         "Total Available Ports > Required Ports\n\n"
@@ -624,7 +627,7 @@ agent4 = FunctionAgent(
         "All cabling and physical connectivity must be represented exclusively as Edges.\n"
 
         "## LAYOUT RULES\n"
-        "IF the input describes a CAMPUS (buildings, floors, Users, staff, VoIP):\n"
+        "IF the input describes a CAMPUS (buildings, floors, Users, VoIP):\n"
         "  - Top-to-bottom hierarchical tree layout.\n"
         "  - Core switches (iconType: Chassis): y=0, centered horizontally.\n"
         "  - Distribution switches (iconType: Switch): y=160, one pair per building, spaced 320px apart.\n"
