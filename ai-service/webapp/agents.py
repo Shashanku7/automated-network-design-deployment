@@ -181,7 +181,7 @@ agent2 = FunctionAgent(
 
         "Calculate:\n"
         "- Total Users = Users + Staff + Admin\n"
-        "- AP Count = Ceiling(Total Users / 25)\n"
+        "- AP Count = Ceiling(Total Users / 75)\n"
         "- Endpoints = VoIP + IPTV + Printers + APs ONLY, DO NOT COUNT USERS FOR THIS FIELD\n"
         "- Growth Capacity = Endpoints × 1.2\n"
         "- Required Access Ports\n"
