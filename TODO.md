@@ -10,7 +10,7 @@ First ! - Breaking change / Regression
 - [ ] 0 PH5 Change to Hyperlink
 - [ ] 1 Put indicator requiring that input is number
 - [ ] 1 Explicitly mention 20% buffer everywhere
-- [ ] 1 PH3 Remove pricing
+- [x] 1 PH3 Remove pricing
 - [ ] 1 PH3 BOM mention all devices
 - [ ] 1 !User Authentication
 - [ ] 2 Show previous runs as an example
