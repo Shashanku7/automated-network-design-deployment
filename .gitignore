@@ -69,3 +69,5 @@ docs/
 
 
 start_all.ps1
+
+.start_pids
