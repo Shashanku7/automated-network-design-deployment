@@ -580,7 +580,7 @@ export default function Requirements() {
                                 <tr className="font-bold text-primary">
                                   <td className="px-4 py-3 text-xs uppercase tracking-wider text-on-surface-variant"></td>
                                   <td className="px-4 py-3 text-xs uppercase tracking-wider text-on-surface-variant">
-                                    Building Total
+                                    Total
                                   </td>
                                   <td className="px-4 py-3">
                                     {building.departments.reduce(
