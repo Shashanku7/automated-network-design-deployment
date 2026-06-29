@@ -272,6 +272,7 @@ export default function Requirements() {
                   onChange={updateBuildingCount}
                   placeholder="e.g. 3"
                   error={errors.buildingCount}
+                  required
                 />
               </div>
             </Section>
@@ -299,9 +300,9 @@ export default function Requirements() {
                             updateBuildingMeta(i, "name", e.target.value)
                           }
                           className={`w-full bg-surface-container-highest border rounded-lg px-4 py-2 text-on-surface focus:ring-1 focus:ring-primary outline-none transition-all ${
-                            errors[`b_${i}_name`]
-                              ? "border-error"
-                              : "border-outline-variant/30"
+                            b.name?.trim()
+                              ? "border-tertiary/60 ring-1 ring-tertiary/20"
+                              : "border-error/60 ring-1 ring-error/20"
                           }`}
                         />
                       </div>
@@ -322,9 +323,9 @@ export default function Requirements() {
                             )
                           }
                           className={`w-full bg-surface-container-highest border rounded-lg px-4 py-2 text-on-surface focus:ring-1 focus:ring-primary outline-none transition-all ${
-                            errors[`b_${i}_fc`]
-                              ? "border-error"
-                              : "border-outline-variant/30"
+                            b.departmentCount && Number(b.departmentCount) > 0
+                              ? "border-tertiary/60 ring-1 ring-tertiary/20"
+                              : "border-error/60 ring-1 ring-error/20"
                           }`}
                         />
                       </div>
@@ -421,7 +422,11 @@ export default function Requirements() {
                                               e.target.value,
                                             )
                                           }
-                                          className="w-full bg-transparent border-b border-transparent focus:border-primary px-1 py-1 outline-none"
+                                          className={`w-full bg-transparent border-b px-1 py-1 outline-none transition-all ${
+                                            dept.department?.trim()
+                                              ? "border-tertiary/60"
+                                              : "border-error/60"
+                                          }`}
                                         />
                                       </td>
                                       <td className="px-4 py-2">
@@ -456,9 +461,9 @@ export default function Requirements() {
                                             )
                                           }
                                           className={`w-full bg-surface-container-highest rounded-md px-3 py-2 border transition-all ${
-                                            errors[`b_${bIdx}_d_${dIdx}_s`]
-                                              ? "border-error ring-1 ring-error/20"
-                                              : "border-outline-variant/20 focus:border-primary"
+                                            dept.students !== ""
+                                              ? "border-tertiary/60 ring-1 ring-tertiary/20"
+                                              : "border-error/60 ring-1 ring-error/20"
                                           }`}
                                         />
                                       </td>
@@ -477,9 +482,9 @@ export default function Requirements() {
                                             )
                                           }
                                           className={`w-full bg-surface-container-highest rounded-md px-3 py-2 border transition-all ${
-                                            errors[`b_${bIdx}_d_${dIdx}_st`]
-                                              ? "border-error ring-1 ring-error/20"
-                                              : "border-outline-variant/20 focus:border-primary"
+                                            dept.staff !== ""
+                                              ? "border-tertiary/60 ring-1 ring-tertiary/20"
+                                              : "border-error/60 ring-1 ring-error/20"
                                           }`}
                                         />
                                       </td>
@@ -498,9 +503,9 @@ export default function Requirements() {
                                             )
                                           }
                                           className={`w-full bg-surface-container-highest rounded-md px-3 py-2 border transition-all ${
-                                            errors[`b_${bIdx}_d_${dIdx}_a`]
-                                              ? "border-error ring-1 ring-error/20"
-                                              : "border-outline-variant/20 focus:border-primary"
+                                            dept.admins !== ""
+                                              ? "border-tertiary/60 ring-1 ring-tertiary/20"
+                                              : "border-error/60 ring-1 ring-error/20"
                                           }`}
                                         />
                                       </td>
@@ -519,9 +524,9 @@ export default function Requirements() {
                                             )
                                           }
                                           className={`w-full bg-surface-container-highest rounded-md px-3 py-2 border transition-all ${
-                                            errors[`b_${bIdx}_d_${dIdx}_v`]
-                                              ? "border-error ring-1 ring-error/20"
-                                              : "border-outline-variant/20 focus:border-primary"
+                                            dept.voip !== ""
+                                              ? "border-tertiary/60 ring-1 ring-tertiary/20"
+                                              : "border-error/60 ring-1 ring-error/20"
                                           }`}
                                         />
                                       </td>
@@ -540,9 +545,9 @@ export default function Requirements() {
                                             )
                                           }
                                           className={`w-full bg-surface-container-highest rounded-md px-3 py-2 border transition-all ${
-                                            errors[`b_${bIdx}_d_${dIdx}_i`]
-                                              ? "border-error ring-1 ring-error/20"
-                                              : "border-outline-variant/20 focus:border-primary"
+                                            dept.iptv !== ""
+                                              ? "border-tertiary/60 ring-1 ring-tertiary/20"
+                                              : "border-error/60 ring-1 ring-error/20"
                                           }`}
                                         />
                                       </td>
@@ -561,9 +566,9 @@ export default function Requirements() {
                                             )
                                           }
                                           className={`w-full bg-surface-container-highest rounded-md px-3 py-2 border transition-all ${
-                                            errors[`b_${bIdx}_d_${dIdx}_pr`]
-                                              ? "border-error ring-1 ring-error/20"
-                                              : "border-outline-variant/20 focus:border-primary"
+                                            dept.printers !== ""
+                                              ? "border-tertiary/60 ring-1 ring-tertiary/20"
+                                              : "border-error/60 ring-1 ring-error/20"
                                           }`}
                                         />
                                       </td>
@@ -637,6 +642,7 @@ export default function Requirements() {
                   onChange={(v) => set("dcRacks", v)}
                   placeholder="e.g. 10"
                   error={errors.dcRacks}
+                  required
                 />
                 <NumberInput
                   label="How many servers (approx)?"
@@ -644,6 +650,7 @@ export default function Requirements() {
                   onChange={(v) => set("dcServers", v)}
                   placeholder="e.g. 50"
                   error={errors.dcServers}
+                  required
                 />
               </div>
             </Section>
@@ -819,11 +826,13 @@ function Section({ title, icon, children }) {
   );
 }
 
-function NumberInput({ label, value, onChange, placeholder, error }) {
+function NumberInput({ label, value, onChange, placeholder, error, required }) {
+  const hasValue = value !== "" && value !== undefined && value !== null;
   return (
     <div className="space-y-2">
       <label className="text-sm font-medium text-on-surface-variant">
         {label}
+        {required && <span className="text-error ml-1">*</span>}
       </label>
       <input
         type="number"
@@ -832,9 +841,13 @@ function NumberInput({ label, value, onChange, placeholder, error }) {
         onChange={(e) => onChange(e.target.value)}
         placeholder={placeholder}
         className={`w-full bg-surface-container-low border rounded-lg px-4 py-3 text-on-surface placeholder:text-outline/50 focus:ring-1 focus:ring-primary focus:border-primary transition-colors ${
-          error
+          required && !hasValue
             ? "border-error/60 ring-1 ring-error/20"
-            : "border-outline-variant/30"
+            : required && hasValue
+              ? "border-tertiary/60 ring-1 ring-tertiary/20"
+              : error
+                ? "border-error/60 ring-1 ring-error/20"
+                : "border-outline-variant/30"
         }`}
       />
       {error && (
