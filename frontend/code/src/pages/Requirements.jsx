@@ -351,420 +351,266 @@ export default function Requirements() {
               (b) => b.name && Number(b.departmentCount) > 0,
             ) && (
               <Section title="Who will use the network?" icon="group">
-                <div className="mb-6 p-4 bg-primary/10 border border-primary/30 rounded-lg">
-                  <p className="text-sm text-on-surface font-medium mb-2">
-                    Enter the user and device counts for each department
-                    below.
-                  </p>
-                  <ul className="text-sm text-on-surface-variant space-y-1 list-disc list-inside">
-                    <li>
-                      <strong className="text-primary">Users*</strong> — total
-                      users in this department (mandatory)
-                    </li>
-                    <li>
-                      <strong className="text-primary">Admin</strong> — admins
-                      among the Users (subset, don't double-count)
-                    </li>
-                    <li>
-                      <strong className="text-primary">AP (wifi)</strong> —
-                      users connecting via Wi-Fi
-                    </li>
-                    <li>
-                      <strong className="text-primary">switch</strong> — users
-                      with direct wired switch connection
-                    </li>
-                    <li>
-                      <strong className="text-primary">voip</strong> — users
-                      connecting via IP phones
-                    </li>
-                    <li>
-                      <strong className="text-primary">IPTV</strong> — standalone
-                      IPTV devices (right table, not counted as users)
-                    </li>
-                    <li>
-                      <strong className="text-primary">Printers</strong> —
-                      standalone network printers (right table, not counted as
-                      users)
-                    </li>
-                  </ul>
-                  <p className="text-xs text-on-surface-variant mt-3 italic">
-                    Note: AP + switch + voip must be equal to or less than Users.
-                    Any uncovered users are assumed to connect via Wi-Fi (AP)
-                    automatically. Admin is a subset of Users — do not
-                    double-count.
-                  </p>
-                </div>
-
-                <div className="space-y-12">
-                  {form.buildings
-                    .filter((b) => b.name && Number(b.departmentCount) > 0)
-                    .map((building) => {
-                      const bIdx = form.buildings.findIndex(
-                        (b) => b.id === building.id,
-                      );
-                      return (
-                        <div key={building.id} className="space-y-4">
-                          <div className="flex items-center gap-2 text-primary border-l-4 border-primary pl-4 py-1">
-                            <span className="material-symbols-outlined">
-                              domain
-                            </span>
-                            <h3 className="font-bold text-lg">
-                              {building.name}
-                            </h3>
-                            <span className="text-xs text-on-surface-variant bg-surface-container px-2 py-0.5 rounded ml-2">
-                              {building.departmentCount} Departments
-                            </span>
-                          </div>
-
-                          <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-                            {/* Table 1: User/device counts */}
-                            <div className="lg:col-span-2 overflow-x-auto border border-outline-variant/10 rounded-xl bg-surface-container-low shadow-sm">
-                              <table className="w-full text-sm">
-                                <thead className="bg-surface-container text-on-surface-variant">
-                                  <tr>
-                                    <th className="px-4 py-3 text-left font-medium">
-                                      Department Name*
-                                    </th>
-                                    <th className="px-4 py-3 text-left font-medium w-28">
-                                      Floor no.
-                                    </th>
-                                    <th className="px-4 py-3 text-left font-medium w-28">
-                                      Users*
-                                    </th>
-                                    <th className="px-4 py-3 text-left font-medium w-28">
-                                      Admin
-                                    </th>
-                                    <th className="px-4 py-3 text-left font-medium w-28">
-                                      AP (wifi)
-                                    </th>
-                                    <th className="px-4 py-3 text-left font-medium w-28">
-                                      switch
-                                    </th>
-                                    <th className="px-4 py-3 text-left font-medium w-28">
-                                      voip
-                                    </th>
-                                  </tr>
-                                </thead>
-                                <tbody className="divide-y divide-outline-variant/10">
-                                  {building.departments.map((dept, dIdx) => {
-                                    const rowError =
-                                      errors[`b_${bIdx}_d_${dIdx}_dept`] ||
-                                      errors[`b_${bIdx}_d_${dIdx}_s`] ||
-                                      errors[`b_${bIdx}_d_${dIdx}_a`] ||
-                                      errors[`b_${bIdx}_d_${dIdx}_ap`] ||
-                                      errors[`b_${bIdx}_d_${dIdx}_sw`] ||
-                                      errors[`b_${bIdx}_d_${dIdx}_v`] ||
-                                      errors[`b_${bIdx}_d_${dIdx}_conn`] ||
-                                      errors[`b_${bIdx}_d_${dIdx}_i`] ||
-                                      errors[`b_${bIdx}_d_${dIdx}_pr`];
-                                    return (
-                                      <tr
-                                        key={dIdx}
-                                        className={`transition-colors ${rowError ? "bg-error/5" : ""}`}
-                                      >
-                                        <td className="px-4 py-2">
-                                          <input
-                                            type="text"
-                                            placeholder="e.g. CSE, Library, Admin"
-                                            value={dept.department}
-                                            onChange={(e) =>
-                                              updateDept(
-                                                bIdx,
-                                                dIdx,
-                                                "department",
-                                                e.target.value,
-                                              )
-                                            }
-                                            className={`w-full bg-transparent border-b px-1 py-1 outline-none transition-all ${
-                                              dept.department?.trim()
-                                                ? "border-tertiary/60"
-                                                : "border-error/60"
-                                            }`}
-                                          />
-                                        </td>
-                                        <td className="px-4 py-2">
-                                          <input
-                                            type="number"
-                                            min="0"
-                                            placeholder="0"
-                                            value={dept.floorNo}
-                                            onChange={(e) =>
-                                              updateDept(
-                                                bIdx,
-                                                dIdx,
-                                                "floorNo",
-                                                e.target.value,
-                                              )
-                                            }
-                                            className="w-full bg-surface-container-highest rounded-md px-3 py-2 border border-outline-variant/20 focus:border-primary text-center transition-all"
-                                          />
-                                        </td>
-                                        <td className="px-4 py-2">
-                                          <input
-                                            type="number"
-                                            min="0"
-                                            placeholder="0"
-                                            value={dept.students}
-                                            onChange={(e) =>
-                                              updateDept(
-                                                bIdx,
-                                                dIdx,
-                                                "students",
-                                                e.target.value,
-                                              )
-                                            }
-                                            className={`w-full bg-surface-container-highest rounded-md px-3 py-2 border transition-all ${
-                                              dept.students !== ""
-                                                ? "border-tertiary/60 ring-1 ring-tertiary/20"
-                                                : "border-error/60 ring-1 ring-error/20"
-                                            }`}
-                                          />
-                                        </td>
-                                        <td className="px-4 py-2">
-                                          <input
-                                            type="number"
-                                            min="0"
-                                            placeholder="0"
-                                            value={dept.admins}
-                                            onChange={(e) =>
-                                              updateDept(
-                                                bIdx,
-                                                dIdx,
-                                                "admins",
-                                                e.target.value,
-                                              )
-                                            }
-                                            className={`w-full bg-surface-container-highest rounded-md px-3 py-2 border transition-all ${
-                                              rowError
-                                                ? "border-error/60 ring-1 ring-error/20"
-                                                : (dept.admins !== "" && dept.admins !== "0")
-                                                  ? "border-tertiary/60 ring-1 ring-tertiary/20"
-                                                  : "border-outline-variant/20"
-                                            }`}
-                                          />
-                                        </td>
-                                        <td className="px-4 py-2">
-                                          <input
-                                            type="number"
-                                            min="0"
-                                            placeholder="0"
-                                            value={dept.ap}
-                                            onChange={(e) =>
-                                              updateDept(
-                                                bIdx,
-                                                dIdx,
-                                                "ap",
-                                                e.target.value,
-                                              )
-                                            }
-                                            className={`w-full bg-surface-container-highest rounded-md px-3 py-2 border transition-all ${
-                                              rowError
-                                                ? "border-error/60 ring-1 ring-error/20"
-                                                : (dept.ap !== "" && dept.ap !== "0")
-                                                  ? "border-tertiary/60 ring-1 ring-tertiary/20"
-                                                  : "border-outline-variant/20"
-                                            }`}
-                                          />
-                                        </td>
-                                        <td className="px-4 py-2">
-                                          <input
-                                            type="number"
-                                            min="0"
-                                            placeholder="0"
-                                            value={dept.switch}
-                                            onChange={(e) =>
-                                              updateDept(
-                                                bIdx,
-                                                dIdx,
-                                                "switch",
-                                                e.target.value,
-                                              )
-                                            }
-                                            className={`w-full bg-surface-container-highest rounded-md px-3 py-2 border transition-all ${
-                                              rowError
-                                                ? "border-error/60 ring-1 ring-error/20"
-                                                : (dept.switch !== "" && dept.switch !== "0")
-                                                  ? "border-tertiary/60 ring-1 ring-tertiary/20"
-                                                  : "border-outline-variant/20"
-                                            }`}
-                                          />
-                                        </td>
-                                        <td className="px-4 py-2">
-                                          <input
-                                            type="number"
-                                            min="0"
-                                            placeholder="0"
-                                            value={dept.voip}
-                                            onChange={(e) =>
-                                              updateDept(
-                                                bIdx,
-                                                dIdx,
-                                                "voip",
-                                                e.target.value,
-                                              )
-                                            }
-                                            className={`w-full bg-surface-container-highest rounded-md px-3 py-2 border transition-all ${
-                                              rowError
-                                                ? "border-error/60 ring-1 ring-error/20"
-                                                : (dept.voip !== "" && dept.voip !== "0")
-                                                  ? "border-tertiary/60 ring-1 ring-tertiary/20"
-                                                  : "border-outline-variant/20"
-                                            }`}
-                                          />
-                                        </td>
-                                      </tr>
-                                    );
-                                  })}
-                                </tbody>
-                                <tfoot className="bg-surface-container/50">
-                                  <tr className="font-bold text-primary">
-                                    <td className="px-4 py-3 text-xs uppercase tracking-wider text-on-surface-variant"></td>
-                                    <td className="px-4 py-3 text-xs uppercase tracking-wider text-on-surface-variant">
-                                      Total
-                                    </td>
-                                    <td className="px-4 py-3">
-                                      {building.departments.reduce(
-                                        (s, d) => s + (Number(d.students) || 0),
-                                        0,
-                                      )}
-                                    </td>
-                                    <td className="px-4 py-3">
-                                      {building.departments.reduce(
-                                        (s, d) => s + (Number(d.admins) || 0),
-                                        0,
-                                      )}
-                                    </td>
-                                    <td className="px-4 py-3">
-                                      {building.departments.reduce(
-                                        (s, d) => s + (Number(d.ap) || 0),
-                                        0,
-                                      )}
-                                    </td>
-                                    <td className="px-4 py-3">
-                                      {building.departments.reduce(
-                                        (s, d) => s + (Number(d.switch) || 0),
-                                        0,
-                                      )}
-                                    </td>
-                                    <td className="px-4 py-3">
-                                      {building.departments.reduce(
-                                        (s, d) => s + (Number(d.voip) || 0),
-                                        0,
-                                      )}
-                                    </td>
-                                  </tr>
-                                </tfoot>
-                              </table>
+                          <div className="overflow-x-auto border border-outline-variant/10 rounded-xl bg-surface-container-low shadow-sm">
+                            <div className="flex items-center gap-1.5 px-4 py-2 text-xs text-on-surface-variant bg-surface-container/30 border-b border-outline-variant/10">
+                              <span className="material-symbols-outlined text-sm">info</span>
+                              <span>All numeric fields accept whole numbers only</span>
                             </div>
-
-                            {/* Table 2: End devices */}
-                            <div className="overflow-x-auto border border-outline-variant/10 rounded-xl bg-surface-container-low shadow-sm">
-                              <table className="text-sm" style={{ tableLayout: "fixed", width: "auto", minWidth: "400px" }}>
-                                <colgroup>
-                                  <col style={{ width: "120px" }} />
-                                  <col style={{ width: "112px" }} />
-                                  <col style={{ width: "112px" }} />
-                                </colgroup>
-                                <thead className="bg-surface-container text-on-surface-variant">
-                                  <tr>
-                                    <th className="px-4 py-3 text-left font-medium">
-                                      Department
-                                    </th>
-                                    <th className="px-4 py-3 text-left font-medium">
-                                      IPTV
-                                    </th>
-                                    <th className="px-4 py-3 text-left font-medium">
-                                      Printers
-                                    </th>
-                                  </tr>
-                                </thead>
-                                <tbody className="divide-y divide-outline-variant/10">
-                                  {building.departments.map((dept, dIdx) => {
-                                    const rowError =
-                                      errors[`b_${bIdx}_d_${dIdx}_dept`] ||
-                                      errors[`b_${bIdx}_d_${dIdx}_i`] ||
-                                      errors[`b_${bIdx}_d_${dIdx}_pr`];
-                                    return (
-                                      <tr
-                                        key={dIdx}
-                                        className={`transition-colors ${rowError ? "bg-error/5" : ""}`}
-                                      >
-                                        <td className="px-4 py-2">
-                                          <span className="text-sm text-on-surface-variant">
-                                            {dept.department || `Dept ${dIdx + 1}`}
-                                          </span>
-                                        </td>
-                                        <td className="px-4 py-2">
-                                          <input
-                                            type="number"
-                                            min="0"
-                                            placeholder="0"
-                                            value={dept.iptv}
-                                            onChange={(e) =>
-                                              updateDept(
-                                                bIdx,
-                                                dIdx,
-                                                "iptv",
-                                                e.target.value,
-                                              )
-                                            }
-                                            className={`w-full bg-surface-container-highest rounded-md px-3 py-2 border transition-all ${
-                                              rowError
-                                                ? "border-error/60 ring-1 ring-error/20"
-                                                : (dept.iptv !== "" && dept.iptv !== "0")
-                                                  ? "border-tertiary/60 ring-1 ring-tertiary/20"
-                                                  : "border-outline-variant/20"
-                                            }`}
-                                          />
-                                        </td>
-                                        <td className="px-4 py-2">
-                                          <input
-                                            type="number"
-                                            min="0"
-                                            placeholder="0"
-                                            value={dept.printers}
-                                            onChange={(e) =>
-                                              updateDept(
-                                                bIdx,
-                                                dIdx,
-                                                "printers",
-                                                e.target.value,
-                                              )
-                                            }
-                                            className={`w-full bg-surface-container-highest rounded-md px-3 py-2 border transition-all ${
-                                              rowError
-                                                ? "border-error/60 ring-1 ring-error/20"
-                                                : (dept.printers !== "" && dept.printers !== "0")
-                                                  ? "border-tertiary/60 ring-1 ring-tertiary/20"
-                                                  : "border-outline-variant/20"
-                                            }`}
-                                          />
-                                        </td>
-                                      </tr>
-                                    );
-                                  })}
-                                </tbody>
-                                <tfoot className="bg-surface-container/50">
-                                  <tr className="font-bold text-primary">
-                                    <td className="px-4 py-3 text-xs uppercase tracking-wider text-on-surface-variant">
-                                      Total
-                                    </td>
-                                    <td className="px-4 py-3">
-                                      {building.departments.reduce(
-                                        (s, d) => s + (Number(d.iptv) || 0),
-                                        0,
-                                      )}
-                                    </td>
-                                    <td className="px-4 py-3">
-                                      {building.departments.reduce(
-                                        (s, d) => s + (Number(d.printers) || 0),
-                                        0,
-                                      )}
-                                    </td>
-                                  </tr>
-                                </tfoot>
-                              </table>
-                            </div>
+                            <table className="w-full text-sm">
+                              <thead className="bg-surface-container text-on-surface-variant">
+                                <tr>
+                                  <th className="px-4 py-3 text-left font-medium">
+                                    Department Name*
+                                  </th>
+                                  <th className="px-4 py-3 text-left font-medium w-20">
+                                    Floor No.*
+                                  </th>
+                                  <th className="px-4 py-3 text-left font-medium">
+                                    Users*
+                                  </th>
+                                  <th className="px-4 py-3 text-left font-medium">
+                                    Staff*
+                                  </th>
+                                  <th className="px-4 py-3 text-left font-medium">
+                                    Admin*
+                                  </th>
+                                  <th className="px-4 py-3 text-left font-medium">
+                                    VoIP*
+                                  </th>
+                                  <th className="px-4 py-3 text-left font-medium">
+                                    IPTV*
+                                  </th>
+                                  <th className="px-4 py-3 text-left font-medium">
+                                    Printers*
+                                  </th>
+                                </tr>
+                              </thead>
+                              <tbody className="divide-y divide-outline-variant/10">
+                                {building.departments.map((dept, dIdx) => {
+                                  const rowError =
+                                    errors[`b_${bIdx}_d_${dIdx}_s`] ||
+                                    errors[`b_${bIdx}_d_${dIdx}_st`] ||
+                                    errors[`b_${bIdx}_d_${dIdx}_a`] ||
+                                    errors[`b_${bIdx}_d_${dIdx}_v`] ||
+                                    errors[`b_${bIdx}_d_${dIdx}_i`] ||
+                                    errors[`b_${bIdx}_d_${dIdx}_pr`];
+                                  return (
+                                    <tr
+                                      key={dIdx}
+                                      className={`transition-colors ${rowError ? "bg-error/5" : ""}`}
+                                    >
+                                      <td className="px-4 py-2">
+                                        <input
+                                          type="text"
+                                          placeholder="e.g. CSE, Library, Admin"
+                                          value={dept.department}
+                                          onChange={(e) =>
+                                            updateDept(
+                                              bIdx,
+                                              dIdx,
+                                              "department",
+                                              e.target.value,
+                                            )
+                                          }
+                                          className={`w-full bg-transparent border-b px-1 py-1 outline-none transition-all ${
+                                            dept.department?.trim()
+                                              ? "border-tertiary/60"
+                                              : "border-error/60"
+                                          }`}
+                                        />
+                                      </td>
+                                      <td className="px-4 py-2">
+                                        <input
+                                          type="number"
+                                          min="1"
+                                          placeholder={dIdx + 1}
+                                          value={dept.floorNo}
+                                          onChange={(e) =>
+                                            updateDept(
+                                              bIdx,
+                                              dIdx,
+                                              "floorNo",
+                                              e.target.value,
+                                            )
+                                          }
+                                          className="w-full bg-surface-container-highest rounded-md px-3 py-2 border border-outline-variant/20 focus:border-primary text-center transition-all"
+                                        />
+                                      </td>
+                                      <td className="px-4 py-2">
+                                        <input
+                                          type="number"
+                                          min="0"
+                                          placeholder="0"
+                                          value={dept.students}
+                                          onChange={(e) =>
+                                            updateDept(
+                                              bIdx,
+                                              dIdx,
+                                              "students",
+                                              e.target.value,
+                                            )
+                                          }
+                                          className={`w-full bg-surface-container-highest rounded-md px-3 py-2 border transition-all ${
+                                            dept.students !== ""
+                                              ? "border-tertiary/60 ring-1 ring-tertiary/20"
+                                              : "border-error/60 ring-1 ring-error/20"
+                                          }`}
+                                        />
+                                      </td>
+                                      <td className="px-4 py-2">
+                                        <input
+                                          type="number"
+                                          min="0"
+                                          placeholder="0"
+                                          value={dept.staff}
+                                          onChange={(e) =>
+                                            updateDept(
+                                              bIdx,
+                                              dIdx,
+                                              "staff",
+                                              e.target.value,
+                                            )
+                                          }
+                                          className={`w-full bg-surface-container-highest rounded-md px-3 py-2 border transition-all ${
+                                            dept.staff !== ""
+                                              ? "border-tertiary/60 ring-1 ring-tertiary/20"
+                                              : "border-error/60 ring-1 ring-error/20"
+                                          }`}
+                                        />
+                                      </td>
+                                      <td className="px-4 py-2">
+                                        <input
+                                          type="number"
+                                          min="0"
+                                          placeholder="0"
+                                          value={dept.admins}
+                                          onChange={(e) =>
+                                            updateDept(
+                                              bIdx,
+                                              dIdx,
+                                              "admins",
+                                              e.target.value,
+                                            )
+                                          }
+                                          className={`w-full bg-surface-container-highest rounded-md px-3 py-2 border transition-all ${
+                                            dept.admins !== ""
+                                              ? "border-tertiary/60 ring-1 ring-tertiary/20"
+                                              : "border-error/60 ring-1 ring-error/20"
+                                          }`}
+                                        />
+                                      </td>
+                                      <td className="px-4 py-2">
+                                        <input
+                                          type="number"
+                                          min="0"
+                                          placeholder="0"
+                                          value={dept.voip}
+                                          onChange={(e) =>
+                                            updateDept(
+                                              bIdx,
+                                              dIdx,
+                                              "voip",
+                                              e.target.value,
+                                            )
+                                          }
+                                          className={`w-full bg-surface-container-highest rounded-md px-3 py-2 border transition-all ${
+                                            dept.voip !== ""
+                                              ? "border-tertiary/60 ring-1 ring-tertiary/20"
+                                              : "border-error/60 ring-1 ring-error/20"
+                                          }`}
+                                        />
+                                      </td>
+                                      <td className="px-4 py-2">
+                                        <input
+                                          type="number"
+                                          min="0"
+                                          placeholder="0"
+                                          value={dept.iptv}
+                                          onChange={(e) =>
+                                            updateDept(
+                                              bIdx,
+                                              dIdx,
+                                              "iptv",
+                                              e.target.value,
+                                            )
+                                          }
+                                          className={`w-full bg-surface-container-highest rounded-md px-3 py-2 border transition-all ${
+                                            dept.iptv !== ""
+                                              ? "border-tertiary/60 ring-1 ring-tertiary/20"
+                                              : "border-error/60 ring-1 ring-error/20"
+                                          }`}
+                                        />
+                                      </td>
+                                      <td className="px-4 py-2">
+                                        <input
+                                          type="number"
+                                          min="0"
+                                          placeholder="0"
+                                          value={dept.printers}
+                                          onChange={(e) =>
+                                            updateDept(
+                                              bIdx,
+                                              dIdx,
+                                              "printers",
+                                              e.target.value,
+                                            )
+                                          }
+                                          className={`w-full bg-surface-container-highest rounded-md px-3 py-2 border transition-all ${
+                                            dept.printers !== ""
+                                              ? "border-tertiary/60 ring-1 ring-tertiary/20"
+                                              : "border-error/60 ring-1 ring-error/20"
+                                          }`}
+                                        />
+                                      </td>
+                                    </tr>
+                                  );
+                                })}
+                              </tbody>
+                              <tfoot className="bg-surface-container/50">
+                                <tr className="font-bold text-primary">
+                                  <td className="px-4 py-3 text-xs uppercase tracking-wider text-on-surface-variant"></td>
+                                  <td className="px-4 py-3 text-xs uppercase tracking-wider text-on-surface-variant">
+                                    Total
+                                  </td>
+                                  <td className="px-4 py-3">
+                                    {building.departments.reduce(
+                                      (s, d) => s + (Number(d.students) || 0),
+                                      0,
+                                    )}
+                                  </td>
+                                  <td className="px-4 py-3">
+                                    {building.departments.reduce(
+                                      (s, d) => s + (Number(d.staff) || 0),
+                                      0,
+                                    )}
+                                  </td>
+                                  <td className="px-4 py-3">
+                                    {building.departments.reduce(
+                                      (s, d) => s + (Number(d.admins) || 0),
+                                      0,
+                                    )}
+                                  </td>
+                                  <td className="px-4 py-3">
+                                    {building.departments.reduce(
+                                      (s, d) => s + (Number(d.voip) || 0),
+                                      0,
+                                    )}
+                                  </td>
+                                  <td className="px-4 py-3">
+                                    {building.departments.reduce(
+                                      (s, d) => s + (Number(d.iptv) || 0),
+                                      0,
+                                    )}
+                                  </td>
+                                  <td className="px-4 py-3">
+                                    {building.departments.reduce(
+                                      (s, d) => s + (Number(d.printers) || 0),
+                                      0,
+                                    )}
+                                  </td>
+                                </tr>
+                              </tfoot>
+                            </table>
                           </div>
                         </div>
                       );
