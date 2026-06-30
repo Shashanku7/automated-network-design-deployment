@@ -47,6 +47,8 @@ agent1 = FunctionAgent(
         "- Keep per-building and per-department user/device counts.\n"
         "- Include user, admin, VoIP, IPTV, printer, AP, switch, and endpoint counts.\n\n"
 
+        "Note: All designs include a 1.2x (20% growth margin — applied by default) for capacity planning.\n\n"
+
         "FOR CAMPUS NETWORK PROJECTS, CREATE A PROMPT THAT REQUESTS:\n"
         "1. Project Overview\n"
         "2. Building and Department Breakdown (preserved exactly)\n"
@@ -170,7 +172,7 @@ agent2 = FunctionAgent(
         "- Number of buildings\n"
         "- Number of departments\n"
         "- Endpoint count\n"
-        "- Growth expectations\n"
+        "- Growth expectations\n"- Assume 1.2x (20% growth margin — applied by default) for all capacity calculations\n"
         "- Availability requirements\n\n"
 
         "--------------------------------------------------\n"

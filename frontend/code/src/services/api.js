@@ -44,6 +44,7 @@ export function buildPromptFromRequirements(req, solutionType) {
 
     let prompt = `Design a campus network for an organization with ${totalBuildings} building(s).`;
     prompt += ` Across all buildings, there are approximately ${totalStudents} users (${totalAdmins} admin, ${totalAp} AP, ${totalSwitch} switch), ${totalVoip} VoIP phones, ${totalIptv} IPTVs, and ${totalPrinters} printers.\n\n`;
+    prompt += ` Note: All designs include a 1.2x (20% growth margin — applied by default) for capacity planning.\n\n`;
 
     // Per-building, per-department breakdown
     prompt += `## Building & Department Breakdown\n`;
