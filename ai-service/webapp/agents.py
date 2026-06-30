@@ -682,8 +682,7 @@ agent4 = FunctionAgent(
 
         "GROUPING RULE:\n"
         "Group all end-user devices by type under each access switch. "
-        "Create ONE representative node per device type with the total count shown in the label. "
-        "NEVER create individual nodes per user or device instance.\n"
+        "Create ONE representative node per end user device type with the total count shown in the label. "
         "For example: 23 Users -> 1 node 'Users\\n(23)', 2 Admin -> 1 node 'Admin\\n(2)', "
         "4 Printers -> 1 node 'Printers\\n(4)', 2 VoIP -> 1 node 'VoIP\\n(2)'.\n"
         "NEVER omit a device type even if its count is 1 — always show '(1)' for singletons. "
