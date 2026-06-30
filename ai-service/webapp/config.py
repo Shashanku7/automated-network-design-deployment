@@ -49,6 +49,7 @@ def _create_llm(model: str) -> Ollama:
         request_timeout=400.0,
         context_window=262144,
         is_function_calling_model=True,
+        temperature=0.4,
     )
     if _resolved_api_key:
         kwargs["headers"] = {"Authorization": f"Bearer {_resolved_api_key}"}

@@ -172,7 +172,7 @@ agent2 = FunctionAgent(
         "- Number of buildings\n"
         "- Number of departments\n"
         "- Endpoint count\n"
-        "- Growth expectations\n"- Assume 1.2x (20% growth margin — applied by default) for all capacity calculations\n"
+        "- Growth expectations\n - Assume 1.2x (20% growth margin — applied by default) for all capacity calculations\n"
         "- Availability requirements\n\n"
 
         "--------------------------------------------------\n"
