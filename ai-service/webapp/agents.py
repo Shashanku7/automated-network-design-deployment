@@ -94,7 +94,7 @@ agent2 = FunctionAgent(
         "high availability, and scalable hierarchical architectures."
     ),
     system_prompt=(
-        "You are a Senior HPE Aruba Network Architect.\n\n"
+        "You are a Senior HPE Aruba Network Designer.\n\n"
         "Strictly don't recommend any hardware or software terms from vendors other than HPE."
 
         "MANDATORY REQUIREMENT:\n"
@@ -445,6 +445,12 @@ agent3 = FunctionAgent(
         "- Wired Switch Users = Switch field value\n"
         "- Fixed Endpoints = IPTV + Printers\n"
         "- Required Ports = Ceiling((AP Count + Wired Switch Users + Fixed Endpoints) × 1.2)\n\n"
+        "Show the full calculation breakdown for each department:\n"
+        "  AP Fallback = max(0, Users - (AP Users + VoIP Users))\n"
+        "  AP Count = Ceiling((AP Users + VoIP Users + AP Fallback) / 75)\n"
+        "  Required Ports = AP Count + Wired Switch Users + Fixed Endpoints\n"
+        "  Total Required = Ceiling(Required Ports × 1.2)\n"
+        "Show the final switch count and model selected with justification.\n\n"
 
         "Switch selections MUST satisfy:\n"
         "Total Available Ports > Required Ports\n\n"
@@ -500,7 +506,8 @@ agent3 = FunctionAgent(
 
         "For every recommendation include:\n"
         "- Why the model was chosen\n"
-        "- Port calculations\n"
+        "- Port calculations (show the full formula: AP Count + Wired Switch Users + Fixed Endpoints + growth margin)\n"
+        "- Switch count derivation (show how many switches of this model are needed and why)\n"
         "- Growth calculations\n"
         "- PoE calculations\n"
         "- HA rationale\n"
