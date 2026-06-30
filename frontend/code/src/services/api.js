@@ -25,16 +25,16 @@ export function buildPromptFromRequirements(req, solutionType) {
     // Calculate totals from our new structured building list
     const totalBuildings = req.buildings?.length || 0;
     let totalStudents = 0,
-      totalStaff = 0,
       totalAdmins = 0,
       totalVoip = 0,
       totalIptv = 0,
-      totalPrinters = 0;
+      totalPrinters = 0,
+      totalAp = 0,
+      totalSwitch = 0;
 
     req.buildings?.forEach((b) => {
       b.departments?.forEach((d) => {
         totalStudents += Number(d.students) || 0;
-        totalStaff += Number(d.staff) || 0;
         totalAdmins += Number(d.admins) || 0;
         totalVoip += Number(d.voip) || 0;
         totalIptv += Number(d.iptv) || 0;
@@ -43,36 +43,49 @@ export function buildPromptFromRequirements(req, solutionType) {
     });
 
     let prompt = `Design a campus network for an organization with ${totalBuildings} building(s).`;
-    prompt += ` Across all buildings, there are approximately ${totalStudents} users/visitors, ${totalStaff} staff/faculty, ${totalAdmins} administrators, ${totalVoip} VoIP phones, ${totalIptv} IPTVs, and ${totalPrinters} printers.\n\n`;
+    prompt += ` Across all buildings, there are approximately ${totalStudents} users (${totalAdmins} admin, ${totalAp} AP, ${totalSwitch} switch), ${totalVoip} VoIP phones, ${totalIptv} IPTVs, and ${totalPrinters} printers.\n\n`;
 
     // Per-building, per-department breakdown
     prompt += `## Building & Department Breakdown\n`;
     req.buildings?.forEach((b, bIdx) => {
       prompt += `\n### Building ${bIdx + 1}: ${b.name || "Unnamed"} (${b.departmentCount || 0} departments)\n`;
       if (b.departments?.length) {
-        prompt += `| Department | Floor No. |  Users   | Staff | Admins | VoIP Phones | IPTVs | Printers |\n`;
-        prompt += `|------------|-----------|----------|-------|--------|-------------|-------|----------|\n`;
+        prompt += `| Department | Floor No. | Users | Admin | AP (wifi) | switch | voip |\n`;
+        prompt += `|------------|-----------|-------|-------|-----------|--------|------|\n`;
         b.departments.forEach((d, dIdx) => {
           const deptLabel = d.department || `Department ${dIdx + 1}`;
           const floorLabel = d.floorNo || dIdx + 1;
-          prompt += `| ${deptLabel} | ${floorLabel} | ${d.students || 0} | ${d.staff || 0} | ${d.admins || 0} | ${d.voip || 0} | ${d.iptv || 0} | ${d.printers || 0} |\n`;
+          prompt += `| ${deptLabel} | ${floorLabel} | ${d.students || 0} | ${d.admins || 0} | ${d.ap || 0} | ${d.switch || 0} | ${d.voip || 0} |\n`;
         });
         const bStudents = b.departments.reduce(
           (s, d) => s + (Number(d.students) || 0),
-          0,
-        );
-        const bStaff = b.departments.reduce(
-          (s, d) => s + (Number(d.staff) || 0),
           0,
         );
         const bAdmins = b.departments.reduce(
           (s, d) => s + (Number(d.admins) || 0),
           0,
         );
+        const bAp = b.departments.reduce(
+          (s, d) => s + (Number(d.ap) || 0),
+          0,
+        );
+        const bSwitch = b.departments.reduce(
+          (s, d) => s + (Number(d.switch) || 0),
+          0,
+        );
         const bVoip = b.departments.reduce(
           (s, d) => s + (Number(d.voip) || 0),
           0,
         );
+        prompt += `| **Total** | | **${bStudents}** | **${bAdmins}** | **${bAp}** | **${bSwitch}** | **${bVoip}** |\n`;
+
+        prompt += `\n`;
+        prompt += `| Department | IPTV | Printers |\n`;
+        prompt += `|------------|------|----------|\n`;
+        b.departments.forEach((d, dIdx) => {
+          const deptLabel = d.department || `Department ${dIdx + 1}`;
+          prompt += `| ${deptLabel} | ${d.iptv || 0} | ${d.printers || 0} |\n`;
+        });
         const bIptv = b.departments.reduce(
           (s, d) => s + (Number(d.iptv) || 0),
           0,
@@ -81,7 +94,7 @@ export function buildPromptFromRequirements(req, solutionType) {
           (s, d) => s + (Number(d.printers) || 0),
           0,
         );
-        prompt += `| **Total** | | **${bStudents}** | **${bStaff}** | **${bAdmins}** | **${bVoip}** | **${bIptv}** | **${bPrinters}** |\n`;
+        prompt += `| **Total** | **${bIptv}** | **${bPrinters}** |\n`;
       }
     });
 
