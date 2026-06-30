@@ -61,12 +61,14 @@ export default function ProposedDesign() {
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [projectList, setProjectList] = useState([]);
   const eventsEndRef = useRef(null);
+  const settledRef = useRef(false);
 
   const hasStarted = useRef(false);
   const retryCountRef = useRef(0);
   const MAX_RETRIES = 3;
 
   useEffect(() => {
+    settledRef.current = false;
     hasStarted.current = false;
     pendingApprovalRef.current = null;
     wsRef.current = null;
@@ -345,6 +347,7 @@ export default function ProposedDesign() {
 
       const handleEvent = (ev) => {
         dispatch({ type: "WORKFLOW_EVENT", payload: ev });
+        if (settledRef.current) return;
         switch (ev.type) {
           case "phase_start":
             setCurrentPhase(ev.phase);
@@ -365,6 +368,7 @@ export default function ProposedDesign() {
             dispatch({ type: "SET_WORKFLOW_STATUS", payload: "running" });
             break;
           case "workflow_complete":
+            settledRef.current = true;
             setStatus("complete");
             dispatch({ type: "WORKFLOW_COMPLETE" });
             pendingApprovalRef.current = null;
@@ -410,6 +414,7 @@ export default function ProposedDesign() {
       };
 
       const handleComplete = (results) => {
+        settledRef.current = true;
         setStatus("complete");
         if (results.rephrased)
           dispatch({ type: "SET_REPHRASED", payload: results.rephrased });
