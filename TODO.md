@@ -4,12 +4,12 @@ First ! - Breaking change / Regression
 
 - [x] 0 Remove the stars in Requirement
 - [x] 0 Default to zero
-- [ ] 0 !?User value diff approach? (Test pending)
-- [ ] 0 PH3 Show calculation of AP (Test pending)
+- [x] 0 !?User value diff approach?
+- [x] 0 PH3 Show calculation of AP (Test pending)
 - [ ] 0 Mention warning info (Test pending)
 - [ ] 0 PH5 Change to Hyperlink
-- [ ] 1 Put indicator requiring that input is number
-- [ ] 1 Explicitly mention 20% buffer everywhere (Test pending)
+- [x] 1 Put indicator requiring that input is number
+- [x] 1 Explicitly mention 20% buffer everywhere
 - [x] 1 PH3 Remove pricing
 - [ ] 1 PH3 BOM mention all devices
 - [ ] 1 !User Authentication
