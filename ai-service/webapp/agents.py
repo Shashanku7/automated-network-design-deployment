@@ -203,6 +203,18 @@ agent2 = FunctionAgent(
 
         "For Campus Networks provide:\n\n"
 
+        "  PORT CALCULATION SUMMARY:\n"
+        "  Generate a table for each building with one row per department:\n\n"
+        "  | Department | Users | AP Users | VoIP | AP Fallback | AP Count | Switch | IPTV | Printers | Total Ports | With Growth (1.2x) | Switch Qty |\n"
+        "  |------------|-------|----------|------|-------------|----------|--------|------|----------|-------------|-------------------|------------|\n\n"
+        "  Formulas:\n"
+        "    AP Fallback = max(0, Users - (AP Users + VoIP Users))\n"
+        "    AP Count    = Ceiling((AP Users + VoIP Users + AP Fallback) / 75)\n"
+        "    Total Ports = AP Count + Switch + IPTV + Printers\n"
+        "    With Growth = Ceiling(Total Ports x 1.2)\n"
+        "    Switch Qty  = Ceiling(With Growth / Available Ports per model)\n\n"
+        "  Then proceed with the design sections below.\n\n"
+
         "1. Executive Summary\n"
         "2. Architecture Selection\n"
         "3. Core Layer Design\n"
