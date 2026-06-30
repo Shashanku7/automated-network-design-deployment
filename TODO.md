@@ -4,7 +4,7 @@ First ! - Breaking change / Regression
 
 - [x] 0 Remove the stars in Requirement
 - [x] 0 Default to zero
-- [ ] 0 !?User value diff approach?
+- [ ] 0 !?User value diff approach? (Test pending)
 - [ ] 0 PH3 Show calculation of AP (Test pending)
 - [ ] 0 Mention warning info (Test pending)
 - [ ] 0 PH5 Change to Hyperlink
@@ -22,4 +22,4 @@ First ! - Breaking change / Regression
 - [ ] 3 PH4 Add all devices, esp. security
 - [ ] 3 Fix Back button in requirements
 - [ ] 3 Add all products list.
-- [ ] 3 Make the user value more explanatory
+- [x] 3 Make the user value more explanatory
