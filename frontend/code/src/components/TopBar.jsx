@@ -49,28 +49,37 @@ export default function TopBar() {
   };
 
   return (
-    <header className="flex items-center w-full sticky top-0 z-50 h-14 bg-surface border-b border-outline-variant/15 shrink-0 px-6 lg:pl-0">
-      {/* Brand — fixed width matching sidebar on lg+ */}
-      <div className="hidden lg:flex w-64 shrink-0 items-center px-6">
-        <NavLink
-          to="/"
-          className="flex items-center gap-3 group cursor-pointer"
-        >
-          <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-primary to-primary-container flex items-center justify-center group-hover:scale-105 transition-transform">
-            <span className="material-symbols-outlined text-sm text-on-primary">
-              hub
-            </span>
+    <header className="flex items-center w-full sticky top-0 z-50 h-14 bg-surface border-b border-outline-variant/15 shrink-0 px-6">
+      {/* Hamburger toggle */}
+      <button
+        onClick={toggle}
+        className="flex items-center justify-center w-10 h-10 rounded-lg hover:bg-surface-container transition-colors mr-2 shrink-0"
+        aria-label="Toggle navigation"
+      >
+        <span className="material-symbols-outlined text-on-surface">
+          {open ? "close" : "menu"}
+        </span>
+      </button>
+
+      {/* Brand — icon always, text hidden on mobile */}
+      <NavLink
+        to="/"
+        className="flex shrink-0 items-center gap-3 pr-6 group cursor-pointer"
+      >
+        <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-primary to-primary-container flex items-center justify-center group-hover:scale-105 transition-transform shrink-0">
+          <span className="material-symbols-outlined text-sm text-on-primary">
+            hub
+          </span>
+        </div>
+        <div className="hidden lg:block">
+          <div className="text-sm font-bold text-on-surface group-hover:text-primary transition-colors leading-tight">
+            Network Design
           </div>
-          <div>
-            <div className="text-sm font-bold text-on-surface group-hover:text-primary transition-colors leading-tight">
-              Network Design
-            </div>
-            <div className="text-[10px] text-on-surface/60 uppercase tracking-wider leading-tight">
-              CX Solutions Builder
-            </div>
+          <div className="text-[10px] text-on-surface/60 uppercase tracking-wider leading-tight">
+            CX Solutions Builder
           </div>
-        </NavLink>
-      </div>
+        </div>
+      </NavLink>
 
       {/* Search */}
       <div className="relative flex items-center flex-1" ref={searchRef}>

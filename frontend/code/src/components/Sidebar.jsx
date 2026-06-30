@@ -51,13 +51,13 @@ export default function Sidebar() {
       {/* Overlay backdrop for mobile */}
       {open && (
         <div
-          className="fixed inset-0 top-14 z-30 bg-black/50 lg:hidden"
+          className="fixed inset-0 top-14 z-30 bg-black/50"
           onClick={close}
         />
       )}
 
       <aside
-        className={`flex flex-col fixed left-0 top-14 h-[calc(100vh-3.5rem)] z-40 w-64 border-r border-outline-variant/15 bg-surface-dim font-body text-sm font-medium transition-transform duration-300 lg:translate-x-0 ${
+        className={`flex flex-col fixed left-0 top-14 h-[calc(100vh-3.5rem)] z-40 w-64 border-r border-outline-variant/15 bg-surface-dim font-body text-sm font-medium transition-transform duration-300 ${
           open ? "translate-x-0" : "-translate-x-full"
         }`}
       >

@@ -121,7 +121,12 @@ export default function Requirements() {
               errs[`b_${bIdx}_d_${dIdx}_sw`] = true;
             if (!d.voip || Number(d.voip) < 0)
               errs[`b_${bIdx}_d_${dIdx}_v`] = true;
-            if ((Number(d.ap) || 0) + (Number(d.switch) || 0) + (Number(d.voip) || 0) > Number(d.students || 0))
+            if (
+              (Number(d.ap) || 0) +
+                (Number(d.switch) || 0) +
+                (Number(d.voip) || 0) >
+              Number(d.students || 0)
+            )
               errs[`b_${bIdx}_d_${dIdx}_conn`] = true;
             if (!d.iptv || Number(d.iptv) < 0)
               errs[`b_${bIdx}_d_${dIdx}_i`] = true;
@@ -353,8 +358,7 @@ export default function Requirements() {
               <Section title="Who will use the network?" icon="group">
                 <div className="mb-6 p-4 bg-primary/10 border border-primary/30 rounded-lg">
                   <p className="text-sm text-on-surface font-medium mb-2">
-                    Enter the user and device counts for each department
-                    below.
+                    Enter the user and device counts for each department below.
                   </p>
                   <ul className="text-sm text-on-surface-variant space-y-1 list-disc list-inside">
                     <li>
@@ -366,20 +370,23 @@ export default function Requirements() {
                       among the Users (subset, don't double-count)
                     </li>
                     <li>
-                      <strong className="text-primary">AP (wifi)</strong> —
+                      <strong className="text-primary">AP (Wi-Fi)</strong> —
                       users connecting via Wi-Fi
                     </li>
                     <li>
-                      <strong className="text-primary">switch</strong> — users
-                      with direct wired switch connection
+                      <strong className="text-primary">
+                        Switch (Ethernet)
+                      </strong>{" "}
+                      — users with direct wired switch connection
                     </li>
                     <li>
-                      <strong className="text-primary">voip</strong> — users
-                      connecting via IP phones
+                      <strong className="text-primary">VoIP (Telephone)</strong>{" "}
+                      — users connecting via IP phones
                     </li>
                     <li>
-                      <strong className="text-primary">IPTV</strong> — standalone
-                      IPTV devices (right table, not counted as users)
+                      <strong className="text-primary">IPTV</strong> —
+                      standalone IPTV devices (right table, not counted as
+                      users)
                     </li>
                     <li>
                       <strong className="text-primary">Printers</strong> —
@@ -388,10 +395,10 @@ export default function Requirements() {
                     </li>
                   </ul>
                   <p className="text-xs text-on-surface-variant mt-3 italic">
-                    Note: AP + switch + voip must be equal to or less than Users.
-                    Any uncovered users are assumed to connect via Wi-Fi (AP)
-                    automatically. Admin is a subset of Users — do not
-                    double-count.
+                    Note: AP (Wi-Fi) + Switch (Ethernet) + VoIP (Telephone) must
+                    be equal to or less than Users. Any uncovered users are
+                    assumed to connect via Wi-Fi (AP) automatically. Admin is a
+                    subset of Users — do not double-count.
                   </p>
                 </div>
 
@@ -416,32 +423,40 @@ export default function Requirements() {
                             </span>
                           </div>
 
-                          <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+                          <div className="flex flex-col gap-6">
                             {/* Table 1: User/device counts */}
-                            <div className="lg:col-span-2 overflow-x-auto border border-outline-variant/10 rounded-xl bg-surface-container-low shadow-sm">
-                              <table className="w-full text-sm">
+                            <div className="overflow-x-auto border border-outline-variant/10 rounded-xl bg-surface-container-low shadow-sm">
+                              <table
+                                className="w-full text-sm"
+                                style={{ tableLayout: "fixed" }}
+                              >
+                                <colgroup>
+                                  <col style={{ width: "30%" }} />
+                                  <col style={{ width: "14%" }} />
+                                  <col style={{ width: "14%" }} />
+                                  <col style={{ width: "14%" }} />
+                                  <col style={{ width: "14%" }} />
+                                  <col style={{ width: "14%" }} />
+                                </colgroup>
                                 <thead className="bg-surface-container text-on-surface-variant">
                                   <tr>
                                     <th className="px-4 py-3 text-left font-medium">
                                       Department Name*
                                     </th>
-                                    <th className="px-4 py-3 text-left font-medium w-28">
-                                      Floor no.
+                                    <th className="px-4 py-3 text-left font-medium">
+                                      Floor No.
                                     </th>
-                                    <th className="px-4 py-3 text-left font-medium w-28">
+                                    <th className="px-4 py-3 text-left font-medium">
                                       Users*
                                     </th>
-                                    <th className="px-4 py-3 text-left font-medium w-28">
+                                    <th className="px-4 py-3 text-left font-medium">
                                       Admin
                                     </th>
-                                    <th className="px-4 py-3 text-left font-medium w-28">
-                                      AP (wifi)
+                                    <th className="px-4 py-3 text-left font-medium">
+                                      AP (Wi-Fi)
                                     </th>
-                                    <th className="px-4 py-3 text-left font-medium w-28">
-                                      switch
-                                    </th>
-                                    <th className="px-4 py-3 text-left font-medium w-28">
-                                      voip
+                                    <th className="px-4 py-3 text-left font-medium">
+                                      Switch (Ethernet)
                                     </th>
                                   </tr>
                                 </thead>
@@ -453,7 +468,6 @@ export default function Requirements() {
                                       errors[`b_${bIdx}_d_${dIdx}_a`] ||
                                       errors[`b_${bIdx}_d_${dIdx}_ap`] ||
                                       errors[`b_${bIdx}_d_${dIdx}_sw`] ||
-                                      errors[`b_${bIdx}_d_${dIdx}_v`] ||
                                       errors[`b_${bIdx}_d_${dIdx}_conn`] ||
                                       errors[`b_${bIdx}_d_${dIdx}_i`] ||
                                       errors[`b_${bIdx}_d_${dIdx}_pr`];
@@ -537,7 +551,8 @@ export default function Requirements() {
                                             className={`w-full bg-surface-container-highest rounded-md px-3 py-2 border transition-all ${
                                               rowError
                                                 ? "border-error/60 ring-1 ring-error/20"
-                                                : (dept.admins !== "" && dept.admins !== "0")
+                                                : dept.admins !== "" &&
+                                                    dept.admins !== "0"
                                                   ? "border-tertiary/60 ring-1 ring-tertiary/20"
                                                   : "border-outline-variant/20"
                                             }`}
@@ -560,7 +575,8 @@ export default function Requirements() {
                                             className={`w-full bg-surface-container-highest rounded-md px-3 py-2 border transition-all ${
                                               rowError
                                                 ? "border-error/60 ring-1 ring-error/20"
-                                                : (dept.ap !== "" && dept.ap !== "0")
+                                                : dept.ap !== "" &&
+                                                    dept.ap !== "0"
                                                   ? "border-tertiary/60 ring-1 ring-tertiary/20"
                                                   : "border-outline-variant/20"
                                             }`}
@@ -583,30 +599,8 @@ export default function Requirements() {
                                             className={`w-full bg-surface-container-highest rounded-md px-3 py-2 border transition-all ${
                                               rowError
                                                 ? "border-error/60 ring-1 ring-error/20"
-                                                : (dept.switch !== "" && dept.switch !== "0")
-                                                  ? "border-tertiary/60 ring-1 ring-tertiary/20"
-                                                  : "border-outline-variant/20"
-                                            }`}
-                                          />
-                                        </td>
-                                        <td className="px-4 py-2">
-                                          <input
-                                            type="number"
-                                            min="0"
-                                            placeholder="0"
-                                            value={dept.voip}
-                                            onChange={(e) =>
-                                              updateDept(
-                                                bIdx,
-                                                dIdx,
-                                                "voip",
-                                                e.target.value,
-                                              )
-                                            }
-                                            className={`w-full bg-surface-container-highest rounded-md px-3 py-2 border transition-all ${
-                                              rowError
-                                                ? "border-error/60 ring-1 ring-error/20"
-                                                : (dept.voip !== "" && dept.voip !== "0")
+                                                : dept.switch !== "" &&
+                                                    dept.switch !== "0"
                                                   ? "border-tertiary/60 ring-1 ring-tertiary/20"
                                                   : "border-outline-variant/20"
                                             }`}
@@ -646,12 +640,6 @@ export default function Requirements() {
                                         0,
                                       )}
                                     </td>
-                                    <td className="px-4 py-3">
-                                      {building.departments.reduce(
-                                        (s, d) => s + (Number(d.voip) || 0),
-                                        0,
-                                      )}
-                                    </td>
                                   </tr>
                                 </tfoot>
                               </table>
@@ -659,16 +647,23 @@ export default function Requirements() {
 
                             {/* Table 2: End devices */}
                             <div className="overflow-x-auto border border-outline-variant/10 rounded-xl bg-surface-container-low shadow-sm">
-                              <table className="text-sm" style={{ tableLayout: "fixed", width: "auto", minWidth: "400px" }}>
+                              <table
+                                className="w-full text-sm"
+                                style={{ tableLayout: "fixed" }}
+                              >
                                 <colgroup>
-                                  <col style={{ width: "120px" }} />
-                                  <col style={{ width: "112px" }} />
-                                  <col style={{ width: "112px" }} />
+                                  <col style={{ width: "25%" }} />
+                                  <col style={{ width: "25%" }} />
+                                  <col style={{ width: "25%" }} />
+                                  <col style={{ width: "25%" }} />
                                 </colgroup>
                                 <thead className="bg-surface-container text-on-surface-variant">
                                   <tr>
                                     <th className="px-4 py-3 text-left font-medium">
                                       Department
+                                    </th>
+                                    <th className="px-4 py-3 text-left font-medium">
+                                      VoIP (Telephone)
                                     </th>
                                     <th className="px-4 py-3 text-left font-medium">
                                       IPTV
@@ -682,6 +677,7 @@ export default function Requirements() {
                                   {building.departments.map((dept, dIdx) => {
                                     const rowError =
                                       errors[`b_${bIdx}_d_${dIdx}_dept`] ||
+                                      errors[`b_${bIdx}_d_${dIdx}_v`] ||
                                       errors[`b_${bIdx}_d_${dIdx}_i`] ||
                                       errors[`b_${bIdx}_d_${dIdx}_pr`];
                                     return (
@@ -691,8 +687,33 @@ export default function Requirements() {
                                       >
                                         <td className="px-4 py-2">
                                           <span className="text-sm text-on-surface-variant">
-                                            {dept.department || `Dept ${dIdx + 1}`}
+                                            {dept.department ||
+                                              `Dept ${dIdx + 1}`}
                                           </span>
+                                        </td>
+                                        <td className="px-4 py-2">
+                                          <input
+                                            type="number"
+                                            min="0"
+                                            placeholder="0"
+                                            value={dept.voip}
+                                            onChange={(e) =>
+                                              updateDept(
+                                                bIdx,
+                                                dIdx,
+                                                "voip",
+                                                e.target.value,
+                                              )
+                                            }
+                                            className={`w-full max-w-24 bg-surface-container-highest rounded-md px-3 py-2 border transition-all ${
+                                              rowError
+                                                ? "border-error/60 ring-1 ring-error/20"
+                                                : dept.voip !== "" &&
+                                                    dept.voip !== "0"
+                                                  ? "border-tertiary/60 ring-1 ring-tertiary/20"
+                                                  : "border-outline-variant/20"
+                                            }`}
+                                          />
                                         </td>
                                         <td className="px-4 py-2">
                                           <input
@@ -708,10 +729,11 @@ export default function Requirements() {
                                                 e.target.value,
                                               )
                                             }
-                                            className={`w-full bg-surface-container-highest rounded-md px-3 py-2 border transition-all ${
+                                            className={`w-full max-w-24 bg-surface-container-highest rounded-md px-3 py-2 border transition-all ${
                                               rowError
                                                 ? "border-error/60 ring-1 ring-error/20"
-                                                : (dept.iptv !== "" && dept.iptv !== "0")
+                                                : dept.iptv !== "" &&
+                                                    dept.iptv !== "0"
                                                   ? "border-tertiary/60 ring-1 ring-tertiary/20"
                                                   : "border-outline-variant/20"
                                             }`}
@@ -731,10 +753,11 @@ export default function Requirements() {
                                                 e.target.value,
                                               )
                                             }
-                                            className={`w-full bg-surface-container-highest rounded-md px-3 py-2 border transition-all ${
+                                            className={`w-full max-w-24 bg-surface-container-highest rounded-md px-3 py-2 border transition-all ${
                                               rowError
                                                 ? "border-error/60 ring-1 ring-error/20"
-                                                : (dept.printers !== "" && dept.printers !== "0")
+                                                : dept.printers !== "" &&
+                                                    dept.printers !== "0"
                                                   ? "border-tertiary/60 ring-1 ring-tertiary/20"
                                                   : "border-outline-variant/20"
                                             }`}
@@ -748,6 +771,12 @@ export default function Requirements() {
                                   <tr className="font-bold text-primary">
                                     <td className="px-4 py-3 text-xs uppercase tracking-wider text-on-surface-variant">
                                       Total
+                                    </td>
+                                    <td className="px-4 py-3">
+                                      {building.departments.reduce(
+                                        (s, d) => s + (Number(d.voip) || 0),
+                                        0,
+                                      )}
                                     </td>
                                     <td className="px-4 py-3">
                                       {building.departments.reduce(
@@ -904,12 +933,14 @@ export default function Requirements() {
 
         <Section title="Future plans" icon="trending_up">
           <div className="mb-4 p-4 bg-primary/10 border border-primary/30 rounded-lg flex items-start gap-3">
-            <span className="material-symbols-outlined text-primary mt-0.5">info</span>
+            <span className="material-symbols-outlined text-primary mt-0.5">
+              info
+            </span>
             <p className="text-sm text-on-surface font-medium">
               All designs include a{" "}
-                 <strong className="text-primary">
-                  1.2x (20% growth margin — applied by default)
-                </strong>{" "}
+              <strong className="text-primary">
+                1.2x (20% growth margin — applied by default)
+              </strong>{" "}
               on top of your current user/device counts — automatically applied
               to future-proof the network.
             </p>
@@ -931,7 +962,10 @@ export default function Requirements() {
           </div>
         </Section>
 
-        <Section title="Anything else (optional: mention the split of users using AP and ethernet)?" icon="chat">
+        <Section
+          title="Anything else (optional: mention the split of users using AP and ethernet)?"
+          icon="chat"
+        >
           <textarea
             value={form.additionalNotes}
             onChange={(e) => set("additionalNotes", e.target.value)}
