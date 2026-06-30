@@ -114,17 +114,28 @@ public class KafkaService {
         log.severe("Failed to persist agent response: " + e.getMessage());
       }
 
+      // Forward FINAL_ANSWER to WebSocket BEFORE phase transition,
+      // so data arrives at frontend before PHASE_APPROVED
+      try {
+        String json = objectMapper.writeValueAsString(event);
+        log.info("consumeEvent forward to WS projectId=" + event.projectId() + " jsonLen=" + json.length());
+        webSocket.sendMessage(event.projectId().toString(), json);
+      } catch (Exception e) {
+        log.severe("Failed to serialize AgentEvent: " + e.getMessage());
+      }
+
       // Delegate phase transition orchestration to WorkflowOrchestrator
       int phase = pipelineManager.getOrCreateState(event.projectId()).getCurrentPhase();
       orchestrator.handlePhaseComplete(event.projectId(), event.taskId(), event.agentName(), phase, event.data());
-    }
-
-    try {
-      String json = objectMapper.writeValueAsString(event);
-      log.info("consumeEvent forward to WS projectId=" + event.projectId() + " jsonLen=" + json.length());
-      webSocket.sendMessage(event.projectId().toString(), json);
-    } catch (Exception e) {
-      log.severe("Failed to serialize AgentEvent: " + e.getMessage());
+    } else {
+      // Forward non-FINAL events to WebSocket
+      try {
+        String json = objectMapper.writeValueAsString(event);
+        log.info("consumeEvent forward to WS projectId=" + event.projectId() + " jsonLen=" + json.length());
+        webSocket.sendMessage(event.projectId().toString(), json);
+      } catch (Exception e) {
+        log.severe("Failed to serialize AgentEvent: " + e.getMessage());
+      }
     }
   }
 

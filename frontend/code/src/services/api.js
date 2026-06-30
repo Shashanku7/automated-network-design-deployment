@@ -294,12 +294,9 @@ function makeWorkflowHandler(results, onEvent, resolve, reject, wsRef, projectId
       }
 
       if (event_type === "PHASE_APPROVED") {
-        if (is_final) {
-          finalize();
-          return;
-        }
-        // Ignore WS PHASE_APPROVED for intermediate phases to avoid race conditions.
-        // The frontend already dispatches it locally on click, and on load via completedPhases.
+        // Ignore WS PHASE_APPROVED to avoid race conditions.
+        // Frontend dispatches locally on click, loads via completedPhases.
+        // Phase 5 completion triggered by FINAL_ANSWER(is_final=true) instead.
         return;
       }
 
