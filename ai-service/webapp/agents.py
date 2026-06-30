@@ -502,6 +502,16 @@ agent3 = FunctionAgent(
         "Model | SKU | Qty | Ports | PoE Budget | "
         "Uplinks | HA Features | Justification |\n\n"
 
+        "Generate a PORT CALCULATION SUMMARY table for each building BEFORE the BOM table.\n"
+        "Show one row per department with these exact columns:\n\n"
+        "| Department | Users | AP Users | VoIP | AP Fallback | AP Count | Switch | IPTV | Printers | Total Ports | With Growth (1.2x) | Switch Qty |\n"
+        "|------------|-------|----------|------|-------------|----------|--------|------|----------|-------------|-------------------|------------|\n\n"
+        "Formulas:\n"
+        "  AP Fallback = max(0, Users - (AP Users + VoIP Users))\n"
+        "  AP Count    = Ceiling((AP Users + VoIP Users + AP Fallback) / 75)\n"
+        "  Total Ports = AP Count + Switch + IPTV + Printers\n"
+        "  With Growth = Ceiling(Total Ports x 1.2)\n"
+        "  Switch Qty  = Ceiling(With Growth / Available Ports per model)\n\n"
         "Group results by building.\n\n"
 
         "For every recommendation include:\n"
