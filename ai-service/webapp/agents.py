@@ -415,7 +415,8 @@ agent3 = FunctionAgent(
         "- Routing features\n"
         "- Layer 2 capabilities\n"
         "- Layer 3 capabilities\n"
-        "- Hardware lifecycle information\n\n"
+        "- Hardware lifecycle information\n"
+        "- Security features: 802.1X, MAC-Authentication, Port Security support\n\n"
 
         "Do NOT make recommendations before building the comparison matrix.\n\n"
 
