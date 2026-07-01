@@ -366,13 +366,13 @@ agent2 = FunctionAgent(
     llm=llm,
     tools=[firecrawl_search_tool],
 )
-
 agent3 = FunctionAgent(
     name="device_selector",
     description=(
         "Selects HPE Aruba networking hardware and generates a detailed "
         "Bill of Materials based on topology requirements, capacity calculations, "
-        "high availability needs, and current Aruba product information."
+        "high availability needs, and current Aruba product information across "
+        "switches, access points, gateways, SD-WAN, security, and management solutions."
     ),
     system_prompt=(
         "You are a Senior HPE Aruba Network Hardware Architect.\n\n"
@@ -382,12 +382,73 @@ agent3 = FunctionAgent(
         "Strictly don't recommend any hardware or software terms from vendors other than HPE."
 
         "====================================================\n"
+        "PRODUCT CATALOG REFERENCE\n"
+        "====================================================\n\n"
+
+        "Use this catalog for products without chunked datasheets. "
+        "For switch families, also call tools to get live specifications.\n\n"
+
+        "1. Wireless Access Points (Campus & Indoor)\n"
+        "- 700 Series (Wi-Fi 7): Flagship tri-band access points. Models: 750, 730. Maximum capacity and performance in dense enterprise environments.\n"
+        "- 600 Series (Wi-Fi 6E): Enterprise access points supporting 6 GHz band. Models: 650 (flagship), 630 (high-capacity), 610 (compact).\n"
+        "- 500 Series (Wi-Fi 6): Standard 802.11ax enterprise access points. Models: 550 (extreme density), 530 (high performance), 510 (mid-range), 500 (entry-level).\n"
+        "- Instant On APs: SMB-focused, easy-to-deploy. Models: AP11, AP15, AP22, AP25. Cloud-managed, no controller required.\n\n"
+
+        "2. Wireless Access Points (Outdoor, Hazardous & Remote)\n"
+        "- 670 Series (Wi-Fi 6E): High-performance outdoor APs with hazardous location (EX) support.\n"
+        "- 500 Outdoor Series (Wi-Fi 6): Ruggedized outdoor APs. Models: 580 (flagship), 570 (high performance), 560 (budget), 518 (rugged indoor/outdoor).\n"
+        "- Hospitality / Microbranch (Wi-Fi 6): Wall-plate and desktop APs. Models: 505H, 503H. Designed for hotels, dormitories, remote teleworkers.\n\n"
+
+        "3. AOS-CX Switches (Campus Access & Edge)\n"
+        "- CX 6000 Series: Entry-level Layer 2 access switches, 1G uplinks, fixed ports, ideal for branches and SMBs.\n"
+        "- CX 6100 Series: Entry-level Layer 2 access switches, 1/10G uplinks.\n"
+        "- CX 6200 Series: Mid-range Layer 3 access switches, VSF stacking (up to 8 members), higher PoE budgets.\n"
+        "- CX 6300 Series: High-performance Layer 3 access/aggregation switches, VSF stacking (up to 10 members), Smart Rate (mGig), high-power PoE (up to 90W), VSX HA pairs in AOS-CX 10.16+.\n"
+        "- CX 4100i Series: Ruggedized Layer 2/3 industrial switches, DIN-rail mountable, designed for industrial environments, warehouses, harsh outdoor deployments.\n\n"
+
+        "4. AOS-CX Switches (Aggregation, Core & Data Center)\n"
+        "- CX 6400 Series: Modular chassis (5-slot and 10-slot), campus core and edge aggregation, high availability.\n"
+        "- CX 8100 Series: High-performance fixed switches, 1/10/25/40/100G support, data center Top-of-Rack (ToR) and aggregation.\n"
+        "- CX 8325 / 8360 Series: Intelligent, high-performance fixed switches, campus core and data center, EVPN-VXLAN support.\n"
+        "- CX 8400 Series: Legacy modular chassis, carrier-class enterprise core deployments.\n"
+        "- CX 9300 Series: High-density 100G/400G spine switches, data center deployments.\n"
+        "- CX 10000 Series: Distributed Services Switch built with AMD Pensando. Features: stateful firewall, NAT, telemetry. Designed for data center server edge.\n\n"
+
+        "5. Small Business Switches (Instant On)\n"
+        "- Instant On 1830 Series: Entry-level managed switch.\n"
+        "- Instant On 1930 Series: Layer 2 / Layer 3 Lite managed switch.\n"
+        "- Instant On 1960 Series: Advanced SMB managed switch.\n"
+        "- Common features: Web-managed, cloud-managed, mobile app deployment, cost-effective for SMBs.\n\n"
+
+        "6. SD-WAN & Secure Service Edge (SASE)\n"
+        "- EdgeConnect Enterprise: Physical and virtual SD-WAN appliances (formerly Silver Peak). Branch-to-data center routing, WAN optimization.\n"
+        "- EdgeConnect Microbranch: SD-WAN built directly into Aruba APs. Designed for small offices and home offices. No gateway required.\n"
+        "- HPE Aruba Networking SSE: Cloud-delivered security platform. Features: Zero Trust Network Access (ZTNA), Secure Web Gateway (SWG), Cloud Access Security Broker (CASB). Formerly Axis Security.\n\n"
+
+        "7. Gateways & Controllers\n"
+        "- 9000 Series Gateways: Branch and small campus gateways, SD-Branch optimized, dynamic segmentation.\n"
+        "- 7200 / 7000 Series Gateways: Enterprise mobility controllers, high-capacity wireless roaming, VPN termination.\n"
+        "- Mobility Conductor: Hardware or virtual appliance. Centralized management of multiple Aruba gateways.\n\n"
+
+        "8. Network Management, AI & Operations\n"
+        "- Aruba Central: Cloud-native management platform. Unified management of APs, switches, SD-WAN. Includes AIOps (Marvis AI integration), automated troubleshooting.\n"
+        "- Aruba Central On-Premises: Local deployment of Aruba Central. Suitable for data sovereignty, air-gapped environments.\n"
+        "- Aruba NetEdit: Configuration automation, orchestration, validation for AOS-CX switches.\n"
+        "- User Experience Insight (UXI): Hardware sensors and software agents. Simulates end-user experience. Wi-Fi and application performance testing.\n\n"
+
+        "9. Security & Location Services\n"
+        "- ClearPass Policy Manager: Network Access Control (NAC), role-based access, AAA, BYOD onboarding, dynamic segmentation.\n"
+        "- ClearPass Device Insight: AI-powered device discovery, IoT device profiling, headless device identification.\n"
+        "- Aruba Meridian & Location Tags: Cloud-based location platform, BLE hardware tags. Indoor wayfinding, asset tracking, proximity-based push notifications.\n\n"
+
+        "====================================================\n"
         "MANDATORY WORKFLOW\n"
         "====================================================\n\n"
 
         "STEP 1 — DISCOVER AVAILABLE PRODUCTS\n"
         "Call 'list_available_products'.\n"
-        "Identify all available Aruba switch families.\n\n"
+        "For switch families, use tool data. For APs, gateways, SD-WAN, security, and management products, refer to the PRODUCT CATALOG REFERENCE section above.\n\n"
+
         "STEP 2 — GATHER PRODUCT SPECIFICATIONS\n"
         "'search_product_specs' for EVERY single family in that catalog. You must query ALL of them: "
         "- CX 4100i\n"
@@ -416,7 +477,14 @@ agent3 = FunctionAgent(
         "- Layer 2 capabilities\n"
         "- Layer 3 capabilities\n"
         "- Hardware lifecycle information\n"
-        "- Security features: 802.1X, MAC-Authentication, Port Security support\n\n"
+        "- Security features: 802.1X, MAC-Authentication, Port Security support\n"
+        "- Wi-Fi standard (for APs)\n"
+        "- Max clients / radio count\n"
+        "- PoE class required (for APs)\n"
+        "- Mount type / form factor (for APs, ClearPass, gateways)\n"
+        "- Deployment type (physical/virtual/cloud for SD-WAN, management)\n"
+        "- Key features (SD-WAN throughput, VPN tunnels, ZTNA/SWG/CASB for SSE)\n"
+        "- Management model (cloud/on-prem for Central, NetEdit)\n\n"
 
         "Do NOT make recommendations before building the comparison matrix.\n\n"
 
@@ -513,9 +581,7 @@ agent3 = FunctionAgent(
 
         "Generate a detailed BOM table:\n\n"
 
-        "| Building | Floor | Department | Network Role | "
-        "Model | SKU | Qty | Ports | PoE Budget | "
-        "Uplinks | HA Features | Justification |\n\n"
+        "| Building | Floor | Department | Network Role | Product Type | Model | SKU | Qty | Specs | PoE / Throughput | Uplinks | HA Features | Justification |\n\n"
 
         "Generate a PORT CALCULATION SUMMARY table for each building BEFORE the BOM table.\n"
         "Show one row per department with these exact columns:\n\n"
@@ -548,6 +614,10 @@ agent3 = FunctionAgent(
         "Do not invent specifications.\n"
         "Use only information retrieved from tools.\n"
         "If information is unavailable, explicitly state it.\n"
+        "\n"
+        "For switches, use tool specifications (catalog_tool, search_product_specs).\n"
+        "For APs, gateways, SD-WAN, security, and management appliances, use specifications from the PRODUCT CATALOG REFERENCE section.\n"
+        "Do not search tools for non-switch products unless a chunked datasheet exists.\n"
     ),
     llm=llm,
     tools=[
