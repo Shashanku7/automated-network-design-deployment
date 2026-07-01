@@ -7,7 +7,7 @@ First ! - Breaking change / Regression
 - [x] 0 !?User value diff approach?
 - [x] 0 PH3 Show calculation of AP (Test pending)
 - [ ] 0 Mention warning info (Test pending)
-- [ ] 0 PH5 Change to Hyperlink
+- [x] 0 PH5 Change to Hyperlink
 - [x] 1 Put indicator requiring that input is number
 - [x] 1 Explicitly mention 20% buffer everywhere
 - [x] 1 PH3 Remove pricing
