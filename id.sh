@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-KC_URL="${KC_URL:-http://localhost:8180}"
+KC_URL="${KC_URL:-http://localhost:8080}"
 REALM="${REALM:-cx-sol-build}"
 GOOGLE_CLIENT_ID="${1:-}"
 GOOGLE_CLIENT_SECRET="${2:-}"
