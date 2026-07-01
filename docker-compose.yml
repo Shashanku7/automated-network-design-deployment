@@ -41,6 +41,8 @@ services:
       KC_DB_USERNAME: postgres
       KC_DB_PASSWORD: root
       KC_HOSTNAME: localhost
-    command: start-dev
+    volumes:
+      - ./schemas/realm.json:/opt/keycloak/data/import/realm.json
+    command: start-dev --import-realm
     depends_on:
       - postgres
