@@ -37,7 +37,7 @@ public class KafkaService {
   @Inject WorkflowOrchestrator orchestrator;
 
   @Transactional
-  public void sendTask(String message, UUID projectId) {
+  public void sendTask(String message, UUID projectId, String userId) {
     log.info("sendTask START projectId=" + projectId + " msgPreview=" + message.substring(0, Math.min(100, message.length())));
     var state = pipelineManager.getOrCreateState(projectId);
     log.info("sendTask state phase=" + state.getCurrentPhase() + " lastOutput=" + (state.getLastOutput() == null ? "null" : "notNull"));
@@ -64,7 +64,7 @@ public class KafkaService {
     emitTask("sendTask", task);
 
     try {
-      var convId = ensureConversation(projectId);
+      var convId = ensureConversation(projectId, userId);
       var content = extractContent(message);
       var revisionMarker = "## Revision Request\n";
       int revIdx = content.indexOf(revisionMarker);
@@ -75,7 +75,9 @@ public class KafkaService {
       var seq = messageRepository.countByConversationId(convId) + 1;
       messageRepository.persist(new MessageEntity(convId, seq, "user", content));
       agentTaskRepository.deleteCompletedByProjectIdAndPhase(projectId, task.phase());
-      agentTaskRepository.persist(new AgentTaskEntity(task.taskId(), convId, projectId, task.phase(), task.agentTarget(), task.inputContext()));
+      var taskEntity = new AgentTaskEntity(task.taskId(), convId, projectId, task.phase(), task.agentTarget(), task.inputContext());
+      taskEntity.setUserId(userId);
+      agentTaskRepository.persist(taskEntity);
     } catch (Exception e) {
       log.severe("Failed to persist user message: " + e.getMessage());
     }
@@ -97,7 +99,9 @@ public class KafkaService {
 
       // Persist agent response & mark task complete
       try {
-        var convId = ensureConversation(event.projectId());
+        var project = projectRepository.findById(event.projectId());
+        var userId = project != null ? project.getUserId() : null;
+        var convId = ensureConversation(event.projectId(), userId);
         if (event.data() != null) {
           var seq = messageRepository.countByConversationId(convId) + 1;
           log.info("consumeEvent persist msg convId=" + convId + " seq=" + seq + " role=assistant");
@@ -139,12 +143,13 @@ public class KafkaService {
     }
   }
 
-  private UUID ensureConversation(UUID projectId) {
+  private UUID ensureConversation(UUID projectId, String userId) {
     var existing = conversationRepository.find("projectId", projectId).firstResult();
     if (existing != null) {
       return existing.getId();
     }
     var conv = new ConversationEntity(projectId, "Design Workflow");
+    conv.setUserId(userId);
     conversationRepository.persistAndFlush(conv);
     return conv.getId();
   }

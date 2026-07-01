@@ -23,6 +23,9 @@ public class ConversationEntity {
   @Column(name = "title")
   private String title;
 
+  @Column(name = "user_id", nullable = false)
+  private String userId;
+
   @CreationTimestamp
   @Column(name = "created_at", nullable = false)
   private OffsetDateTime createdAt;
@@ -44,6 +47,8 @@ public class ConversationEntity {
   public void setProjectId(UUID projectId) { this.projectId = projectId; }
   public String getTitle() { return title; }
   public void setTitle(String title) { this.title = title; }
+  public String getUserId() { return userId; }
+  public void setUserId(String userId) { this.userId = userId; }
   public OffsetDateTime getCreatedAt() { return createdAt; }
   public OffsetDateTime getUpdatedAt() { return updatedAt; }
 }

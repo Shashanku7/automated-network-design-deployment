@@ -125,8 +125,12 @@ public class WorkflowOrchestrator {
     if (nextTask != null) {
       log.info("emitNextTask phase=" + nextTask.phase() + " agent=" + nextTask.agentTarget());
       try {
-        var convId = ensureConversation(projectId);
-        agentTaskRepository.persist(new AgentTaskEntity(nextTask.taskId(), convId, projectId, nextTask.phase(), nextTask.agentTarget(), nextTask.inputContext()));
+        var project = projectRepository.findById(projectId);
+        var userId = project != null ? project.getUserId() : null;
+        var convId = ensureConversation(projectId, userId);
+        var taskEntity = new AgentTaskEntity(nextTask.taskId(), convId, projectId, nextTask.phase(), nextTask.agentTarget(), nextTask.inputContext());
+        taskEntity.setUserId(userId);
+        agentTaskRepository.persist(taskEntity);
       } catch (Exception e) {
         log.severe("emitNextTask persist error: " + e.getMessage());
       }
@@ -160,7 +164,9 @@ public class WorkflowOrchestrator {
     var state = pipelineManager.getOrCreateState(projectId);
     String lastOut = state.getLastOutput();
     String revisedInput = (lastOut != null ? lastOut : "") + "\n\n## Revision Request\n" + feedback;
-    kafkaService.sendTask(revisedInput, projectId);
+    var project = projectRepository.findById(projectId);
+    var userId = project != null ? project.getUserId() : null;
+    kafkaService.sendTask(revisedInput, projectId, userId);
   }
 
   public Optional<PendingApproval> getPendingApproval(UUID projectId) {
@@ -247,8 +253,12 @@ public class WorkflowOrchestrator {
     log.info("resumeWorkflow taskId=" + task.taskId() + " phase=" + task.phase() + " agent=" + task.agentTarget());
 
     try {
-      var convId = ensureConversation(projectId);
-      agentTaskRepository.persist(new AgentTaskEntity(task.taskId(), convId, projectId, task.phase(), task.agentTarget(), task.inputContext()));
+      var project = projectRepository.findById(projectId);
+      var userId = project != null ? project.getUserId() : null;
+      var convId = ensureConversation(projectId, userId);
+      var taskEntity = new AgentTaskEntity(task.taskId(), convId, projectId, task.phase(), task.agentTarget(), task.inputContext());
+      taskEntity.setUserId(userId);
+      agentTaskRepository.persist(taskEntity);
     } catch (Exception e) {
       log.severe("resumeWorkflow persist error: " + e.getMessage());
     }
@@ -273,10 +283,11 @@ public class WorkflowOrchestrator {
     return Optional.of(recovered);
   }
 
-  private UUID ensureConversation(UUID projectId) {
+  private UUID ensureConversation(UUID projectId, String userId) {
     var existing = conversationRepository.find("projectId", projectId).firstResult();
     if (existing != null) return existing.getId();
     var conv = new ConversationEntity(projectId, "Design Workflow");
+    conv.setUserId(userId);
     conversationRepository.persistAndFlush(conv);
     return conv.getId();
   }

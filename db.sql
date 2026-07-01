@@ -40,6 +40,33 @@ CREATE TYPE agent_event_type AS ENUM (
 );
 
 -- ============================================================
+-- PROJECTS
+-- One project owned by a user
+-- ============================================================
+
+CREATE TABLE projects (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+
+    title VARCHAR(255) NOT NULL,
+
+    user_id VARCHAR(255) NOT NULL,
+
+    solution_type VARCHAR(100),
+
+    requirements TEXT,
+
+    chat_history TEXT,
+
+    workflow_status VARCHAR(50),
+
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE INDEX idx_projects_user_id
+    ON projects(user_id);
+
+-- ============================================================
 -- CONVERSATIONS
 -- One chat thread within a project
 -- ============================================================
@@ -49,6 +76,8 @@ CREATE TABLE conversations (
 
     project_id UUID NOT NULL,
 
+    user_id VARCHAR(255) NOT NULL,
+
     title VARCHAR(255),
 
     metadata JSONB NOT NULL DEFAULT '{}'::jsonb,
@@ -56,6 +85,9 @@ CREATE TABLE conversations (
     created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
     updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
+
+CREATE INDEX idx_conversations_user_id
+    ON conversations(user_id);
 
 CREATE INDEX idx_conversations_project
     ON conversations(project_id);
@@ -106,6 +138,8 @@ CREATE TABLE agent_tasks (
 
     project_id UUID NOT NULL,
 
+    user_id VARCHAR(255) NOT NULL,
+
     phase INTEGER NOT NULL DEFAULT 0,
 
     agent_target VARCHAR(100),
@@ -127,6 +161,9 @@ CREATE INDEX idx_agent_tasks_conversation
 
 CREATE INDEX idx_agent_tasks_project
     ON agent_tasks(project_id);
+
+CREATE INDEX idx_agent_tasks_user_id
+    ON agent_tasks(user_id);
 
 CREATE INDEX idx_agent_tasks_status
     ON agent_tasks(status);

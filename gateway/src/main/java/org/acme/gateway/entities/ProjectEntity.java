@@ -32,6 +32,9 @@ public class ProjectEntity {
   @Column(name = "workflow_status")
   private String workflowStatus;
 
+  @Column(name = "user_id", nullable = false)
+  private String userId;
+
   @CreationTimestamp
   @Column(name = "created_at", nullable = false)
   private OffsetDateTime createdAt;
@@ -42,8 +45,9 @@ public class ProjectEntity {
 
   public ProjectEntity() {}
 
-  public ProjectEntity(String title) {
+  public ProjectEntity(String title, String userId) {
     this.title = title;
+    this.userId = userId;
   }
 
   public UUID getId() { return id; }
@@ -58,6 +62,8 @@ public class ProjectEntity {
   public void setChatHistory(String chatHistory) { this.chatHistory = chatHistory; }
   public String getWorkflowStatus() { return workflowStatus; }
   public void setWorkflowStatus(String workflowStatus) { this.workflowStatus = workflowStatus; }
+  public String getUserId() { return userId; }
+  public void setUserId(String userId) { this.userId = userId; }
   public OffsetDateTime getCreatedAt() { return createdAt; }
   public OffsetDateTime getUpdatedAt() { return updatedAt; }
 }

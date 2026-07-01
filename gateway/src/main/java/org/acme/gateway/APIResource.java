@@ -32,6 +32,7 @@ import org.acme.gateway.repositories.MessageRepository;
 import org.acme.gateway.repositories.ProjectRepository;
 import org.acme.gateway.services.AIService;
 import org.acme.gateway.services.KafkaService;
+import org.eclipse.microprofile.jwt.JsonWebToken;
 import org.eclipse.microprofile.rest.client.inject.RestClient;
 
 @Path("api")
@@ -39,6 +40,8 @@ import org.eclipse.microprofile.rest.client.inject.RestClient;
 @Produces(MediaType.APPLICATION_JSON)
 @Log
 public class APIResource {
+
+  @Inject JsonWebToken jwt;
 
   @Inject KafkaService kafkaService;
 
@@ -52,19 +55,23 @@ public class APIResource {
 
   @Inject AgentTaskRepository agentTaskRepository;
 
+  private String currentUserId() {
+    return jwt.getSubject();
+  }
+
   // ── Projects ─────────────────────────────────────────
 
   @GET
   @Path("projects")
   public List<ProjectEntity> listProjects() {
-    return projectRepository.listAll();
+    return projectRepository.findByUserId(currentUserId());
   }
 
   @POST
   @Path("projects")
   @Transactional
   public Response createProject(CreateProjectRequest request) {
-    var project = new ProjectEntity(request.title());
+    var project = new ProjectEntity(request.title(), currentUserId());
     if (request.id() != null) {
       project.setId(request.id());
     }
@@ -77,6 +84,7 @@ public class APIResource {
   public Response getProject(@PathParam("id") UUID id) {
     var project = projectRepository.findById(id);
     if (project == null) return Response.status(404).build();
+    if (!project.getUserId().equals(currentUserId())) return Response.status(404).build();
     return Response.ok(project).build();
   }
 
@@ -86,9 +94,12 @@ public class APIResource {
   public Response updateProject(@PathParam("id") UUID id, UpdateProjectRequest request) {
     var project = projectRepository.findById(id);
     if (project == null) {
-      var title = request.title() != null ? request.title() : "Untitled Project";
-      project = new ProjectEntity(title);
+      project = new ProjectEntity(
+          request.title() != null ? request.title() : "Untitled Project",
+          currentUserId());
       project.setId(id);
+    } else {
+      if (!project.getUserId().equals(currentUserId())) return Response.status(404).build();
     }
     if (request.title() != null) project.setTitle(request.title());
     if (request.solutionType() != null) project.setSolutionType(request.solutionType());
@@ -102,8 +113,10 @@ public class APIResource {
 
   @GET
   @Path("projects/{projectId}/conversations")
-  public List<ConversationEntity> listConversations(@PathParam("projectId") UUID projectId) {
-    return conversationRepository.findByProjectId(projectId);
+  public Response listConversations(@PathParam("projectId") UUID projectId) {
+    var project = projectRepository.findById(projectId);
+    if (project == null || !project.getUserId().equals(currentUserId())) return Response.status(404).build();
+    return Response.ok(conversationRepository.findByProjectId(projectId)).build();
   }
 
   @POST
@@ -111,7 +124,10 @@ public class APIResource {
   @Transactional
   public Response createConversation(
       @PathParam("projectId") UUID projectId, CreateConversationRequest request) {
+    var project = projectRepository.findById(projectId);
+    if (project == null || !project.getUserId().equals(currentUserId())) return Response.status(404).build();
     var conversation = new ConversationEntity(projectId, request.title());
+    conversation.setUserId(currentUserId());
     conversationRepository.persist(conversation);
     return Response.ok(conversation).build();
   }
@@ -120,14 +136,20 @@ public class APIResource {
 
   @GET
   @Path("conversations/{conversationId}/messages")
-  public List<MessageEntity> getMessages(@PathParam("conversationId") UUID conversationId) {
-    return messageRepository.findByConversationIdOrdered(conversationId);
+  public Response getMessages(@PathParam("conversationId") UUID conversationId) {
+    var conv = conversationRepository.findById(conversationId);
+    if (conv == null) return Response.status(404).build();
+    var project = projectRepository.findById(conv.getProjectId());
+    if (project == null || !project.getUserId().equals(currentUserId())) return Response.status(404).build();
+    return Response.ok(messageRepository.findByConversationIdOrdered(conversationId)).build();
   }
 
   @GET
   @Path("projects/{projectId}/chat-history")
   public Response getPersistentChatHistory(
       @PathParam("projectId") UUID projectId, @QueryParam("conversationId") String conversationId) {
+    var project = projectRepository.findById(projectId);
+    if (project == null || !project.getUserId().equals(currentUserId())) return Response.status(404).build();
     try {
       var cid = conversationId == null || conversationId.isBlank() ? "default" : conversationId;
       var history = aiService.getChatHistory(projectId.toString(), cid);
@@ -158,6 +180,10 @@ public class APIResource {
   @Transactional
   public Response saveMessage(
       @PathParam("conversationId") UUID conversationId, SaveMessageRequest request) {
+    var conv = conversationRepository.findById(conversationId);
+    if (conv == null) return Response.status(404).build();
+    var project = projectRepository.findById(conv.getProjectId());
+    if (project == null || !project.getUserId().equals(currentUserId())) return Response.status(404).build();
     var seq = messageRepository.countByConversationId(conversationId) + 1;
     var message = new MessageEntity(conversationId, seq, request.role(), request.content());
     messageRepository.persist(message);
@@ -169,6 +195,8 @@ public class APIResource {
   @GET
   @Path("projects/{pid}/phases")
   public Response getWorkflowState(@PathParam("pid") UUID projectId) {
+    var project = projectRepository.findById(projectId);
+    if (project == null || !project.getUserId().equals(currentUserId())) return Response.status(404).build();
     var completed = agentTaskRepository.findCompletedByProjectId(projectId);
     var latestPerPhase =
         completed.stream()
@@ -199,7 +227,6 @@ public class APIResource {
             .sorted((a, b) -> Integer.compare(a.phase(), b.phase()))
             .toList();
     int nextPhase = phases.isEmpty() ? 1 : Math.min(phases.getLast().phase() + 1, 5);
-    var project = projectRepository.findById(projectId);
     String status =
         (project != null && "complete".equals(project.getWorkflowStatus()))
             ? "complete"
@@ -212,6 +239,9 @@ public class APIResource {
   @POST
   @Path("deploy")
   public Response deploy(DeployRequest request) {
+    var projectId = UUID.fromString(request.projectId());
+    var project = projectRepository.findById(projectId);
+    if (project == null || !project.getUserId().equals(currentUserId())) return Response.status(404).build();
     log.info("deploy projectId=" + request.projectId());
     return Response.ok(
             Map.of(
@@ -227,7 +257,10 @@ public class APIResource {
   @POST
   @Path("tasks")
   public Response createTask(CreateTaskRequest request) {
-    kafkaService.sendTask(request.message(), UUID.fromString(request.projectId()));
+    var projectId = UUID.fromString(request.projectId());
+    var project = projectRepository.findById(projectId);
+    if (project == null || !project.getUserId().equals(currentUserId())) return Response.status(404).build();
+    kafkaService.sendTask(request.message(), projectId, currentUserId());
     return Response.accepted().build();
   }
 
@@ -243,6 +276,9 @@ public class APIResource {
   @POST
   @Path("chat")
   public Response chat(ChatRequest request) {
+    var projectId = UUID.fromString(request.projectId());
+    var project = projectRepository.findById(projectId);
+    if (project == null || !project.getUserId().equals(currentUserId())) return Response.status(404).build();
     try {
       var history =
           request.history().stream()

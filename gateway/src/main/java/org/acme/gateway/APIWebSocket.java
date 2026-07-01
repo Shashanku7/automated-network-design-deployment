@@ -2,6 +2,7 @@ package org.acme.gateway;
 
 import java.util.Map;
 import java.util.UUID;
+import java.util.Base64;
 import java.util.concurrent.ConcurrentHashMap;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -17,6 +18,7 @@ import jakarta.inject.Inject;
 import jakarta.transaction.Transactional;
 import lombok.extern.java.Log;
 import org.acme.gateway.models.AgentEvent;
+import org.acme.gateway.repositories.ProjectRepository;
 import org.acme.gateway.services.KafkaService;
 import org.acme.gateway.services.PipelineManager;
 import org.acme.gateway.services.WorkflowOrchestrator;
@@ -33,7 +35,10 @@ public class APIWebSocket {
   ObjectMapper objectMapper;
   @Inject
   PipelineManager pipelineManager;
+  @Inject
+  ProjectRepository projectRepository;
   Map<UUID, WebSocketConnection> connections = new ConcurrentHashMap<>();
+  Map<UUID, String> connectionUserIds = new ConcurrentHashMap<>();
 
   @OnOpen
   @Transactional
@@ -56,6 +61,7 @@ public class APIWebSocket {
     // Only remove if closing connection matches — prevents stale close from
     // wiping out a newer connection that replaced it in onOpen
     connections.remove(uuid, closing);
+    connectionUserIds.remove(uuid);
   }
 
   @Blocking
@@ -63,6 +69,12 @@ public class APIWebSocket {
   public void onMessage(String message, @PathParam("projectId") String projectId) {
     log.info("WS msg projectId=" + projectId + " len=" + message.length() + " preview=" + message.substring(0, Math.min(200, message.length())));
     var uuid = UUID.fromString(projectId);
+
+    // Handle auth — first message must be {"type":"auth","token":"xxx"}
+    if (!connectionUserIds.containsKey(uuid)) {
+      handleAuth(message, uuid, projectId);
+      return;
+    }
 
     // Handle ping/keepalive messages
     try {
@@ -114,7 +126,33 @@ public class APIWebSocket {
       // fall through
     }
 
-    kafkaService.sendTask(message, uuid);
+    var userId = connectionUserIds.get(uuid);
+    kafkaService.sendTask(message, uuid, userId);
+  }
+
+  private void handleAuth(String message, UUID uuid, String projectId) {
+    try {
+      var tree = objectMapper.readTree(message);
+      if (!tree.has("type") || !"auth".equals(tree.get("type").asText()) || !tree.has("token")) {
+        log.warning("WS auth fail projectId=" + projectId + " first msg not auth");
+        return;
+      }
+      var token = tree.get("token").asText();
+      var userId = extractUserId(token);
+      if (userId == null) {
+        log.warning("WS auth fail projectId=" + projectId + " bad token");
+        return;
+      }
+      var project = projectRepository.findById(uuid);
+      if (project == null || !userId.equals(project.getUserId())) {
+        log.warning("WS auth fail projectId=" + projectId + " not owner");
+        return;
+      }
+      connectionUserIds.put(uuid, userId);
+      log.info("WS auth success projectId=" + projectId + " userId=" + userId);
+    } catch (Exception e) {
+      log.warning("WS auth fail projectId=" + projectId + " error=" + e.getMessage());
+    }
   }
 
   public void sendMessage(String projectId, String content) {
@@ -125,6 +163,18 @@ public class APIWebSocket {
       connection.sendText(content).subscribe().with(v -> {});
     } else {
       log.warning("WS send fail projectId=" + projectId + " connection=null");
+    }
+  }
+
+  private String extractUserId(String token) {
+    try {
+      var parts = token.split("\\.");
+      if (parts.length != 3) return null;
+      var payload = Base64.getUrlDecoder().decode(parts[1]);
+      var json = objectMapper.readTree(payload);
+      return json.get("sub").asText();
+    } catch (Exception e) {
+      return null;
     }
   }
 
