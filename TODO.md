@@ -21,5 +21,5 @@ First ! - Breaking change / Regression
 - [ ] 3 PH4 Outline the logical devision(B1 separate, B2)
 - [ ] 3 PH4 Add all devices, esp. security
 - [ ] 3 Fix Back button in requirements
-- [ ] 3 Add all products list.
+- [x] 3 Add all products list. (Test pending)
 - [x] 3 Make the user value more explanatory
