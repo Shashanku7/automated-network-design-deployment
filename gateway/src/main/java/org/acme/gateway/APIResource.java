@@ -2,7 +2,6 @@ package org.acme.gateway;
 
 import com.fasterxml.jackson.annotation.JsonProperty;
 import jakarta.inject.Inject;
-import lombok.extern.java.Log;
 import jakarta.transaction.Transactional;
 import jakarta.ws.rs.Consumes;
 import jakarta.ws.rs.GET;
@@ -19,6 +18,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 import java.util.stream.Collectors;
+import lombok.extern.java.Log;
 import org.acme.gateway.entities.AgentTaskEntity;
 import org.acme.gateway.entities.ConversationEntity;
 import org.acme.gateway.entities.MessageEntity;
@@ -40,24 +40,17 @@ import org.eclipse.microprofile.rest.client.inject.RestClient;
 @Log
 public class APIResource {
 
-  @Inject
-  KafkaService kafkaService;
+  @Inject KafkaService kafkaService;
 
-  @Inject
-  @RestClient
-  AIService aiService;
+  @Inject @RestClient AIService aiService;
 
-  @Inject
-  ProjectRepository projectRepository;
+  @Inject ProjectRepository projectRepository;
 
-  @Inject
-  ConversationRepository conversationRepository;
+  @Inject ConversationRepository conversationRepository;
 
-  @Inject
-  MessageRepository messageRepository;
+  @Inject MessageRepository messageRepository;
 
-  @Inject
-  AgentTaskRepository agentTaskRepository;
+  @Inject AgentTaskRepository agentTaskRepository;
 
   // ── Projects ─────────────────────────────────────────
 
@@ -116,7 +109,8 @@ public class APIResource {
   @POST
   @Path("projects/{projectId}/conversations")
   @Transactional
-  public Response createConversation(@PathParam("projectId") UUID projectId, CreateConversationRequest request) {
+  public Response createConversation(
+      @PathParam("projectId") UUID projectId, CreateConversationRequest request) {
     var conversation = new ConversationEntity(projectId, request.title());
     conversationRepository.persist(conversation);
     return Response.ok(conversation).build();
@@ -133,28 +127,37 @@ public class APIResource {
   @GET
   @Path("projects/{projectId}/chat-history")
   public Response getPersistentChatHistory(
-      @PathParam("projectId") UUID projectId,
-      @QueryParam("conversationId") String conversationId) {
+      @PathParam("projectId") UUID projectId, @QueryParam("conversationId") String conversationId) {
     try {
       var cid = conversationId == null || conversationId.isBlank() ? "default" : conversationId;
       var history = aiService.getChatHistory(projectId.toString(), cid);
       return Response.ok(history).build();
     } catch (Exception e) {
-      log.warning("Failed to fetch persistent chat history for projectId=" + projectId + " error=" + e.getMessage());
-      return Response.ok(Map.of(
-          "project_id", projectId.toString(),
-          "conversation_id", conversationId == null || conversationId.isBlank() ? "default" : conversationId,
-          "conversation_key", "",
-          "conversation_messages", List.of(),
-          "phase_messages", Map.of(),
-          "merged_messages", List.of())).build();
+      log.warning(
+          "Failed to fetch persistent chat history for projectId="
+              + projectId
+              + " error="
+              + e.getMessage());
+      return Response.ok(
+              Map.of(
+                  "project_id", projectId.toString(),
+                  "conversation_id",
+                      conversationId == null || conversationId.isBlank()
+                          ? "default"
+                          : conversationId,
+                  "conversation_key", "",
+                  "conversation_messages", List.of(),
+                  "phase_messages", Map.of(),
+                  "merged_messages", List.of()))
+          .build();
     }
   }
 
   @POST
   @Path("conversations/{conversationId}/messages")
   @Transactional
-  public Response saveMessage(@PathParam("conversationId") UUID conversationId, SaveMessageRequest request) {
+  public Response saveMessage(
+      @PathParam("conversationId") UUID conversationId, SaveMessageRequest request) {
     var seq = messageRepository.countByConversationId(conversationId) + 1;
     var message = new MessageEntity(conversationId, seq, request.role(), request.content());
     messageRepository.persist(message);
@@ -167,31 +170,41 @@ public class APIResource {
   @Path("projects/{pid}/phases")
   public Response getWorkflowState(@PathParam("pid") UUID projectId) {
     var completed = agentTaskRepository.findCompletedByProjectId(projectId);
-    var latestPerPhase = completed.stream()
-        .collect(Collectors.toMap(
-            AgentTaskEntity::getPhase,
-            java.util.function.Function.identity(),
-            (a, b) -> {
-              if (a.getCompletedAt() == null) return b;
-              if (b.getCompletedAt() == null) return a;
-              return a.getCompletedAt().isAfter(b.getCompletedAt()) ? a : b;
-            }));
+    var latestPerPhase =
+        completed.stream()
+            .collect(
+                Collectors.toMap(
+                    AgentTaskEntity::getPhase,
+                    java.util.function.Function.identity(),
+                    (a, b) -> {
+                      if (a.getCompletedAt() == null) return b;
+                      if (b.getCompletedAt() == null) return a;
+                      return a.getCompletedAt().isAfter(b.getCompletedAt()) ? a : b;
+                    }));
     // Exclude phases awaiting user approval (AI finished but HITL not yet given)
     var latestCompleted = agentTaskRepository.findLatestCompletedByProjectId(projectId);
-    boolean hasPendingApproval = latestCompleted.isPresent()
-        && !agentTaskRepository.existsByProjectIdAndPhase(projectId, latestCompleted.get().getPhase() + 1);
+    boolean hasPendingApproval =
+        latestCompleted.isPresent()
+            && !agentTaskRepository.existsByProjectIdAndPhase(
+                projectId, latestCompleted.get().getPhase() + 1);
 
-    var phases = latestPerPhase.values().stream()
-        .filter(t -> !hasPendingApproval || !t.getTaskId().equals(latestCompleted.get().getTaskId()))
-        .map(t -> new PhaseResult(t.getPhase(), t.getAgentTarget(), t.getOutput(), t.getStatus()))
-        .sorted((a, b) -> Integer.compare(a.phase(), b.phase()))
-        .toList();
-    int nextPhase = phases.isEmpty() ? 1
-        : Math.min(phases.getLast().phase() + 1, 5);
+    var phases =
+        latestPerPhase.values().stream()
+            .filter(
+                t ->
+                    !hasPendingApproval || !t.getTaskId().equals(latestCompleted.get().getTaskId()))
+            .map(
+                t ->
+                    new PhaseResult(t.getPhase(), t.getAgentTarget(), t.getOutput(), t.getStatus()))
+            .sorted((a, b) -> Integer.compare(a.phase(), b.phase()))
+            .toList();
+    int nextPhase = phases.isEmpty() ? 1 : Math.min(phases.getLast().phase() + 1, 5);
     var project = projectRepository.findById(projectId);
-    String status = (project != null && "complete".equals(project.getWorkflowStatus())) ? "complete" : "running";
-    return Response.ok(new WorkflowState(projectId,
-        status, nextPhase, phases)).build();
+    String status =
+        (project != null && "complete".equals(project.getWorkflowStatus()))
+            ? "complete"
+            : "running";
+    return Response.ok(new WorkflowState(projectId, status, nextPhase, phases)).build();
   }
 
   // ── Deploy ─────────────────────────────────────────
@@ -200,11 +213,13 @@ public class APIResource {
   @Path("deploy")
   public Response deploy(DeployRequest request) {
     log.info("deploy projectId=" + request.projectId());
-    return Response.ok(Map.of(
-        "status", "success",
-        "message", "Deployment initiated. Configuration is being pushed to network devices.",
-        "projectId", request.projectId()
-    )).build();
+    return Response.ok(
+            Map.of(
+                "status", "success",
+                "message",
+                    "Deployment initiated. Configuration is being pushed to network devices.",
+                "projectId", request.projectId()))
+        .build();
   }
 
   // ── Existing endpoints ───────────────────────────────
@@ -216,58 +231,57 @@ public class APIResource {
     return Response.accepted().build();
   }
 
-  public record CreateTaskRequest(String projectId, String message) {
-  }
+  public record CreateTaskRequest(String projectId, String message) {}
 
   public record ChatRequest(
       String message,
       List<AgentTask.ChatMessage> history,
       @JsonProperty("project_id") String projectId,
       @JsonProperty("conversation_id") String conversationId,
-      @JsonProperty("screen_context") String screenContext) {
-  }
+      @JsonProperty("screen_context") String screenContext) {}
 
   @POST
   @Path("chat")
   public Response chat(ChatRequest request) {
     try {
-      var history = request.history().stream()
-          .map(h -> new AIService.ChatHistoryItem(
-              h.role().name().toLowerCase(),
-              h.content()))
-          .collect(Collectors.toList());
-      var aiRequest = new AIService.ChatRequest(
-          request.message(), history, request.projectId(), request.screenContext());
+      var history =
+          request.history().stream()
+              .map(h -> new AIService.ChatHistoryItem(h.role().name().toLowerCase(), h.content()))
+              .collect(Collectors.toList());
+      var aiRequest =
+          new AIService.ChatRequest(
+              request.message(), history, request.projectId(), request.screenContext());
       var aiResponse = aiService.sendChat(aiRequest);
       return Response.ok(aiResponse).build();
     } catch (Exception e) {
-      var fallback = Map.of(
-          "role", "assistant",
-          "content", "Thank you for your question. The chat copilot is processing: \"" + request.message() + "\"",
-          "timestamp", Instant.now().toString());
+      var fallback =
+          Map.of(
+              "role",
+              "assistant",
+              "content",
+              "Thank you for your question. The chat copilot is processing: \""
+                  + request.message()
+                  + "\"",
+              "timestamp",
+              Instant.now().toString());
       return Response.ok(fallback).build();
     }
   }
 
   // ── Request records ─────────────────────────────────
 
-  public record CreateProjectRequest(String title, UUID id) {
-  }
+  public record CreateProjectRequest(String title, UUID id) {}
 
-  public record CreateConversationRequest(String title) {
-  }
+  public record CreateConversationRequest(String title) {}
 
-  public record SaveMessageRequest(String role, String content) {
-  }
+  public record SaveMessageRequest(String role, String content) {}
 
-  public record DeployRequest(String projectId) {
-  }
+  public record DeployRequest(String projectId) {}
 
   public record UpdateProjectRequest(
-    String title,
-    @JsonProperty("solution_type") String solutionType,
-    String requirements,
-    @JsonProperty("chat_history") String chatHistory,
-    @JsonProperty("workflow_status") String workflowStatus
-  ) {}
+      String title,
+      @JsonProperty("solution_type") String solutionType,
+      String requirements,
+      @JsonProperty("chat_history") String chatHistory,
+      @JsonProperty("workflow_status") String workflowStatus) {}
 }
