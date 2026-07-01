@@ -1,7 +1,7 @@
 import { createContext, useContext, useState, useEffect, useCallback } from "react";
 
 const KC = {
-  url: "http://localhost:8180",
+  url: window.location.origin,
   realm: "cx-sol-build",
   clientId: "gateway",
 };
