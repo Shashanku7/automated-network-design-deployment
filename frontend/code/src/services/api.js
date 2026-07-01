@@ -15,6 +15,14 @@ const API = axios.create({
   timeout: 120000,
 });
 
+API.interceptors.request.use((config) => {
+  const token = localStorage.getItem("kc_access_token");
+  if (token) {
+    config.headers.Authorization = `Bearer ${token}`;
+  }
+  return config;
+});
+
 /**
  * Build a natural-language prompt from the structured requirements form.
  */
@@ -405,6 +413,12 @@ export function runWorkflow(projectId, requirements, solutionType, onEvent, isRe
         console.log("[WS] open projectId=" + projectId + (hasConnectedOnce ? " (reconnect)" : ""));
         reconnectAttempts = 0;
 
+        // Send auth first
+        const token = localStorage.getItem("kc_access_token");
+        if (token) {
+          ws.send(JSON.stringify({ type: "auth", token }));
+        }
+
         if (heartbeatTimer) clearInterval(heartbeatTimer);
         heartbeatTimer = setInterval(() => {
           if (ws.readyState === WebSocket.OPEN) {
@@ -489,6 +503,12 @@ export function resumeWorkflow(projectId, onEvent) {
       ws.onopen = () => {
         console.log("[WS] resume open projectId=" + projectId + (reconnectAttempts > 0 ? " (reconnect)" : ""));
         reconnectAttempts = 0;
+
+        // Send auth first
+        const token = localStorage.getItem("kc_access_token");
+        if (token) {
+          ws.send(JSON.stringify({ type: "auth", token }));
+        }
 
         if (heartbeatTimer) clearInterval(heartbeatTimer);
         heartbeatTimer = setInterval(() => {

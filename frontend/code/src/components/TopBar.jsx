@@ -1,18 +1,14 @@
-/**
- * TopBar — Header bar (persistent across all pages)
- *
- * Contains: branding (links to dashboard) and search.
- */
-
 import { useState, useEffect, useRef } from "react";
 import { NavLink, useNavigate } from "react-router-dom";
 import { useProject } from "../context/ProjectContext";
 import { useSidebar } from "../context/SidebarContext";
+import { useAuth } from "../context/AuthContext";
 
 export default function TopBar() {
   const navigate = useNavigate();
   const { getProjectList } = useProject();
   const { open, toggle } = useSidebar();
+  const { isAuthenticated, login, logout, token } = useAuth();
   const [query, setQuery] = useState("");
   const [results, setResults] = useState([]);
   const [showResults, setShowResults] = useState(false);
@@ -31,7 +27,6 @@ export default function TopBar() {
     }
   }, [query, getProjectList]);
 
-  // Close search when clicking outside
   useEffect(() => {
     const handleClickOutside = (e) => {
       if (searchRef.current && !searchRef.current.contains(e.target)) {
@@ -132,6 +127,29 @@ export default function TopBar() {
               )}
             </div>
           </div>
+        )}
+      </div>
+
+      {/* Login / Logout */}
+      <div className="flex items-center shrink-0 ml-4">
+        {isAuthenticated ? (
+          <button
+            onClick={logout}
+            className="flex items-center gap-2 px-3 py-1.5 rounded-lg text-sm text-on-surface-variant hover:text-error hover:bg-error/10 transition-colors"
+            title="Logout"
+          >
+            <span className="material-symbols-outlined text-lg">logout</span>
+            <span className="hidden sm:inline">Logout</span>
+          </button>
+        ) : (
+          <button
+            onClick={login}
+            className="flex items-center gap-2 px-3 py-1.5 rounded-lg text-sm text-on-surface-variant hover:text-primary hover:bg-primary/10 transition-colors"
+            title="Login"
+          >
+            <span className="material-symbols-outlined text-lg">login</span>
+            <span className="hidden sm:inline">Login</span>
+          </button>
         )}
       </div>
     </header>

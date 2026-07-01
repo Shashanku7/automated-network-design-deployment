@@ -25,6 +25,10 @@ export default defineConfig({
         timeout: 0,
         proxyTimeout: 0,
       },
+      '/realms': {
+        target: 'http://localhost:8180',
+        changeOrigin: true,
+      },
     },
     allowedHosts: true,
   },
