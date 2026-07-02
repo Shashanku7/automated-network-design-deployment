@@ -4,7 +4,7 @@ First ! - Breaking change / Regression
 
 - [x] 0 Remove the stars in Requirement
 - [x] 0 Default to zero
-- [x] 0 !?User value diff approach?
+- [x] 0 !User value diff approach?
 - [x] 0 PH3 Show calculation of AP (Test pending)
 - [ ] 0 Mention warning info (Test pending)
 - [x] 0 PH5 Change to Hyperlink
@@ -12,14 +12,19 @@ First ! - Breaking change / Regression
 - [x] 1 Explicitly mention 20% buffer everywhere
 - [x] 1 PH3 Remove pricing
 - [x] 1 PH3 BOM mention all devices
-- [ ] 1 !User Authentication
 - [ ] 2 Show previous runs as an example
 - [x] 2 PH4 Reduce hallucination
 - [x] 2 PH4 Mention VSX
 - [ ] 3 PH1 Rephrase Agent to be HPE Network Assistant
 - [x] 3 PH2 MAC Auth, among others
-- [ ] 3 PH4 Outline the logical devision(B1 separate, B2)
+- [ ] 3 PH4 Outline the logical division(B1 separate, B2)
 - [x] 3 PH4 Add all devices, esp. security
-- [ ] 3 Fix Back button in requirements
+- [x] 3 Fix Back button in requirements
 - [x] 3 Add all products list. (Test pending)
 - [x] 3 Make the user value more explanatory
+- [ ] 3 PH1 Remove budget value
+- [ ] Better user diagnostic messages on frontend in requirements
+- [ ] AP Count remove formulas, AP fallback
+- [ ] Add headline Admin subset of User
+- [ ] 3 !User Authentication
+- [ ] 1 Add Phase specific changes
