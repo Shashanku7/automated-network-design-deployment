@@ -15,7 +15,7 @@ docker exec keycloak /opt/keycloak/bin/kcadm.sh config credentials \
 
 # Fix gateway client redirect URIs — allow any origin for dev/tunnel
 CLIENT_ID=$(docker exec keycloak /opt/keycloak/bin/kcadm.sh get clients \
-  -r "$REALM" -q clientId=gateway --fields id --format csv | tail -1)
+  -r "$REALM" -q clientId=gateway --fields id --format csv | tail -1 | tr -d '"')
 if [ -n "$CLIENT_ID" ]; then
   docker exec keycloak /opt/keycloak/bin/kcadm.sh update "clients/$CLIENT_ID" \
     -r "$REALM" \
