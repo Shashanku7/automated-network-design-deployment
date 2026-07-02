@@ -15,11 +15,11 @@ First ! - Breaking change / Regression
 - [ ] 1 !User Authentication
 - [ ] 2 Show previous runs as an example
 - [ ] 2 PH4 Reduce hallucination (Test pending)
-- [ ] 2 PH4 Mention VSX
+- [x] 2 PH4 Mention VSX
 - [ ] 3 PH1 Rephrase Agent to be HPE Network Assistant
 - [x] 3 PH2 MAC Auth, among others
 - [ ] 3 PH4 Outline the logical devision(B1 separate, B2)
-- [ ] 3 PH4 Add all devices, esp. security
+- [x] 3 PH4 Add all devices, esp. security
 - [ ] 3 Fix Back button in requirements
 - [x] 3 Add all products list. (Test pending)
 - [x] 3 Make the user value more explanatory
