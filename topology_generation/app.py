@@ -390,7 +390,7 @@ def _validate_semantic_alignment(data: dict, topology_text: str, bom_text: str) 
                 has_isl = True
                 break
         if not has_isl:
-            print(f"Warning: Core switches are configured as a VSX pair, but the diagram is missing the Inter-Switch Link (ISL) edge between the core switches.")
+            return False, "Core switches are configured as a VSX pair, but the diagram is missing the Inter-Switch Link (ISL) edge between the core switches."
 
     # Access Stacks dual-homed LACP uplinks
     access_ids = [n.get("id") for n in nodes if "access" in (n.get("data") or {}).get("label", "").lower()]
@@ -406,6 +406,42 @@ def _validate_semantic_alignment(data: dict, topology_text: str, bom_text: str) 
                         connected_cores.add(src)
                 if len(connected_cores) < 2:
                     print(f"Warning: Access switch '{acc_id}' must be connected to both Core switches for uplink redundancy (LAG/LACP) as defined in the topology design.")
+
+    # Check for Gateway security device if present in BOM
+    has_gateway_in_bom = any(any(kw in item["model"].lower() for kw in ("gateway", "firewall", "edgeconnect")) for item in expected_devices)
+    if has_gateway_in_bom:
+        gateway_nodes = [n for n in nodes if (n.get("data") or {}).get("iconType") == "Gateway"]
+        if not gateway_nodes:
+            return False, "The BOM specifies a Gateway/Firewall device, but no node of type 'Gateway' exists in your topology diagram."
+        # Verify it connects to core switches
+        connected_to_core = False
+        for gw in gateway_nodes:
+            gw_id = gw.get("id")
+            for edge in edges:
+                src, tgt = edge.get("source"), edge.get("target")
+                if (src == gw_id and tgt in core_ids) or (tgt == gw_id and src in core_ids):
+                    connected_to_core = True
+                    break
+        if not connected_to_core:
+            return False, "The Gateway/Firewall device must be connected to the Core switches in your topology diagram."
+
+    # Check for NAC (ClearPass) security device if present in BOM
+    has_nac_in_bom = any(any(kw in item["model"].lower() for kw in ("clearpass", "nac")) for item in expected_devices)
+    if has_nac_in_bom:
+        nac_nodes = [n for n in nodes if (n.get("data") or {}).get("iconType") == "NAC"]
+        if not nac_nodes:
+            return False, "The BOM specifies a NAC/ClearPass device, but no node of type 'NAC' exists in your topology diagram."
+        # Verify it connects to core switches
+        connected_to_core = False
+        for nac in nac_nodes:
+            nac_id = nac.get("id")
+            for edge in edges:
+                src, tgt = edge.get("source"), edge.get("target")
+                if (src == nac_id and tgt in core_ids) or (tgt == nac_id and src in core_ids):
+                    connected_to_core = True
+                    break
+        if not connected_to_core:
+            return False, "The NAC/ClearPass device must be connected to the Core switches in your topology diagram."
 
     return True, ""
 
