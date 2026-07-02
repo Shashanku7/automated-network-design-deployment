@@ -239,7 +239,7 @@ export default function Requirements() {
         {/* Back button to switch solution type */}
         <button
           type="button"
-          onClick={() => navigate("/solution-type")}
+          onClick={() => navigate("/project/new")}
           className="flex items-center gap-2 text-on-surface-variant hover:text-primary transition-colors mb-6 group"
         >
           <span className="material-symbols-outlined text-lg group-hover:-translate-x-1 transition-transform">
