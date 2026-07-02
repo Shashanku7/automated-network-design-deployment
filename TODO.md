@@ -11,10 +11,10 @@ First ! - Breaking change / Regression
 - [x] 1 Put indicator requiring that input is number
 - [x] 1 Explicitly mention 20% buffer everywhere
 - [x] 1 PH3 Remove pricing
-- [ ] 1 PH3 BOM mention all devices
+- [x] 1 PH3 BOM mention all devices
 - [ ] 1 !User Authentication
 - [ ] 2 Show previous runs as an example
-- [ ] 2 PH4 Reduce hallucination (Test pending)
+- [x] 2 PH4 Reduce hallucination
 - [ ] 2 PH4 Mention VSX
 - [ ] 3 PH1 Rephrase Agent to be HPE Network Assistant
 - [x] 3 PH2 MAC Auth, among others
