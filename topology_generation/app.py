@@ -390,7 +390,7 @@ def _validate_semantic_alignment(data: dict, topology_text: str, bom_text: str) 
                 has_isl = True
                 break
         if not has_isl:
-            print(f"Warning: Core switches are configured as a VSX pair, but the diagram is missing the Inter-Switch Link (ISL) edge between the core switches.")
+            return False, "Core switches are configured as a VSX pair, but the diagram is missing the Inter-Switch Link (ISL) edge between the core switches."
 
     # Access Stacks dual-homed LACP uplinks
     access_ids = [n.get("id") for n in nodes if "access" in (n.get("data") or {}).get("label", "").lower()]
