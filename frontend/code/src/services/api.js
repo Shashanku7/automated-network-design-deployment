@@ -39,6 +39,8 @@ export function buildPromptFromRequirements(req, solutionType) {
         totalVoip += Number(d.voip) || 0;
         totalIptv += Number(d.iptv) || 0;
         totalPrinters += Number(d.printers) || 0;
+        totalAp += Number(d.ap) || 0;
+        totalSwitch += Number(d.switch) || 0;
       });
     });
 

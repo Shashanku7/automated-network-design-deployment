@@ -1152,7 +1152,27 @@ function EventCard({ event }) {
       );
 
     case "agent_response":
-      if (ev.phase === 4) return null; // Hide React code streaming, we only want the Interactive Topology CTA
+      if (ev.phase === 4) return null;
+      if (ev.phase === 5) {
+        return (
+          <section className="bg-surface-container-low rounded-xl border border-outline-variant/15 overflow-hidden">
+            <div className="p-6">
+              <h3 className="text-lg font-bold font-[family-name:var(--font-headline)] mb-4 flex items-center gap-2">
+                <span className="material-symbols-outlined text-primary">
+                  terminal
+                </span>
+                CLI Configuration
+              </h3>
+              <div
+                className="md-content text-sm text-on-surface leading-relaxed"
+                dangerouslySetInnerHTML={{
+                  __html: renderMd(ev.content, true),
+                }}
+              />
+            </div>
+          </section>
+        );
+      }
       return (
         <div className="flex justify-start">
           <div

@@ -4,7 +4,7 @@ import "katex/dist/katex.min.css";
 
 marked.setOptions({ gfm: true, breaks: true });
 
-export function renderMd(text) {
+export function renderMd(text, highlightLinks = false) {
   if (!text) return "";
 
   const mathPlaceholders = [];
@@ -36,6 +36,13 @@ export function renderMd(text) {
   });
 
   let html = marked.parse(processed);
+
+  if (highlightLinks) {
+    html = html.replace(
+      /<a\s+(.+?)>/g,
+      '<a class="doc-link" target="_blank" rel="noopener noreferrer" $1>',
+    );
+  }
 
   html = html.replace(
     /%%MATH_BLOCK_(\d+)%%/g,

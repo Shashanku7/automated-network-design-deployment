@@ -105,9 +105,9 @@ export default function Deployment() {
                   </h3>
                   <div
                     className="md-content text-sm text-on-surface leading-relaxed"
-                    dangerouslySetInnerHTML={{
-                      __html: renderMd(state.cliConfig),
-                    }}
+                      dangerouslySetInnerHTML={{
+                        __html: renderMd(state.cliConfig, true),
+                      }}
                   />
                 </div>
               </section>
